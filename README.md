@@ -30,13 +30,13 @@ The goal is to help coordinators:
 
 ## Team Members
 
-| Name | Role | Program |
-| --- | --- | --- |
-| Lovely Shane P. Ong | Leader | BSCS |
-| Jervin Ryle I. Milleza | Member | BSCS |
-| James O. Ewican | Member | BSCS |
-| Sydney B. Galorio | Member | BSCS |
-| Jireh C. Cañedo | Member | BSBA |
+| Avatar | Name | Role | Program | GitHub |
+| --- | --- | --- | --- | --- |
+| <img src="https://github.com/xienshane.png" width="40" alt="Lovely Shane P. Ong avatar"> | Lovely Shane P. Ong | Leader | BSCS | [@xienshane](https://github.com/xienshane) |
+| <img src="https://github.com/jermochi.png" width="40" alt="Jervin Ryle I. Milleza avatar"> | Jervin Ryle I. Milleza | Member | BSCS | [@jermochi](https://github.com/jermochi) |
+| <img src="https://github.com/jewican.png" width="40" alt="James O. Ewican avatar"> | James O. Ewican | Member | BSCS | [@jewican](https://github.com/jewican) |
+| <img src="https://github.com/Shizune-23.png" width="40" alt="Sydney B. Galorio avatar"> | Sydney B. Galorio | Member | BSCS | [@Shizune-23](https://github.com/Shizune-23) |
+| N/A | Jireh C. Cañedo | Member | BSBA | N/A |
 
 ## Team Instructions
 
