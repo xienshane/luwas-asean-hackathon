@@ -26,7 +26,7 @@ The goal is to help coordinators:
 | Impact prediction | TabPFN v2 | Assistive affected-population and severity prediction |
 | Routing | OR-Tools | Multi-team vehicle routing |
 | NLP parsing | SEA-LION, Gemini fallback | Parse Filipino, Bisaya, and Tagalog field reports |
-| Deployment | Vercel, Render, Supabase | Free-tier demo deployment |
+| Deployment | Vercel, Hugging Face Spaces, Supabase | Free-tier demo deployment |
 
 ## Team Members
 
@@ -59,21 +59,22 @@ Do not commit secrets, API keys, downloaded raw datasets, local database dumps, 
 luwas-asean-hackathon/
 |-- CLAUDE.md          # Project context primer. Read this first.
 |-- README.md          # Team onboarding and repo instructions.
-|-- DEPLOY.md          # Deployment notes for Vercel, Render, and Supabase.
-|-- PRIVACY.md         # Privacy, PII, retention, and consent notes.
-|-- .env.example       # Environment variable template.
-|-- frontend/          # Next.js 16 App Router app.
-|-- backend/           # Python FastAPI services.
-|-- scripts/           # Ingestion, validation, and test helper scripts.
-`-- supabase/
-    `-- migrations/    # Database schema, extensions, RLS, cron, and SQL functions.
+|-- .env.example       # Environment variable catalog (copy the block you need).
+|-- web/               # Next.js 16 App Router app -> Vercel.
+|-- ai-services/       # Python FastAPI AI/optimization services -> Hugging Face Space.
+|-- supabase/          # Database as code.
+|   |-- migrations/    # Schema, PostGIS, pgRouting edge table, RLS.
+|   |-- functions/     # SQL: silent_area_score(), dynamic edge updates.
+|   `-- seed/          # Demo Cebu data.
+|-- data-pipeline/     # One-off ETL / import / validation scripts (not deployed).
+`-- docs/              # PRIVACY.md, DEPLOY.md (added in their phases).
 ```
 
 ## Work Areas
 
-### Frontend
+### Web
 
-Use `frontend/` for the Next.js app.
+Use `web/` for the Next.js app.
 
 Expected work:
 
@@ -84,9 +85,9 @@ Expected work:
 - offline PWA behavior,
 - SMS simulation UI if needed for demo.
 
-### Backend
+### AI services
 
-Use `backend/` for Python FastAPI services.
+Use `ai-services/` for the Python FastAPI services (one Hugging Face Space, three routers).
 
 Expected work:
 
@@ -98,7 +99,7 @@ Expected work:
 
 ### Supabase
 
-Use `supabase/migrations/` for database changes.
+Use `supabase/` for database-as-code: `migrations/`, SQL `functions/`, and `seed/` data.
 
 Expected work:
 
@@ -109,24 +110,24 @@ Expected work:
 - create Silent Area scoring SQL,
 - schedule scoring jobs.
 
-### Scripts
+### Data pipeline
 
-Use `scripts/` for one-off or repeatable project scripts.
+Use `data-pipeline/` for one-off or repeatable ETL scripts (not deployed).
 
 Expected work:
 
-- data ingestion,
-- road-network import,
-- model validation,
-- Playwright or demo helper scripts.
+- static dataset ingestion,
+- OSM road-network import,
+- impact-model training-table assembly,
+- model validation.
 
 ## Immediate Priorities
 
-1. Scaffold the Next.js app in `frontend/`.
+1. Scaffold the Next.js app in `web/`.
 2. Create the first Supabase migration for extensions, tables, roles, and RLS.
 3. Confirm the tropical-cyclone impact dataset is usable.
-4. Start the FastAPI backend structure in `backend/`.
-5. Keep privacy work active from day one in [PRIVACY.md](PRIVACY.md).
+4. Start the FastAPI structure in `ai-services/`.
+5. Keep privacy work active from day one (see Project Rules below; documented in `docs/PRIVACY.md` during Phase 6.2).
 
 ## Project Rules
 
@@ -139,12 +140,11 @@ Expected work:
 
 ## Local Setup
 
-Copy the environment template:
+Each deployable reads its own local env file. For the web app, create `web/.env.local` using the `web` block from `.env.example` (never commit real values):
 
 ```bash
-cp .env.example .env
+npm --prefix web install
+npm --prefix web run dev   # http://localhost:3000
 ```
 
-Fill in real values only on your local machine or deployment dashboard. Never commit `.env`.
-
-More setup commands will be added after `frontend/` and `backend/` are scaffolded.
+Fill in real values only on your local machine or deployment dashboard.
