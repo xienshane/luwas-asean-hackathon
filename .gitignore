@@ -152,8 +152,11 @@ __pycache__/
 .pytest_cache/
 .ipynb_checkpoints/
 
-# Large raw NOAH hazard layers — kept LOCAL only 
+# Large raw NOAH hazard layers — kept LOCAL only
 data-pipeline/raw/project-noah/
+
+# Large raw OSM road extract (bbbike, Cebu) — kept LOCAL only; loaded into road_edges
+data-pipeline/raw/osm-roads/
 
 # Local-only scratch (plans, notes) — not tracked
 .local/
