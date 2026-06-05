@@ -128,13 +128,16 @@ data-pipeline/.venv/bin/pip install -r data-pipeline/requirements.txt
 ```
 
 **2. Get the raw data.** Cloning already gives you the small inputs (barangay
-boundaries `.gpkg`, PSA population, HDX indicator CSVs, `impact_data.csv`). The only
-manual download is the large NOAH hazard layers, which are gitignored:
+boundaries `.gpkg`, PSA population, HDX indicator CSVs, `impact_data.csv`). Two large
+datasets are gitignored and must be downloaded from the shared Drive folder:
 
-> **Project NOAH hazard layers (Google Drive):**
-> https://drive.google.com/drive/folders/1q0L6IJOtweWcUijpakR-SmJgaPNms78y?usp=drive_link
+> **Local-only raw datasets (Google Drive):**
+> https://drive.google.com/drive/folders/1XcRqVtHtstqrh-XB_WlbQlK_tl5JwaX8?usp=drive_link
+>
+> - `project-noah/` — Project NOAH hazard layers (~483 MB) for Phase 1.1 hazard exposure.
+> - `osm-roads/cebu-roads.gpkg` — bbbike Cebu road extract (~94 MB) for the Phase 1.2 road graph.
 
-Download/unzip that folder into `data-pipeline/raw/project-noah/` so the tree looks like:
+Download both into `data-pipeline/raw/` (keep the subfolder names) so the tree looks like:
 
 ```text
 data-pipeline/raw/
@@ -145,12 +148,13 @@ data-pipeline/raw/
 │   ├── water-access.csv
 │   └── evacuation-centers.csv
 ├── impact_data.csv                            # committed — cyclone impact (Phase 1.3 / GATE 1)
-└── project-noah/                              # FROM DRIVE — gitignored, ~700 MB
-    ├── flood5yr/   PH072200000_FH_5yr.shp     (+ .dbf .shx .prj)
-    ├── flood25yr/  PH072200000_FH_25yr.shp
-    ├── flood100yr/ PH072200000_FH_100yr.shp
-    ├── landslide/  Cebu_LandslideHazards.shp
-    └── storm-surge-1..4/ Cebu_StormSurge_SSA1..4.shp
+├── project-noah/                              # FROM DRIVE — gitignored, ~483 MB (Phase 1.1)
+│   ├── flood5yr/   PH072200000_FH_5yr.shp     (+ .dbf .shx .prj)
+│   ├── flood25yr/  PH072200000_FH_25yr.shp
+│   ├── flood100yr/ PH072200000_FH_100yr.shp
+│   ├── landslide/  Cebu_LandslideHazards.shp
+│   └── storm-surge-1..4/ Cebu_StormSurge_SSA1..4.shp
+└── osm-roads/cebu-roads.gpkg                  # FROM DRIVE — gitignored, ~94 MB (Phase 1.2)
 ```
 
 **3. Run the ingestion:**
