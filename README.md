@@ -57,8 +57,9 @@ luwas-asean-hackathon/
 ```
 ## Collaborator Quickstart
 
-We all share **one Supabase project** — it's already set up and loaded with data, so
-there's no backend to configure. To get a working app running locally:
+We all share **one Supabase project** (already set up and loaded with data), and the AI
+impact service is **already deployed** to a Hugging Face Space — so there's no backend to
+configure. To get a working app running locally:
 
 1. **Clone** the repo (you also get the committed datasets).
 2. **Ask the team for the real `.env` values** and create `web/.env.local` — the
@@ -105,6 +106,38 @@ host (IPv6-only — the ingestion script will tell you to switch if it can't con
 npm --prefix web install
 npm --prefix web run dev   # http://localhost:3000
 ```
+
+### AI services — Phase 2.2 impact predictor
+
+`ai-services/` is one FastAPI app (deploys as a single Hugging Face Space, Docker SDK).
+Phase 2.2 ships the **impact predictor** (`POST /predict-impact`); routing and parsing
+mount alongside it in later phases. It needs **no secrets** — it predicts from the
+bundled Phase 1.3 training table.
+
+**Already deployed — nothing to set up to use it:**
+[`huggingface.co/spaces/jrvnryle/luwas`](https://huggingface.co/spaces/jrvnryle/luwas)
+(`GET /health`, `POST /predict-impact`).
+
+To run or test it locally:
+
+```bash
+# 1. venv + CPU-only torch FIRST (avoids pulling multi-GB CUDA wheels), then deps
+python3.12 -m venv ai-services/.venv
+ai-services/.venv/bin/pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+ai-services/.venv/bin/pip install -r ai-services/requirements-dev.txt
+
+# 2. run tests (append -m "not tabpfn" to skip the heavy model tests)
+ai-services/.venv/bin/python -m pytest ai-services
+
+# 3. serve — run FROM ai-services/ so the `app` import + data path resolve
+cd ai-services && .venv/bin/uvicorn app.main:app --reload --port 8000   # matches AI_SERVICE_URL
+```
+
+The first prediction downloads the TabPFN v2 weights (tokenless, from HuggingFace). If
+torch or the weights are unavailable the service automatically falls back to a
+deterministic population-and-exposure heuristic, so it never hard-fails. Predictor
+behaviour is tunable via `ai-services/.env` (`MODEL_FRAMING`, `TABPFN_CONTEXT_SIZE`,
+`DISABLE_TABPFN`).
 
 ### Database (Supabase)
 

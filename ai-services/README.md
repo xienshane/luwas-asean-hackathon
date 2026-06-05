@@ -103,8 +103,8 @@ python3.12 -m venv .venv
 .venv/bin/python -m pytest                 # full suite
 .venv/bin/python -m pytest -m "not tabpfn"  # skip the heavy model tests
 
-# serve
-.venv/bin/uvicorn app.main:app --reload --port 7860
+# serve locally on :8000 (matches AI_SERVICE_URL; the Space serves on 7860 via Docker)
+.venv/bin/uvicorn app.main:app --reload --port 8000
 ```
 
 ## Docker
