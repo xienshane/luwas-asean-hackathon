@@ -38,20 +38,6 @@ The goal is to help coordinators:
 | <img src="https://github.com/Shizune-23.png" width="40" alt="Sydney B. Galorio avatar"> | Sydney B. Galorio | Member | BSCS | [@Shizune-23](https://github.com/Shizune-23) |
 | N/A | Jireh C. Cañedo | Member | BSBA | N/A |
 
-## Team Instructions
-
-Before starting any task, read [CLAUDE.md](CLAUDE.md). It contains the project context, stack, core rules, and architecture assumptions.
-
-Work in small branches and keep commits focused. Use Conventional Commits:
-
-```bash
-git commit -m "feat: add volunteer report form"
-git commit -m "fix: protect volunteer phone access"
-git commit -m "docs: update deployment notes"
-git commit -m "chore: initialize project skeleton"
-```
-
-Do not commit secrets, API keys, downloaded raw datasets, local database dumps, or generated build folders.
 
 ## Repository Structure
 
@@ -69,82 +55,114 @@ luwas-asean-hackathon/
 |-- data-pipeline/     # One-off ETL / import / validation scripts (not deployed).
 `-- docs/              # PRIVACY.md, DEPLOY.md (added in their phases).
 ```
+## Collaborator Quickstart
 
-## Work Areas
+We all share **one Supabase project** — it's already set up and loaded with data, so
+there's no backend to configure. To get a working app running locally:
 
-### Web
+1. **Clone** the repo (you also get the committed datasets).
+2. **Ask the team for the real `.env` values** and create `web/.env.local` — the
+   `.env.example` files are blank templates; secrets are never committed.
+3. **Run the web app:**
 
-Use `web/` for the Next.js app.
+   ```bash
+   npm --prefix web install
+   npm --prefix web run dev   # http://localhost:3000
+   ```
 
-Expected work:
-
-- coordinator dashboard,
-- volunteer report form,
-- Supabase Auth,
-- MapLibre map,
-- offline PWA behavior,
-- SMS simulation UI if needed for demo.
-
-### AI services
-
-Use `ai-services/` for the Python FastAPI services (one Hugging Face Space, three routers).
-
-Expected work:
-
-- TabPFN impact prediction,
-- deterministic Sphere supply calculation,
-- OR-Tools vehicle routing,
-- SEA-LION field report parser,
-- Gemini fallback for parsing errors.
-
-### Supabase
-
-Use `supabase/` for database-as-code: `migrations/`, SQL `functions/`, and `seed/` data.
-
-Expected work:
-
-- enable PostGIS, pgRouting, and pg_cron,
-- create core tables,
-- add row-level security,
-- protect volunteer PII,
-- create Silent Area scoring SQL,
-- schedule scoring jobs.
-
-### Data pipeline
-
-Use `data-pipeline/` for one-off or repeatable ETL scripts (not deployed).
-
-Expected work:
-
-- static dataset ingestion,
-- OSM road-network import,
-- impact-model training-table assembly,
-- model validation.
-
-## Immediate Priorities
-
-1. Scaffold the Next.js app in `web/`.
-2. Create the first Supabase migration for extensions, tables, roles, and RLS.
-3. Confirm the tropical-cyclone impact dataset is usable.
-4. Start the FastAPI structure in `ai-services/`.
-5. Keep privacy work active from day one (see Project Rules below; documented in `docs/PRIVACY.md` during Phase 6.2).
-
-## Project Rules
-
-- All AI outputs are assistive. A coordinator must be able to review and override predictions, manifests, and routes.
-- Routing must use real-road distances from pgRouting, not straight-line distance.
-- Scope the demo to Cebu.
-- Keep the build free-tier friendly.
-- Write tests for every engine or critical flow.
-- Treat volunteer names, phone numbers, and precise GPS as sensitive data.
+You now have a working app on the shared database. Building the Python services or
+the data pipeline instead? See **Local Setup** below.
 
 ## Local Setup
 
-Each deployable reads its own local env file. For the web app, create `web/.env.local` using the `web` block from `.env.example` (never commit real values):
+### Prerequisites
+
+- **Node.js 20+** and npm (web app)
+- **Python 3.12** (`data-pipeline/` ETL and `ai-services/`)
+- A **Supabase project** with `postgis`, `pgrouting`, and `pg_cron` enabled and the
+  core tables created
+
+
+### Environment variables
+
+Each deployable reads its own env file. Copy the matching block from
+[`.env.example`](.env.example) and fill in real values only on your machine or the
+deployment dashboard — **never commit secrets**.
+
+| File | Block | Used by |
+| --- | --- | --- |
+| `.env.local` (repo root) | `DATABASE_URL` | `data-pipeline/` scripts, Supabase tooling |
+| `web/.env.local` | `web` | Next.js app |
+| `ai-services/.env` | `ai-services` | FastAPI services |
+
+For `DATABASE_URL`, use the Supabase **IPv4 session pooler** string
+(`aws-0-<region>.pooler.supabase.com:5432`), not the direct `db.<ref>.supabase.co`
+host (IPv6-only — the ingestion script will tell you to switch if it can't connect).
+
+### Web app
 
 ```bash
 npm --prefix web install
 npm --prefix web run dev   # http://localhost:3000
 ```
 
-Fill in real values only on your local machine or deployment dashboard.
+### Database (Supabase)
+
+Database-as-code lives under `supabase/` (`migrations/`, SQL `functions/`, `seed/`).
+The data pipeline below writes into the live Supabase project pointed to by
+`DATABASE_URL`.
+
+### Data pipeline — Phase 1.1 static ingestion
+
+`data-pipeline/ingest_static.py` is local-only ETL (not deployed). It loads the
+Cebu operational tables and a per-barangay **hazard-exposure** table into Supabase.
+The multi-hundred-MB NOAH hazard shapefiles are **rasterized to one exposure value
+per barangay per hazard** and never pushed — only ~40 MB of small derived tables
+reach Supabase, well under the free tier.
+
+**1. Create the virtualenv and install deps:**
+
+```bash
+python3.12 -m venv data-pipeline/.venv
+data-pipeline/.venv/bin/pip install -r data-pipeline/requirements.txt
+```
+
+**2. Get the raw data.** Cloning already gives you the small inputs (barangay
+boundaries `.gpkg`, PSA population, HDX indicator CSVs, `impact_data.csv`). Two large
+datasets are gitignored and must be downloaded from the shared Drive folder:
+
+> **Local-only raw datasets (Google Drive):**
+> https://drive.google.com/drive/folders/1XcRqVtHtstqrh-XB_WlbQlK_tl5JwaX8?usp=drive_link
+>
+> - `project-noah/` — Project NOAH hazard layers (~483 MB) for Phase 1.1 hazard exposure.
+> - `osm-roads/cebu-roads.gpkg` — bbbike Cebu road extract (~94 MB) for the Phase 1.2 road graph.
+
+Download both into `data-pipeline/raw/` (keep the subfolder names) so the tree looks like:
+
+```text
+data-pipeline/raw/
+├── osm-boundaries/cebu_barangays.gpkg        # committed — OSM admin4 (layer: phl_admin4)
+├── barangay_population.csv                    # committed — PSA 2020 (Cebu City)
+├── pre-disaster-indicators/                   # committed — HDX vulnerability (national)
+│   ├── housing-type.csv
+│   ├── water-access.csv
+│   └── evacuation-centers.csv
+├── impact_data.csv                            # committed — cyclone impact (Phase 1.3 / GATE 1)
+├── project-noah/                              # FROM DRIVE — gitignored, ~483 MB (Phase 1.1)
+│   ├── flood5yr/   PH072200000_FH_5yr.shp     (+ .dbf .shx .prj)
+│   ├── flood25yr/  PH072200000_FH_25yr.shp
+│   ├── flood100yr/ PH072200000_FH_100yr.shp
+│   ├── landslide/  Cebu_LandslideHazards.shp
+│   └── storm-surge-1..4/ Cebu_StormSurge_SSA1..4.shp
+└── osm-roads/cebu-roads.gpkg                  # FROM DRIVE — gitignored, ~94 MB (Phase 1.2)
+```
+
+**3. Run the ingestion:**
+
+```bash
+data-pipeline/.venv/bin/python data-pipeline/ingest_static.py
+```
+
+Runs in ~3–4 minutes and ends with `ALL ACCEPTANCE CHECKS PASSED ✓` (8/8). It
+upserts `barangays` (boundaries + population), the `hdx_*` indicator tables, and
+`barangay_hazard_exposure` across 8 NOAH hazard layers — all geometry at EPSG:4326.
