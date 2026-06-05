@@ -1,0 +1,13 @@
+# LUWAS ai-services — Hugging Face Space (Docker SDK), Python 3.12, free CPU tier.
+# NOTE: install the CPU-only torch wheel FIRST so nothing drags in CUDA builds:
+#   pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+# The Dockerfile does this; for local dev run that line before `pip install -r requirements.txt`.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+pandas==2.2.3
+numpy==2.2.1
+scikit-learn==1.6.1   # TabPFN dependency; pinned for reproducible builds
+tabpfn==2.2.1         # TabPFN v2 model, weights pulled tokenless from HuggingFace
+torch==2.5.1          # install the +cpu wheel (see note above)
