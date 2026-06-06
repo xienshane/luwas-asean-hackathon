@@ -1,14 +1,14 @@
 """LUWAS AI services — FastAPI entry point.
 
-One Hugging Face Space (Docker SDK) mounts the impact router here; routing.py and
-parse.py mount alongside it in later phases.
+One Hugging Face Space (Docker SDK) mounts the impact and routing routers here; parse.py
+mounts alongside them in a later phase.
 """
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 from app.core.config import Settings
-from app.routers import impact
+from app.routers import impact, routing
 from app.services.impact_model import ImpactPredictor
 
 
@@ -23,6 +23,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="LUWAS AI services", version="0.1.0", lifespan=lifespan)
 app.include_router(impact.router)
+app.include_router(routing.router)
 
 
 @app.get("/health")

@@ -11,15 +11,16 @@ pinned: false
 # LUWAS AI Services
 
 One FastAPI app (Hugging Face Space, Docker SDK, free CPU tier) hosting LUWAS's
-inference endpoints. Phase 2.2 ships the **impact predictor**; routing (OR-Tools) and
-parsing (SEA-LION) mount alongside it in later phases.
+inference endpoints. Phase 2.2 ships the **impact predictor** and Phase 2.4 the **OR-Tools
+routing** solver; parsing (SEA-LION) mounts alongside them in a later phase.
 
 ## Endpoints
 
-| Method | Path              | Purpose                                            |
-|--------|-------------------|----------------------------------------------------|
-| GET    | `/health`         | Liveness + active model framing + TabPFN status.   |
-| POST   | `/predict-impact` | Per-barangay affected-population + damage severity. |
+| Method | Path               | Purpose                                              |
+|--------|--------------------|------------------------------------------------------|
+| GET    | `/health`          | Liveness + active model framing + TabPFN status.     |
+| POST   | `/predict-impact`  | Per-barangay affected-population + damage severity.  |
+| POST   | `/optimize-routes` | Multi-team vehicle routing over real (pgRouting) roads. |
 
 ### `POST /predict-impact`
 
@@ -105,6 +106,37 @@ manifest = sphere_supply(predicted_affected=1200, days=3, access_modifier=0.8, i
 
 The Pydantic models in `app/models/supply.py` are the **canonical contract**;
 `web/lib/types/supply.ts` mirrors them.
+
+### `POST /optimize-routes`
+
+Solves multi-team dispatch with **OR-Tools** (CVRP). Inputs: a list of stops (depot +
+barangays) each with `demand_kg` (from the Sphere manifest) and `priority` (the Silent
+Area score), the vehicle fleet (count + `capacity_kg`), and an **N×N `cost_matrix` of
+real-road travel seconds** aligned to the stops. Output: per-team routes with ordered
+stops, ETAs, and per-vehicle cargo, plus any stops dropped under capacity pressure.
+
+- **Real roads only.** The `cost_matrix` MUST be the pgRouting `pgr_dijkstraCostMatrix`
+  output — the solver never computes Euclidean distance (CLAUDE.md > Rules). The pipeline
+  (Phase 4.1) builds it per dispatch from `road_edges` and the stops' nearest vertices:
+
+  ```sql
+  -- vids = barangay/depot nearest-vertex ids, IN THE SAME ORDER as `stops`
+  SELECT * FROM pgr_dijkstraCostMatrix(
+    'SELECT id, source, target, cost, reverse_cost FROM road_edges',
+    (SELECT array_agg(vid ORDER BY ord) FROM unnest(:vids) WITH ORDINALITY AS t(vid, ord)),
+    directed := false);
+  -- reshape the (start_vid, end_vid, agg_cost) rows into the N×N matrix
+  ```
+
+- **Capacity** is a hard constraint (never exceeded). When total demand exceeds fleet
+  capacity, the lowest-`priority` stops are dropped first (priority-weighted penalties);
+  set `allow_dropping_stops=false` to force a serve-all solution or `INFEASIBLE`.
+- **ETAs** accumulate `travel_seconds` (the matrix legs) plus each stop's `service_seconds`.
+- `solve_time_limit_ms` (default 200) bounds the search; 3 teams / 10 barangays solve in
+  well under 500 ms.
+
+The Pydantic models in `app/models/routing.py` are the **canonical contract**;
+`web/lib/types/routing.ts` mirrors them.
 
 ## Configuration (env / `.env`)
 
