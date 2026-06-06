@@ -12,3 +12,4 @@ scikit-learn==1.6.1   # TabPFN dependency; pinned for reproducible builds
 tabpfn==2.2.1         # TabPFN v2 model, weights pulled tokenless from HuggingFace
 torch==2.5.1          # install the +cpu wheel (see note above)
 ortools==9.15.6755    # OR-Tools VRP solver (Phase 2.4); pulls protobuf, absl-py, immutabledict
+openai==2.41.0        # OpenAI-compatible client for SEA-LION + Gemini fallback (Phase 2.5)

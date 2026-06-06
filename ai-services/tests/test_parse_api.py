@@ -1,0 +1,84 @@
+"""API-level tests for POST /parse.
+
+The app's real parser (built from .env keys) is replaced with a fake-backed one so these
+run offline and deterministically. DISABLE_TABPFN avoids loading torch in the lifespan.
+"""
+import os
+
+os.environ["DISABLE_TABPFN"] = "true"  # must be set before app/Settings construction
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.core.config import Settings
+from app.core.rate_limiter import RateLimiter
+from app.main import app
+from app.services.parser import Parser
+
+REPLY_HIGH = (
+    '{"location":"Barangay Apas, Cebu City","population_estimate":500,'
+    '"needs_severity":"high","road_status":"impassable",'
+    '"confidence":{"location":0.95,"population_estimate":0.7,'
+    '"needs_severity":0.85,"road_status":0.9},"overall_confidence":0.82}'
+)
+REPLY_LOW = REPLY_HIGH.replace('"overall_confidence":0.82', '"overall_confidence":0.3')
+
+
+class FakeBackend:
+    def __init__(self, name: str, reply: str):
+        self.name = name
+        self._reply = reply
+
+    def complete(self, system: str, user: str) -> str:
+        return self._reply
+
+
+def install_parser(reply: str) -> None:
+    app.state.parser = Parser(
+        Settings(), primary=FakeBackend("sea-lion", reply), fallback=None,
+        rate_limiter=RateLimiter(10, 60, now=lambda: 0.0, sleep=lambda dt: None),
+    )
+
+
+@pytest.fixture()
+def client():
+    with TestClient(app) as c:  # lifespan builds the real parser; we override it below
+        yield c
+
+
+def test_parse_ok(client):
+    install_parser(REPLY_HIGH)
+    r = client.post("/parse", json={"text": "Grabe ang baha sa Apas, 500 katawo, dili maagian",
+                                    "id": "r1"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["provider"] == "sea-lion"
+    assert body["id"] == "r1"
+    assert body["needs_review"] is False
+    fr = body["field_report"]
+    assert fr["source"] == "parsed"
+    assert fr["location_text"] == "Barangay Apas, Cebu City"
+    assert fr["needs_severity"] == "high"
+    assert fr["road_status"] == "impassable"
+    assert fr["road_impassable"] is True
+    assert fr["status"] == "pending"
+
+
+def test_parse_low_confidence_flagged(client):
+    install_parser(REPLY_LOW)
+    r = client.post("/parse", json={"text": "vague"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["needs_review"] is True
+    assert body["field_report"]["status"] == "flagged"
+
+
+def test_parse_rejects_empty_text(client):
+    r = client.post("/parse", json={"text": ""})
+    assert r.status_code == 422
+
+
+def test_health_reports_parse_providers(client):
+    r = client.get("/health")
+    assert r.status_code == 200
+    assert "parse_providers" in r.json()

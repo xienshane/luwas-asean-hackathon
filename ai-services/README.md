@@ -11,16 +11,17 @@ pinned: false
 # LUWAS AI Services
 
 One FastAPI app (Hugging Face Space, Docker SDK, free CPU tier) hosting LUWAS's
-inference endpoints. Phase 2.2 ships the **impact predictor** and Phase 2.4 the **OR-Tools
-routing** solver; parsing (SEA-LION) mounts alongside them in a later phase.
+inference endpoints: the **impact predictor** (2.2), the **OR-Tools routing** solver (2.4),
+and the **SEA-LION NLP parser** (2.5).
 
 ## Endpoints
 
 | Method | Path               | Purpose                                              |
 |--------|--------------------|------------------------------------------------------|
-| GET    | `/health`          | Liveness + active model framing + TabPFN status.     |
+| GET    | `/health`          | Liveness + model framing + TabPFN status + parse providers. |
 | POST   | `/predict-impact`  | Per-barangay affected-population + damage severity.  |
 | POST   | `/optimize-routes` | Multi-team vehicle routing over real (pgRouting) roads. |
+| POST   | `/parse`           | Bisaya/Tagalog field-report text → structured field_reports. |
 
 ### `POST /predict-impact`
 
@@ -138,6 +139,30 @@ stops, ETAs, and per-vehicle cargo, plus any stops dropped under capacity pressu
 The Pydantic models in `app/models/routing.py` are the **canonical contract**;
 `web/lib/types/routing.ts` mirrors them.
 
+### `POST /parse`
+
+Turns unstructured **Filipino / Bisaya (Cebuano) / Tagalog** field-report text into a
+normalized `field_reports` payload: `location_text`, `population_estimate`, `needs_severity`
+(low/moderate/high/critical), `road_status` (passable/impassable/unknown), each with a
+confidence, plus an overall confidence.
+
+- **SEA-LION primary, Gemini fallback.** Calls SEA-LION (`aisingapore/Llama-SEA-LION-v3.5-70B-R`,
+  OpenAI-compatible) rate-limited to the **10-calls/min** free tier; on any error or
+  unparseable output it falls back to **Gemini 2.5 Flash** (also OpenAI-compatible). The
+  response's `provider` says which answered.
+- **Review gating.** Extractions with overall confidence below
+  `PARSE_CONFIDENCE_THRESHOLD` are returned with `needs_review=true` and `status="flagged"`
+  — surfaced for coordinator review, **not** auto-committed (CLAUDE.md > Rules: assistive).
+- **Robust to reasoning output.** The JSON extractor tolerates `<think>` preambles and code
+  fences; values are coerced to the controlled vocabularies (incl. Bisaya/Tagalog synonyms).
+
+Acceptance (Phase 2.5): `tests/test_parse_live.py` (marked `live`) parses **10/10** sample
+Bisaya/Tagalog reports correctly against the real APIs (bar is 8/10); the offline suite
+covers flagging, fallback, the rate limiter, and JSON extraction.
+
+The Pydantic models in `app/models/parse.py` are the **canonical contract**;
+`web/lib/types/parse.ts` mirrors them.
+
 ## Configuration (env / `.env`)
 
 | Var                    | Default                  | Meaning                                             |
@@ -148,6 +173,12 @@ The Pydantic models in `app/models/routing.py` are the **canonical contract**;
 | `TABPFN_N_ESTIMATORS`  | `1`                      | More = slower, marginally better.                   |
 | `TABPFN_CONTEXT_SIZE`  | `128`                    | In-context rows; raise for accuracy where CPU allows.|
 | `DISABLE_TABPFN`       | `false`                  | Force the heuristic (skips torch); used by tests.   |
+| `SEA_LION_API_KEY`     | _(none)_                 | SEA-LION key; parser primary is disabled if unset.  |
+| `SEA_LION_MODEL`       | `aisingapore/Llama-SEA-LION-v3.5-70B-R` | Parser model.                        |
+| `SEA_LION_MAX_CALLS_PER_MIN` | `10`               | Free-tier rate limit enforced by the limiter.       |
+| `GEMINI_API_KEY`       | _(none)_                 | Gemini key; fallback is disabled if unset.          |
+| `GEMINI_MODEL`         | `gemini-2.5-flash`       | Fallback model (OpenAI-compat endpoint).            |
+| `PARSE_CONFIDENCE_THRESHOLD` | `0.6`              | Below this, extractions are flagged for review.     |
 
 ## Local development
 
@@ -156,9 +187,10 @@ python3.12 -m venv .venv
 .venv/bin/pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
 .venv/bin/pip install -r requirements-dev.txt
 
-# run tests (heuristic + API always; TabPFN if installed)
-.venv/bin/python -m pytest                 # full suite
-.venv/bin/python -m pytest -m "not tabpfn"  # skip the heavy model tests
+# run tests (offline always; `tabpfn` needs the model, `live` hits SEA-LION/Gemini)
+.venv/bin/python -m pytest -m "not tabpfn and not live"  # fast offline suite
+.venv/bin/python -m pytest                               # + TabPFN if installed
+.venv/bin/python -m pytest -m live -s                    # Phase 2.5 live 8/10 acceptance (needs keys)
 
 # serve locally on :8000 (matches AI_SERVICE_URL; the Space serves on 7860 via Docker)
 .venv/bin/uvicorn app.main:app --reload --port 8000
