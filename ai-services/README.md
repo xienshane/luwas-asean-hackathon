@@ -81,6 +81,31 @@ The Pydantic models in `app/models/impact.py` are the **canonical contract**;
   `damage_rate ≈ structural_vuln_frac × (0.3 + 0.7·intensity)`, `intensity =
   category_ordinal / 5`.
 
+## Sphere supply engine (module, Phase 2.3)
+
+`app/services/sphere_supply.py` is a **deterministic, offline** function — no model, no
+network — that turns a predicted affected-population count into an itemized relief
+manifest using published humanitarian standards (Sphere Handbook minimums + IFRC NFI
+ratios). It is importable (consumed by OR-Tools routing in 2.4 as per-stop cargo demand);
+an HTTP endpoint can mount it later.
+
+```python
+from app.services.sphere_supply import sphere_supply
+
+manifest = sphere_supply(predicted_affected=1200, days=3, access_modifier=0.8, id="brgy-007")
+```
+
+- **Standards:** water 15 L/person/day, food 2,100 kcal/person/day → ration packs
+  (1 pack = 2,100 kcal = one person-day), 2 tarpaulins/household, 1 blanket/person,
+  1 hygiene kit/household, planning household size 5.
+- **`access_modifier`** scales every *supplied* quantity (1.0 full, 0.5 half deliverable,
+  1.2 = +20% buffer); the structural household count is unchanged by it.
+- **Auditable:** every line carries the `inputs` it used and a human-readable `basis`
+  string, plus a logistics `weight_kg`; the manifest sums `total_weight_kg`.
+
+The Pydantic models in `app/models/supply.py` are the **canonical contract**;
+`web/lib/types/supply.ts` mirrors them.
+
 ## Configuration (env / `.env`)
 
 | Var                    | Default                  | Meaning                                             |
