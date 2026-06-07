@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Activity, 
   Check, 
@@ -11,7 +11,9 @@ import {
   Send,
   Building,
   User,
-  AlertOctagon
+  AlertOctagon,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { FieldReport } from '@/lib/mockData';
 
@@ -20,6 +22,9 @@ interface BottomOperationsConsoleProps {
   activityLogs: { id: string; time: string; event: string; type: 'info' | 'warn' | 'success' | 'alert' }[];
   onConfirmReport: (id: string) => void;
   onFlagReport: (id: string) => void;
+  initialHeight?: number; // Initial height in pixels
+  minHeight?: number;
+  maxHeight?: number;
 }
 
 interface CommsMessage {
@@ -34,9 +39,18 @@ export default function BottomOperationsConsole({
   reports,
   activityLogs,
   onConfirmReport,
-  onFlagReport
+  onFlagReport,
+  initialHeight = 280,
+  minHeight = 200,
+  maxHeight = 600
 }: BottomOperationsConsoleProps) {
   const [activeTab, setActiveTab] = useState<'feed' | 'queue' | 'comms'>('queue');
+  const [height, setHeight] = useState(initialHeight);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const dragStartY = useRef(0);
+  const startHeight = useRef(0);
+  const containerRef = useRef<HTMLDivElement>(null);
   
   // Compact Communications state
   const [comms, setComms] = useState<CommsMessage[]>([
@@ -65,8 +79,69 @@ export default function BottomOperationsConsole({
     setNewMsgText('');
   };
 
+  // Handle drag to resize
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+    dragStartY.current = e.clientY;
+    startHeight.current = height;
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isDragging) return;
+    
+    const deltaY = dragStartY.current - e.clientY;
+    let newHeight = startHeight.current + deltaY;
+    
+    // Clamp height between min and max
+    newHeight = Math.min(maxHeight, Math.max(minHeight, newHeight));
+    setHeight(newHeight);
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const toggleExpand = () => {
+    if (isExpanded) {
+      setHeight(initialHeight);
+    } else {
+      setHeight(maxHeight);
+    }
+    setIsExpanded(!isExpanded);
+  };
+
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    } else {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging]);
+
   return (
-    <div className="h-[240px] bg-slate-950 border-t border-slate-800 flex flex-col overflow-hidden text-xs">
+    <div
+      ref={containerRef}
+      className="bg-slate-950 border-t border-slate-800 flex flex-col overflow-hidden text-xs shadow-lg"
+      style={{ height: `${height}px` }}
+    >
+      {/* Draggable Resize Handle */}
+      <div 
+        className="h-1.5 bg-slate-800 hover:bg-teal-500 cursor-row-resize transition-colors group relative"
+        onMouseDown={handleMouseDown}
+      >
+        <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2">
+          <div className="w-8 h-1 bg-slate-600 rounded-full group-hover:bg-teal-400 transition-colors"></div>
+        </div>
+      </div>
+
       {/* Console Tab Bar */}
       <div className="flex items-center justify-between bg-slate-900 border-b border-slate-800 px-4">
         <div className="flex">
@@ -112,6 +187,18 @@ export default function BottomOperationsConsole({
           </button>
         </div>
 
+        {/* Expand/Collapse Button */}
+        <button
+          onClick={toggleExpand}
+          className="p-1.5 hover:bg-slate-800 rounded-md transition-colors cursor-pointer"
+          title={isExpanded ? "Collapse" : "Expand"}
+        >
+          {isExpanded ? (
+            <Minimize2 className="w-4 h-4 text-slate-400" />
+          ) : (
+            <Maximize2 className="w-4 h-4 text-slate-400" />
+          )}
+        </button>
       </div>
 
       {/* Tab Panel Content */}
@@ -171,7 +258,7 @@ export default function BottomOperationsConsole({
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => onConfirmReport(report.id)}
-                          className="px-2 py-0.5 bg-teal-900/60 hover:bg-teal-850 text-teal-300 border border-teal-700/60 font-bold rounded cursor-pointer flex items-center gap-0.5 transition-colors"
+                          className="px-2 py-0.5 bg-teal-900/60 hover:bg-teal-800 text-teal-300 border border-teal-700/60 font-bold rounded cursor-pointer flex items-center gap-0.5 transition-colors"
                         >
                           <Check className="w-3 h-3" /> Confirm
                         </button>
@@ -229,11 +316,12 @@ export default function BottomOperationsConsole({
                 value={newMsgText}
                 onChange={(e) => setNewMsgText(e.target.value)}
                 placeholder="Type operational notice..."
-                className="w-full flex-1 bg-slate-950 border border-slate-850 p-2 rounded-lg text-slate-200 placeholder-slate-600 focus:outline-none focus:border-teal-500 text-[10.5px] resize-none mb-2"
+                className="w-full flex-1 bg-slate-950 border border-slate-800 p-2 rounded-lg text-slate-200 placeholder-slate-600 focus:outline-none focus:border-teal-500 text-[10.5px] resize-none mb-2"
+                rows={3}
               />
               <button
                 type="submit"
-                className="w-full py-1.5 bg-teal-900 hover:bg-teal-850 border border-teal-800 text-teal-100 font-bold rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                className="w-full py-1.5 bg-teal-900 hover:bg-teal-800 border border-teal-700 text-teal-100 font-bold rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5" /> Send Notice
               </button>

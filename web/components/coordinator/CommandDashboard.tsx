@@ -256,6 +256,37 @@ export default function CommandDashboard() {
   // Global telemetry counters
   const reportsCount = reports.filter(r => r.status === 'pending').length;
   const highPriorityCount = scores.filter(s => s.score >= 0.5).length;
+// Console resize state
+const [consoleHeight, setConsoleHeight] = useState(240);
+const [isResizing, setIsResizing] = useState(false);
+const startYRef = React.useRef(0);
+const startHeightRef = React.useRef(240);
+
+const handleMouseDown = (e: React.MouseEvent) => {
+  setIsResizing(true);
+  startYRef.current = e.clientY;
+  startHeightRef.current = consoleHeight;
+};
+
+React.useEffect(() => {
+  if (!isResizing) return;
+  const onMouseMove = (e: MouseEvent) => {
+    const delta = startYRef.current - e.clientY; // moving up increases height
+    const newHeight = Math.max(120, startHeightRef.current + delta);
+    setConsoleHeight(newHeight);
+  };
+  const onMouseUp = () => setIsResizing(false);
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mouseup', onMouseUp);
+  return () => {
+    window.removeEventListener('mousemove', onMouseMove);
+    window.removeEventListener('mouseup', onMouseUp);
+  };
+}, [isResizing]);
+
+const ResizeHandle = () => (
+  <div className="h-2 cursor-ns-resize bg-slate-800" onMouseDown={handleMouseDown} />
+);
 
   return (
     <div className="flex h-screen w-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
@@ -266,8 +297,8 @@ export default function CommandDashboard() {
         reportsCount={reportsCount}
         highPriorityCount={highPriorityCount}
         onCreateIncident={handleCreateIncident}
-        onBroadcastAlert={() => {}}
-        onExportReport={() => {}}
+        // onBroadcastAlert={() => {}}
+        // onExportReport={() => {}}
       />
 
       {/* Main workspace — switches based on currentView */}
