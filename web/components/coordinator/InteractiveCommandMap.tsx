@@ -1,34 +1,30 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-  Compass, 
-  Layers, 
-  MapPin, 
-  AlertTriangle, 
-  Navigation, 
-  Truck, 
-  Home, 
-  Info, 
-  Check, 
-  AlertOctagon, 
+import {
+  Compass,
   FileText,
   Clock,
-  Shield,
-  Activity,
-  Archive
+  Check,
+  AlertOctagon,
 } from 'lucide-react';
-import { 
-  Barangay, 
-  FieldReport, 
-  Team, 
-  RoadEdge, 
-  Route, 
-  Volunteer, 
-  LocationHub,
+import {
+  Barangay,
+  FieldReport,
+  Team,
+  RoadEdge,
+  Route,
   mockLocationHubs,
-  mockVolunteers
+  mockVolunteers,
 } from '@/lib/mockData';
+
+// ─── Leaflet types (avoid full @types/leaflet dep requirement) ───────────────
+declare global {
+  interface Window {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    L: any;
+  }
+}
 
 interface InteractiveCommandMapProps {
   barangays: Barangay[];
@@ -46,6 +42,50 @@ interface InteractiveCommandMapProps {
   onFlagReport: (reportId: string) => void;
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function scoreColor(score: number): string {
+  if (score >= 0.7) return '#7f1d1d';
+  if (score >= 0.4) return '#dc2626';
+  if (score >= 0.2) return '#d97706';
+  return '#0d5c56';
+}
+
+function roadStyle(status: string) {
+  switch (status) {
+    case 'slow':    return { color: '#d97706', weight: 3,   dashArray: undefined };
+    case 'blocked': return { color: '#ef4444', weight: 2.5, dashArray: '6 4' };
+    case 'damaged': return { color: '#b91c1c', weight: 4,   dashArray: '5 4' };
+    default:        return { color: '#475569', weight: 2,   dashArray: undefined };
+  }
+}
+
+function reportFillColor(source: string): string {
+  if (source === 'sms')    return '#06b6d4';
+  if (source === 'parsed') return '#a855f7';
+  return '#0d9488';
+}
+
+function reportOutlineColor(status: string): string {
+  if (status === 'pending') return '#eab308';
+  if (status === 'flagged') return '#ef4444';
+  return '#22c55e';
+}
+
+function hubColor(type: string): string {
+  if (type === 'shelter')    return '#a855f7';
+  if (type === 'supply_hub') return '#3b82f6';
+  return '#2dd4bf';
+}
+
+function volColor(availability: string): string {
+  if (availability === 'busy')    return '#eab308';
+  if (availability === 'offline') return '#64748b';
+  return '#22c55e';
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
+
 export default function InteractiveCommandMap({
   barangays,
   reports,
@@ -59,13 +99,17 @@ export default function InteractiveCommandMap({
   scores,
   onUpdateRoadStatus,
   onConfirmReport,
-  onFlagReport
+  onFlagReport,
 }: InteractiveCommandMapProps) {
-  // Map dimensions
-  const width = 600;
-  const height = 550;
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mapRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const layerGroupsRef = useRef<Record<string, any>>({});
+  const leafletLoadedRef = useRef(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Active layers
   const [mapLayers, setMapLayers] = useState({
     barangays: true,
     roads: true,
@@ -73,645 +117,503 @@ export default function InteractiveCommandMap({
     routes: true,
     teams: true,
     volunteers: true,
-    hubs: true
+    hubs: true,
   });
 
-  // Selected road edge for direct on-map editing
   const [selectedEdge, setSelectedEdge] = useState<RoadEdge | null>(null);
   const [roadNotes, setRoadNotes] = useState('');
 
-  // ── Zoom & Pan state ──────────────────────────────────────────────────────
-  const [viewport, setViewport] = useState({ scale: 1, tx: 0, ty: 0 });
-  const svgRef = useRef<SVGSVGElement>(null);
-  // Pan tracking — use refs so state changes don't cause re-renders during drag
-  const isPanning = useRef(false);           // true only after drag threshold crossed
-  const pointerDownStart = useRef<{ x: number; y: number; pointerId: number } | null>(null);
-  const lastPointer = useRef({ x: 0, y: 0 });
-  const DRAG_THRESHOLD_PX = 5;              // pixels before pan locks in
-  const MIN_SCALE = 0.5;
-  const MAX_SCALE = 6;
+  const getScoreData = useCallback(
+    (barangayId: string) =>
+      scores.find((s) => s.barangayId === barangayId) ?? { score: 0, hoursSinceContact: null },
+    [scores],
+  );
 
-  const clampTranslate = useCallback((scale: number, tx: number, ty: number) => {
-    const maxTx = width  * scale * 0.8;
-    const maxTy = height * scale * 0.8;
-    return {
-      tx: Math.max(-maxTx, Math.min(maxTx, tx)),
-      ty: Math.max(-maxTy, Math.min(maxTy, ty)),
-    };
-  }, [width, height]);
+  // ── Load Leaflet CSS + JS once ────────────────────────────────────────────
+  useEffect(() => {
+    if (leafletLoadedRef.current) return;
+    leafletLoadedRef.current = true;
 
-  const handleWheel = useCallback((e: React.WheelEvent<SVGSVGElement>) => {
-    e.preventDefault();
-    const delta = e.deltaY < 0 ? 1.12 : 0.89;
-    setViewport(prev => {
-      const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, prev.scale * delta));
-      const rect = svgRef.current?.getBoundingClientRect();
-      if (!rect) return prev;
-      const svgW = rect.width;
-      const svgH = rect.height;
-      const cursorX = ((e.clientX - rect.left) / svgW) * width;
-      const cursorY = ((e.clientY - rect.top)  / svgH) * height;
-      const scaleFactor = newScale / prev.scale;
-      const rawTx = cursorX + (prev.tx - cursorX) * scaleFactor;
-      const rawTy = cursorY + (prev.ty - cursorY) * scaleFactor;
-      const { tx, ty } = clampTranslate(newScale, rawTx, rawTy);
-      return { scale: newScale, tx, ty };
-    });
-  }, [clampTranslate, width, height]);
-
-  // ── Threshold-based pan: record intent on pointerdown, commit only after drag ──
-  const handlePointerDown = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
-    if (e.button !== 0) return;
-    // Record where the press started — don't pan yet, don't capture yet.
-    pointerDownStart.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
-    lastPointer.current = { x: e.clientX, y: e.clientY };
-  }, []);
-
-  const handlePointerMove = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
-    if (!pointerDownStart.current) return;
-
-    const dx = e.clientX - lastPointer.current.x;
-    const dy = e.clientY - lastPointer.current.y;
-
-    if (!isPanning.current) {
-      // Check if we've exceeded the drag threshold
-      const totalDx = e.clientX - pointerDownStart.current.x;
-      const totalDy = e.clientY - pointerDownStart.current.y;
-      const dist = Math.sqrt(totalDx * totalDx + totalDy * totalDy);
-      if (dist < DRAG_THRESHOLD_PX) return; // still just a click — ignore
-
-      // Threshold crossed — commit to panning now
-      isPanning.current = true;
-      (e.currentTarget as SVGSVGElement).setPointerCapture(pointerDownStart.current.pointerId);
+    if (!document.getElementById('leaflet-css')) {
+      const link = document.createElement('link');
+      link.id = 'leaflet-css';
+      link.rel = 'stylesheet';
+      link.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css';
+      document.head.appendChild(link);
     }
 
-    lastPointer.current = { x: e.clientX, y: e.clientY };
-
-    const rect = svgRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const svgDx = (dx / rect.width)  * width;
-    const svgDy = (dy / rect.height) * height;
-
-    setViewport(prev => {
-      const { tx, ty } = clampTranslate(prev.scale, prev.tx + svgDx, prev.ty + svgDy);
-      return { ...prev, tx, ty };
-    });
-  }, [clampTranslate, width, height]);
-
-  const handlePointerUp = useCallback(() => {
-    isPanning.current = false;
-    pointerDownStart.current = null;
+    if (!window.L) {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js';
+      script.onload = () => initMap();
+      document.head.appendChild(script);
+    } else {
+      initMap();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const zoomIn  = () => setViewport(prev => {
-    const newScale = Math.min(MAX_SCALE, prev.scale * 1.25);
-    const { tx, ty } = clampTranslate(newScale, prev.tx, prev.ty);
-    return { scale: newScale, tx, ty };
-  });
-  const zoomOut = () => setViewport(prev => {
-    const newScale = Math.max(MIN_SCALE, prev.scale / 1.25);
-    const { tx, ty } = clampTranslate(newScale, prev.tx, prev.ty);
-    return { scale: newScale, tx, ty };
-  });
-  const resetView = () => setViewport({ scale: 1, tx: 0, ty: 0 });
+  // ── Build / rebuild map overlays when data changes ────────────────────────
+  useEffect(() => {
+    if (!mapRef.current) return;
+    rebuildOverlays();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [barangays, reports, edges, routes, teams, scores]);
+
+  // ── Sync visibility when layer toggles change ─────────────────────────────
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const L = window.L;
+    Object.entries(mapLayers).forEach(([key, visible]) => {
+      const lg = layerGroupsRef.current[key];
+      if (!lg) return;
+      if (visible && !mapRef.current.hasLayer(lg)) lg.addTo(mapRef.current);
+      if (!visible && mapRef.current.hasLayer(lg))  mapRef.current.removeLayer(lg);
+    });
+  }, [mapLayers]);
+
+  // ── Highlight selected barangay ───────────────────────────────────────────
+  useEffect(() => {
+    // Re-render barangay layer so the selected ring updates
+    if (!mapRef.current) return;
+    rebuildBarangayLayer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBarangay]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  function initMap() {
+    const L = window.L;
+    if (!mapContainerRef.current || mapRef.current) return;
+
+    const map = L.map(mapContainerRef.current, {
+      center: [10.33, 123.905],
+      zoom: 13,
+      zoomControl: false,
+      attributionControl: false,
+    });
+
+    // Muted OSM tile layer — desaturated so EOC overlays dominate
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      className: 'eoc-tiles',
+    }).addTo(map);
+
+    L.control.attribution({ prefix: false, position: 'bottomleft' })
+      .addAttribution('© OpenStreetMap')
+      .addTo(map);
+
+    // Inject tile filter CSS once
+    if (!document.getElementById('eoc-tile-style')) {
+      const style = document.createElement('style');
+      style.id = 'eoc-tile-style';
+      style.textContent = `.eoc-tiles { filter: invert(1) hue-rotate(180deg) saturate(0.25) brightness(0.75) contrast(1.1); } .leaflet-container { background: #020617; }`;
+      document.head.appendChild(style);
+    }
+
+    // Create layer groups
+    const keys = ['barangays', 'roads', 'reports', 'routes', 'teams', 'volunteers', 'hubs'] as const;
+    keys.forEach((k) => {
+      layerGroupsRef.current[k] = L.layerGroup().addTo(map);
+    });
+
+    mapRef.current = map;
+    rebuildOverlays();
+  }
+
+  function rebuildOverlays() {
+    rebuildBarangayLayer();
+    rebuildRoadLayer();
+    rebuildReportLayer();
+    rebuildRouteLayer();
+    rebuildTeamLayer();
+    rebuildVolunteerLayer();
+    rebuildHubLayer();
+  }
+
+  function clearLayer(key: string) {
+    layerGroupsRef.current[key]?.clearLayers();
+  }
+
+  // ── 1. Barangays ──────────────────────────────────────────────────────────
+  function rebuildBarangayLayer() {
+    const L = window.L;
+    if (!L) return;
+    clearLayer('barangays');
+    const lg = layerGroupsRef.current['barangays'];
+
+    barangays.forEach((b) => {
+      const { score } = getScoreData(b.id);
+      const fill = scoreColor(score);
+      const critical = score >= 0.7;
+      const isSelected = selectedBarangay?.id === b.id;
+
+      const size = isSelected ? 20 : 16;
+      const pulseRing = critical
+        ? `<div style="position:absolute;inset:-4px;border-radius:50%;border:2px solid ${fill};opacity:0.5;animation:eoc-ping 1.5s cubic-bezier(0,0,0.2,1) infinite;"></div>`
+        : '';
+      const selRing = isSelected
+        ? `<div style="position:absolute;inset:-5px;border-radius:50%;border:1.5px dashed #2dd4bf;"></div>`
+        : '';
+
+      const html = `
+        <div style="position:relative;width:${size}px;height:${size}px;">
+          ${pulseRing}${selRing}
+          <div style="position:absolute;inset:0;border-radius:50%;background:${fill};border:2px solid #020617;"></div>
+        </div>`;
+
+      const icon = L.divIcon({ html, className: '', iconAnchor: [size / 2, size / 2] });
+
+      L.marker([b.latitude, b.longitude], { icon })
+        .bindTooltip(
+          `<span style="font-size:11px;color:#e2e8f0;background:#0f172a;padding:3px 8px;border-radius:4px;border:0.5px solid #334155;">${b.name}</span>`,
+          { direction: 'top', opacity: 1, className: '', offset: [0, -(size / 2 + 4)] },
+        )
+        .on('click', () => onSelectBarangay(b))
+        .addTo(lg);
+    });
+  }
+
+  // ── 2. Roads ──────────────────────────────────────────────────────────────
+  function rebuildRoadLayer() {
+    const L = window.L;
+    if (!L) return;
+    clearLayer('roads');
+    const lg = layerGroupsRef.current['roads'];
+
+    edges.forEach((edge) => {
+      const s = roadStyle(edge.status);
+      const isSelected = selectedEdge?.id === edge.id;
+
+      if (isSelected) {
+        L.polyline(
+          [[edge.sourceCoords.lat, edge.sourceCoords.lng], [edge.targetCoords.lat, edge.targetCoords.lng]],
+          { color: '#2dd4bf', weight: s.weight + 3, opacity: 0.6, lineCap: 'round' },
+        ).addTo(lg);
+      }
+
+      L.polyline(
+        [[edge.sourceCoords.lat, edge.sourceCoords.lng], [edge.targetCoords.lat, edge.targetCoords.lng]],
+        { color: s.color, weight: s.weight, dashArray: s.dashArray, opacity: 0.9, lineCap: 'round' },
+      )
+        .on('click', () => {
+          setSelectedEdge(edge);
+          setRoadNotes(edge.notes ?? '');
+          onSelectReport(null as unknown as FieldReport);
+        })
+        .addTo(lg);
+    });
+  }
+
+  // ── 3. Reports ────────────────────────────────────────────────────────────
+  function rebuildReportLayer() {
+    const L = window.L;
+    if (!L) return;
+    clearLayer('reports');
+    const lg = layerGroupsRef.current['reports'];
+
+    reports.forEach((report) => {
+      const fill = reportFillColor(report.source);
+      const outline = reportOutlineColor(report.status);
+      const isSelected = selectedReport?.id === report.id;
+      const size = isSelected ? 16 : 13;
+
+      const html = `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${fill};border:${isSelected ? 3 : 2}px solid ${outline};box-shadow:0 0 0 1px #020617;"></div>`;
+      const icon = L.divIcon({ html, className: '', iconAnchor: [size / 2, size / 2] });
+
+      L.marker([report.latitude, report.longitude], { icon })
+        .bindTooltip(
+          `<span style="font-size:10px;color:#e2e8f0;background:#0f172a;padding:3px 8px;border-radius:4px;border:0.5px solid #334155;max-width:180px;display:block;">${report.rawText}</span>`,
+          { direction: 'top', opacity: 1, className: '', offset: [0, -(size / 2 + 4)] },
+        )
+        .on('click', () => {
+          onSelectReport(report);
+          setSelectedEdge(null);
+        })
+        .addTo(lg);
+    });
+  }
+
+  // ── 4. Routes ─────────────────────────────────────────────────────────────
+  function rebuildRouteLayer() {
+    const L = window.L;
+    if (!L) return;
+    clearLayer('routes');
+    const lg = layerGroupsRef.current['routes'];
+
+    routes.forEach((route) => {
+      if (route.path.length < 2) return;
+      const latlngs = route.path.map((p) => [p.lat, p.lng]);
+      const isActive    = route.status === 'active';
+      const isCompleted = route.status === 'completed';
+
+      L.polyline(latlngs, {
+        color: '#0d9488',
+        weight: isActive ? 3.5 : 2.5,
+        dashArray: isActive ? undefined : '5 4',
+        opacity: isCompleted ? 0.35 : 0.85,
+        lineCap: 'round',
+      }).addTo(lg);
+    });
+  }
+
+  // ── 5. Teams ──────────────────────────────────────────────────────────────
+  function rebuildTeamLayer() {
+    const L = window.L;
+    if (!L) return;
+    clearLayer('teams');
+    const lg = layerGroupsRef.current['teams'];
+
+    teams.forEach((team) => {
+      const label = team.capacityKg >= 1000
+        ? `${(team.capacityKg / 1000).toFixed(1)}t`
+        : `${team.capacityKg}k`;
+
+      const html = `
+        <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+          <div style="width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:12px solid #64748b;filter:drop-shadow(0 0 0 1px #020617);"></div>
+          <div style="background:#1e293b;border:0.5px solid #475569;border-radius:3px;padding:1px 5px;font-size:8px;font-weight:700;color:#cbd5e1;font-family:monospace;">${label}</div>
+        </div>`;
+
+      const icon = L.divIcon({ html, className: '', iconAnchor: [7, 6] });
+      L.marker([team.baseLocation.lat + 0.005, team.baseLocation.lng + 0.005], { icon })
+        .bindTooltip(
+          `<span style="font-size:10px;color:#e2e8f0;background:#0f172a;padding:3px 8px;border-radius:4px;border:0.5px solid #334155;">${team.name}</span>`,
+          { direction: 'top', opacity: 1, className: '', offset: [0, -14] },
+        )
+        .addTo(lg);
+    });
+  }
+
+  // ── 6. Volunteers ─────────────────────────────────────────────────────────
+  function rebuildVolunteerLayer() {
+    const L = window.L;
+    if (!L) return;
+    clearLayer('volunteers');
+    const lg = layerGroupsRef.current['volunteers'];
+
+    mockVolunteers.forEach((vol) => {
+      const fill = volColor(vol.availability);
+      const html = `<div style="width:7px;height:7px;border-radius:50%;background:${fill};border:1px solid #020617;opacity:0.85;"></div>`;
+      const icon = L.divIcon({ html, className: '', iconAnchor: [3.5, 3.5] });
+      L.marker([vol.latitude, vol.longitude], { icon }).addTo(lg);
+    });
+  }
+
+  // ── 7. Hubs ───────────────────────────────────────────────────────────────
+  function rebuildHubLayer() {
+    const L = window.L;
+    if (!L) return;
+    clearLayer('hubs');
+    const lg = layerGroupsRef.current['hubs'];
+
+    mockLocationHubs.forEach((hub) => {
+      const fill = hubColor(hub.type);
+      const html = `
+        <div style="position:relative;width:12px;height:12px;">
+          <div style="position:absolute;inset:0;background:${fill};border:2px solid #020617;"></div>
+          <div style="position:absolute;inset:3px;background:#020617;"></div>
+        </div>`;
+      const icon = L.divIcon({ html, className: '', iconAnchor: [6, 6] });
+      L.marker([hub.latitude, hub.longitude], { icon })
+        .bindTooltip(
+          `<span style="font-size:10px;color:#e2e8f0;background:#0f172a;padding:3px 8px;border-radius:4px;border:0.5px solid #334155;">${hub.name}</span>`,
+          { direction: 'top', opacity: 1, className: '', offset: [0, -8] },
+        )
+        .addTo(lg);
+    });
+  }
+
+  // ── Fullscreen ────────────────────────────────────────────────────────────
+  const toggleFullscreen = useCallback(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) {
+      el.requestFullscreen().catch(() => setIsFullscreen(true));
+    } else {
+      document.exitFullscreen().catch(() => setIsFullscreen(false));
+    }
+  }, []);
+
+  useEffect(() => {
+    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    const onKeyDown  = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.fullscreenElement) setIsFullscreen(false); };
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => mapRef.current?.invalidateSize(), 200);
+    return () => clearTimeout(timer);
+  }, [isFullscreen]);
+
+  // ── Zoom helpers ──────────────────────────────────────────────────────────
+  const zoomIn    = () => mapRef.current?.zoomIn();
+  const zoomOut   = () => mapRef.current?.zoomOut();
+  const resetView = () => mapRef.current?.setView([10.33, 123.905], 13);
+
+  // ── Road status update ────────────────────────────────────────────────────
+  const handleRoadStatusChange = (status: 'open' | 'slow' | 'blocked' | 'damaged') => {
+    if (!selectedEdge) return;
+    onUpdateRoadStatus(selectedEdge.id, status, roadNotes);
+    setSelectedEdge((prev) => (prev ? { ...prev, status, notes: roadNotes } : null));
+    rebuildRoadLayer();
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
 
-  // Projections
-  const projectCoords = (lat: number, lng: number) => {
-    const minLng = 123.875;
-    const maxLng = 123.935;
-    const minLat = 10.285;
-    const maxLat = 10.375;
-
-    const x = ((lng - minLng) / (maxLng - minLng)) * width;
-    const y = height - ((lat - minLat) / (maxLat - minLat)) * height;
-
-    return { x: Math.max(10, Math.min(x, width - 10)), y: Math.max(10, Math.min(y, height - 10)) };
-  };
-
-  const getScoreData = (barangayId: string) => {
-    return scores.find(s => s.barangayId === barangayId) || { score: 0, hoursSinceContact: null };
-  };
-
-  // Barangay colors per EOC specification:
-  // Normal -> Dark Teal
-  // Watch -> Amber
-  // High Risk -> Red
-  // Critical Silence -> Pulsing Red
-  const getBarangayFillColor = (score: number) => {
-    if (score >= 0.7) return '#7f1d1d'; // Critical Silence - Solid Dark Red
-    if (score >= 0.4) return '#dc2626'; // High Risk - Solid Red
-    if (score >= 0.2) return '#d97706'; // Watch - Amber
-    return '#0d5c56'; // Normal - Dark Teal
-  };
-
-  // Format timestamp helper
-  const formatTime = (isoString: string | null) => {
-    if (!isoString) return 'No contact since incident';
-    const date = new Date(isoString);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' (' + Math.round((Date.now() - date.getTime()) / (3600 * 1000)) + 'h ago)';
-  };
-
-  const handleRoadStatusChange = (status: 'open' | 'slow' | 'blocked' | 'damaged') => {
-    if (selectedEdge) {
-      onUpdateRoadStatus(selectedEdge.id, status, roadNotes);
-      // Update local state
-      setSelectedEdge(prev => prev ? { ...prev, status, notes: roadNotes } : null);
-    }
-  };
+  const LAYER_BUTTONS: { key: keyof typeof mapLayers; label: string }[] = [
+    { key: 'barangays', label: 'Barangays' },
+    { key: 'roads',     label: 'Roads' },
+    { key: 'reports',   label: 'Reports' },
+    { key: 'routes',    label: 'Routes' },
+    { key: 'teams',     label: 'Teams' },
+    { key: 'volunteers',label: 'Volunteers' },
+    { key: 'hubs',      label: 'Hubs' },
+  ];
 
   return (
-    <div className="relative flex-1 bg-slate-950 border border-slate-800 rounded-xl overflow-hidden flex flex-col h-full shadow-lg">
-      {/* Map Control Header */}
+    <div
+      ref={wrapperRef}
+      className={`relative flex-1 bg-slate-950 border border-slate-800 rounded-xl overflow-hidden flex flex-col shadow-lg${
+        isFullscreen && !document.fullscreenElement ? ' fixed inset-0 z-[9999] h-screen w-screen rounded-none border-0' : ' h-full'
+      }`}
+    >
+
+      {/* ── Inject keyframe for pulse animation ── */}
+      <style>{`
+        @keyframes eoc-ping {
+          0%, 100% { transform: scale(1); opacity: 0.6; }
+          50%       { transform: scale(1.8); opacity: 0; }
+        }
+      `}</style>
+
+      {/* ── Header ── */}
       <div className="bg-slate-900 border-b border-slate-800 px-4 py-2 flex items-center justify-between z-10 select-none">
         <div className="flex items-center gap-2">
           <Compass className="w-4 h-4 text-teal-400" />
-          <span className="font-bold text-[11px] uppercase tracking-wider text-slate-300">Live Operations Map</span>
+          <span className="font-bold text-[11px] uppercase tracking-wider text-slate-300">
+            Live Operations Map
+          </span>
         </div>
 
-        {/* EOC Layer Toggles */}
         <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 p-0.5 rounded-lg text-[10px] text-slate-400">
-          <button 
-            onClick={() => setMapLayers(p => ({ ...p, barangays: !p.barangays }))}
-            className={`px-2 py-1 rounded transition-colors ${mapLayers.barangays ? 'bg-slate-900 text-teal-400 font-semibold' : 'hover:text-slate-200'}`}
-          >
-            Barangays
-          </button>
-          <button 
-            onClick={() => setMapLayers(p => ({ ...p, roads: !p.roads }))}
-            className={`px-2 py-1 rounded transition-colors ${mapLayers.roads ? 'bg-slate-900 text-teal-400 font-semibold' : 'hover:text-slate-200'}`}
-          >
-            Roads
-          </button>
-          <button 
-            onClick={() => setMapLayers(p => ({ ...p, reports: !p.reports }))}
-            className={`px-2 py-1 rounded transition-colors ${mapLayers.reports ? 'bg-slate-900 text-teal-400 font-semibold' : 'hover:text-slate-200'}`}
-          >
-            Reports
-          </button>
-          <button 
-            onClick={() => setMapLayers(p => ({ ...p, routes: !p.routes }))}
-            className={`px-2 py-1 rounded transition-colors ${mapLayers.routes ? 'bg-slate-900 text-teal-400 font-semibold' : 'hover:text-slate-200'}`}
-          >
-            Routes
-          </button>
-          <button 
-            onClick={() => setMapLayers(p => ({ ...p, teams: !p.teams }))}
-            className={`px-2 py-1 rounded transition-colors ${mapLayers.teams ? 'bg-slate-900 text-teal-400 font-semibold' : 'hover:text-slate-200'}`}
-          >
-            Teams
-          </button>
-          <button 
-            onClick={() => setMapLayers(p => ({ ...p, volunteers: !p.volunteers }))}
-            className={`px-2 py-1 rounded transition-colors ${mapLayers.volunteers ? 'bg-slate-900 text-teal-400 font-semibold' : 'hover:text-slate-200'}`}
-          >
-            Volunteers
-          </button>
-          <button 
-            onClick={() => setMapLayers(p => ({ ...p, hubs: !p.hubs }))}
-            className={`px-2 py-1 rounded transition-colors ${mapLayers.hubs ? 'bg-slate-900 text-teal-400 font-semibold' : 'hover:text-slate-200'}`}
-          >
-            Hubs
-          </button>
+          {LAYER_BUTTONS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setMapLayers((p) => ({ ...p, [key]: !p[key] }))}
+              className={`px-2 py-1 rounded transition-colors ${
+                mapLayers[key]
+                  ? 'bg-slate-900 text-teal-400 font-semibold'
+                  : 'hover:text-slate-200'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* SVG Canvas Map */}
-      <div className="flex-1 relative bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-900/60 to-slate-950/80 flex items-center justify-center overflow-hidden">
+      {/* ── Map area ── */}
+      <div className="flex-1 relative overflow-hidden">
 
-        {/* Zoom Controls */}
-        <div className="absolute top-3 right-3 z-10 flex flex-col gap-1">
-          <button
-            onClick={zoomIn}
-            className="w-7 h-7 bg-slate-900 border border-slate-700 hover:border-teal-600 text-slate-300 hover:text-teal-300 rounded flex items-center justify-center font-bold text-sm cursor-pointer transition-colors select-none"
-            title="Zoom In"
-          >+</button>
-          <button
-            onClick={zoomOut}
-            className="w-7 h-7 bg-slate-900 border border-slate-700 hover:border-teal-600 text-slate-300 hover:text-teal-300 rounded flex items-center justify-center font-bold text-sm cursor-pointer transition-colors select-none"
-            title="Zoom Out"
-          >−</button>
-          <button
-            onClick={resetView}
-            className="w-7 h-7 bg-slate-900 border border-slate-700 hover:border-teal-600 text-slate-400 hover:text-teal-300 rounded flex items-center justify-center text-[9px] font-bold cursor-pointer transition-colors select-none"
-            title="Reset View"
-          >⌂</button>
-        </div>
+        {/* Leaflet container */}
+        <div ref={mapContainerRef} className="absolute inset-0" />
 
-        {/* Zoom level badge */}
-        <div className="absolute bottom-3 left-3 z-10 bg-slate-950/80 border border-slate-800 px-1.5 py-0.5 rounded text-[9px] font-mono text-slate-500 select-none">
-          {Math.round(viewport.scale * 100)}%
-        </div>
-
-        <svg
-          ref={svgRef}
-          viewBox={`0 0 ${width} ${height}`}
-          className="w-full h-full select-none"
-          style={{ cursor: isPanning.current ? 'grabbing' : 'grab' }}
-          onWheel={handleWheel}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerLeave={handlePointerUp}
+        {/* ── Fullscreen button top-left ── */}
+        <button
+          onClick={toggleFullscreen}
+          title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+          className="absolute top-3 left-3 z-[1000] w-7 h-7 bg-slate-900/90 border border-slate-700 hover:border-teal-600 text-slate-300 hover:text-teal-300 rounded flex items-center justify-center cursor-pointer transition-colors select-none backdrop-blur-sm"
         >
-          {/* Viewport transform group — all map content lives here */}
-          <g transform={`translate(${viewport.tx}, ${viewport.ty}) scale(${viewport.scale})`}>
-          {/* Rigid grid for emergency coordination */}
-          <g stroke="#1e293b" strokeWidth="0.5" opacity="0.4">
-            {Array.from({ length: 15 }).map((_, i) => (
-              <line key={`x-${i}`} x1={(i + 1) * (width / 15)} y1="0" x2={(i + 1) * (width / 15)} y2={height} />
-            ))}
-            {Array.from({ length: 12 }).map((_, i) => (
-              <line key={`y-${i}`} x1="0" y1={(i + 1) * (height / 12)} x2={width} y2={(i + 1) * (height / 12)} />
-            ))}
-          </g>
-
-          {/* Coastal Contour Layer representation */}
-          <path 
-            d="M 60,60 Q 130,90 190,190 T 270,350 T 320,490 L 460,530 Q 530,390 490,250 T 370,120 T 260,30 Z" 
-            fill="#0f172a" 
-            stroke="#1e293b" 
-            strokeWidth="1.5" 
-            opacity="0.8"
-          />
-
-          {/* 1. BARANGAYS CENTROIDS LAYER */}
-          {mapLayers.barangays && (
-            <g>
-              {barangays.map((b) => {
-                const { x, y } = projectCoords(b.latitude, b.longitude);
-                const scoreInfo = getScoreData(b.id);
-                const fillColor = getBarangayFillColor(scoreInfo.score);
-                const isSelected = selectedBarangay?.id === b.id;
-                const isPulsing = scoreInfo.score >= 0.7; // Critical Silence
-
-                return (
-                  <g 
-                    key={`barangay-${b.id}`}
-                    transform={`translate(${x}, ${y})`}
-                    className="cursor-pointer"
-                    onClick={() => {
-                      onSelectBarangay(b);
-                      setSelectedEdge(null);
-                    }}
-                  >
-                    {/* Ring selection highlight */}
-                    {isSelected && (
-                      <circle cx="0" cy="0" r="14" fill="none" stroke="#2dd4bf" strokeWidth="1.5" strokeDasharray="3 2" />
-                    )}
-
-                    {/* EOC Pulsing Red indicator for Critical Silence */}
-                    {isPulsing && (
-                      <circle cx="0" cy="0" r="11" fill="none" stroke="#ef4444" strokeWidth="1.5" className="animate-ping opacity-60" />
-                    )}
-
-                    {/* Central Area node */}
-                    <circle
-                      cx="0"
-                      cy="0"
-                      r={isSelected ? 7.5 : 6}
-                      fill={fillColor}
-                      stroke="#020617"
-                      strokeWidth="1.5"
-                    />
-
-                    {/* Clean EOC text label */}
-                    <text
-                      x="10"
-                      y="3.5"
-                      fill={isSelected ? '#2dd4bf' : '#94a3b8'}
-                      fontSize="9px"
-                      fontWeight={isSelected ? 'bold' : 'normal'}
-                      className="font-sans font-medium pointer-events-none"
-                    >
-                      {b.name}
-                    </text>
-                  </g>
-                );
-              })}
-            </g>
+          {isFullscreen ? (
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/>
+            </svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
+            </svg>
           )}
+        </button>
 
-          {/* 2. ROAD CONDITIONS LAYER (road_edges) */}
-          {mapLayers.roads && (
-            <g>
-              {edges.map((edge) => {
-                const p1 = projectCoords(edge.sourceCoords.lat, edge.sourceCoords.lng);
-                const p2 = projectCoords(edge.targetCoords.lat, edge.targetCoords.lng);
+        {/* ── Zoom controls ── */}
+        <div className="absolute top-3 right-3 z-[1000] flex flex-col gap-1">
+          {[
+            { label: '+', title: 'Zoom In',  action: zoomIn },
+            { label: '−', title: 'Zoom Out', action: zoomOut },
+            { label: '⌂', title: 'Reset',    action: resetView },
+          ].map(({ label, title, action }) => (
+            <button
+              key={title}
+              onClick={action}
+              title={title}
+              className="w-7 h-7 bg-slate-900/90 border border-slate-700 hover:border-teal-600 text-slate-300 hover:text-teal-300 rounded flex items-center justify-center font-bold text-sm cursor-pointer transition-colors select-none backdrop-blur-sm"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
-                // Define styling based on EOC road severity specs
-                let strokeColor = '#475569'; // Open (Neutral Gray)
-                let strokeWidth = 1.5;
-                let dashArray = '0';
-                let isPulse = false;
-
-                if (edge.status === 'slow') {
-                  strokeColor = '#d97706'; // Slow (Amber)
-                  strokeWidth = 2.0;
-                } else if (edge.status === 'blocked') {
-                  strokeColor = '#ef4444'; // Blocked (Red dashed)
-                  strokeWidth = 2.0;
-                  dashArray = '4 3';
-                  isPulse = true;
-                } else if (edge.status === 'damaged') {
-                  strokeColor = '#b91c1c'; // Damaged (Thick red dashed)
-                  strokeWidth = 3.5;
-                  dashArray = '5 4';
-                  isPulse = true;
-                }
-
-                const isEdgeSelected = selectedEdge?.id === edge.id;
-
-                return (
-                  <g key={`edge-${edge.id}`}>
-                    {/* Wider hit zone for clickability */}
-                    <line
-                      x1={p1.x}
-                      y1={p1.y}
-                      x2={p2.x}
-                      y2={p2.y}
-                      stroke="transparent"
-                      strokeWidth="10"
-                      className="cursor-pointer"
-                      onClick={() => {
-                        setSelectedEdge(edge);
-                        setRoadNotes(edge.notes || '');
-                        onSelectReport(null as unknown as FieldReport);
-                      }}
-                    />
-
-                    {/* Selection outline */}
-                    {isEdgeSelected && (
-                      <line
-                        x1={p1.x}
-                        y1={p1.y}
-                        x2={p2.x}
-                        y2={p2.y}
-                        stroke="#2dd4bf"
-                        strokeWidth={strokeWidth + 2.5}
-                        opacity="0.8"
-                        strokeLinecap="round"
-                      />
-                    )}
-
-                    {/* Main road link line */}
-                    <line
-                      x1={p1.x}
-                      y1={p1.y}
-                      x2={p2.x}
-                      y2={p2.y}
-                      stroke={strokeColor}
-                      strokeWidth={strokeWidth}
-                      strokeDasharray={dashArray}
-                      strokeLinecap="round"
-                      className={isPulse ? 'animate-pulse' : ''}
-                    />
-                  </g>
-                );
-              })}
-            </g>
-          )}
-
-          {/* 3. DISPATCH ROUTES LAYER (Teal routes) */}
-          {mapLayers.routes && (
-            <g opacity="0.9">
-              {routes.map((route) => {
-                const points = route.path.map(p => projectCoords(p.lat, p.lng));
-                if (points.length < 2) return null;
-
-                const pathD = points.reduce((acc, p, idx) => 
-                  idx === 0 ? `M ${p.x},${p.y}` : `${acc} L ${p.x},${p.y}`, ''
-                );
-
-                const isActive = route.status === 'active';
-                const isCompleted = route.status === 'completed';
-
-                return (
-                  <path
-                    key={`route-${route.id}`}
-                    d={pathD}
-                    fill="none"
-                    stroke="#0d9488" // Teal color lines
-                    strokeWidth={isActive ? 3.5 : 2.5}
-                    strokeDasharray={isActive ? '0' : '5 4'} // solid active, dashed planned
-                    opacity={isCompleted ? 0.35 : 0.85} // faded completed
-                    strokeLinecap="round"
-                  />
-                );
-              })}
-            </g>
-          )}
-
-          {/* 4. FIELD REPORTS LAYER (Pins color-coded by source, outline by verification status) */}
-          {mapLayers.reports && (
-            <g>
-              {reports.map((report) => {
-                const { x, y } = projectCoords(report.latitude, report.longitude);
-                const isSelected = selectedReport?.id === report.id;
-
-                // Source Colors per Spec:
-                // SMS -> Cyan
-                // Mobile -> Teal
-                // Parsed -> Purple
-                let pinColor = '#0d9488'; // Default Mobile (Teal)
-                if (report.source === 'sms') pinColor = '#06b6d4'; // SMS (Cyan)
-                if (report.source === 'parsed') pinColor = '#a855f7'; // Parsed (Purple)
-
-                // Outline Status colors per Spec:
-                // Pending -> Yellow outline
-                // Confirmed -> Green outline
-                // Flagged -> Red outline
-                let outlineColor = '#22c55e'; // Confirmed (Green)
-                if (report.status === 'pending') outlineColor = '#eab308'; // Pending (Yellow)
-                if (report.status === 'flagged') outlineColor = '#ef4444'; // Flagged (Red)
-
-                return (
-                  <g 
-                    key={`pin-${report.id}`} 
-                    transform={`translate(${x}, ${y})`}
-                    className="cursor-pointer"
-                    onClick={() => {
-                      onSelectReport(report);
-                      setSelectedEdge(null);
-                    }}
-                  >
-                    {/* Ring outline */}
-                    <circle 
-                      cx="0" 
-                      cy="-8" 
-                      r="7.5" 
-                      fill="none" 
-                      stroke={outlineColor} 
-                      strokeWidth={isSelected ? 2.5 : 1.5} 
-                    />
-
-                    {/* Center report node dot */}
-                    <circle 
-                      cx="0" 
-                      cy="-8" 
-                      r="4.5" 
-                      fill={pinColor} 
-                      stroke="#020617" 
-                      strokeWidth="1" 
-                    />
-
-                    {/* Standard EOC marker bottom pin locator */}
-                    <path d="M-1 -1 L0 0 L1 -1 Z" fill={outlineColor} stroke={outlineColor} strokeWidth="1" />
-                  </g>
-                );
-              })}
-            </g>
-          )}
-
-          {/* 5. WAREHOUSES & HUBS LAYER */}
-          {mapLayers.hubs && (
-            <g>
-              {mockLocationHubs.map((hub) => {
-                const { x, y } = projectCoords(hub.latitude, hub.longitude);
-                
-                let hubColor = '#2dd4bf'; // Warehouse - Teal
-                if (hub.type === 'shelter') hubColor = '#a855f7'; // Shelter - Purple
-                if (hub.type === 'supply_hub') hubColor = '#3b82f6'; // Hub - Blue
-
-                return (
-                  <g key={hub.id} transform={`translate(${x}, ${y})`}>
-                    {/* Square representation */}
-                    <rect 
-                      x="-5.5" 
-                      y="-5.5" 
-                      width="11" 
-                      height="11" 
-                      fill={hubColor} 
-                      stroke="#020617" 
-                      strokeWidth="1.5" 
-                    />
-                    {/* Capacity indicators dot inside */}
-                    <rect x="-2" y="-2" width="4" height="4" fill="#020617" />
-                  </g>
-                );
-              })}
-            </g>
-          )}
-
-          {/* 6. DEPLOYED TEAMS LAYER (Simple markers with capacity badge) */}
-          {mapLayers.teams && (
-            <g>
-              {teams.map((team) => {
-                // If team is active/dispatched, represent it.
-                // Let's place teams near their bases or route paths
-                const { x, y } = projectCoords(team.baseLocation.lat + 0.005, team.baseLocation.lng + 0.005);
-
-                return (
-                  <g key={`team-marker-${team.id}`} transform={`translate(${x}, ${y})`}>
-                    {/* Simple grey marker triangle for fleet */}
-                    <polygon 
-                      points="0,-8 -7,5 7,5" 
-                      fill="#64748b" 
-                      stroke="#cbd5e1" 
-                      strokeWidth="1.5" 
-                    />
-                    
-                    {/* Capacity Badge */}
-                    <g transform="translate(0, 11)">
-                      <rect x="-11" y="-5" width="22" height="10" fill="#1e293b" stroke="#475569" strokeWidth="1" rx="2" />
-                      <text x="0" y="3" fill="#cbd5e1" fontSize="7px" fontWeight="bold" textAnchor="middle" className="font-mono">
-                        {team.capacityKg >= 1000 ? `${(team.capacityKg / 1000).toFixed(1)}t` : `${team.capacityKg}k`}
-                      </text>
-                    </g>
-                  </g>
-                );
-              })}
-            </g>
-          )}
-
-          {/* 7. VOLUNTEERS LAYER (Masked cluster points) */}
-          {mapLayers.volunteers && (
-            <g opacity="0.8">
-              {mockVolunteers.map((vol) => {
-                const { x, y } = projectCoords(vol.latitude, vol.longitude);
-                
-                // Color representing status
-                let volColor = '#22c55e'; // Available (Green)
-                if (vol.availability === 'busy') volColor = '#eab308'; // Busy (Yellow)
-                if (vol.availability === 'offline') volColor = '#64748b'; // Offline (Gray)
-
-                return (
-                  <g key={`vol-dot-${vol.id}`} transform={`translate(${x}, ${y})`}>
-                    <circle cx="0" cy="0" r="3.5" fill={volColor} stroke="#020617" strokeWidth="1" />
-                  </g>
-                );
-              })}
-            </g>
-          )}
-          </g>{/* end viewport transform group */}
-        </svg>
-
-        {/* 1. ROAD ACTION DRAWER (Pop-up inside center panel) */}
+        {/* ── Road edge popup ── */}
         {selectedEdge && (
-          <div className="absolute top-4 left-4 w-[280px] bg-slate-950 border border-slate-800 p-3 rounded-lg text-xs flex flex-col gap-2 z-20 shadow-2xl">
+          <div className="absolute top-4 left-4 w-[280px] bg-slate-950/95 border border-slate-800 p-3 rounded-lg text-xs flex flex-col gap-2 z-[1000] shadow-2xl backdrop-blur-sm">
             <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
-              <span className="font-bold text-slate-300 truncate max-w-[200px]">{selectedEdge.name}</span>
-              <button 
+              <span className="font-bold text-slate-300 truncate max-w-[200px]">
+                {selectedEdge.name}
+              </span>
+              <button
                 onClick={() => setSelectedEdge(null)}
                 className="text-slate-500 hover:text-slate-300 font-semibold cursor-pointer"
               >
                 ✕
               </button>
             </div>
-            
+
             <div className="space-y-1">
-              <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block">accessibility status</span>
+              <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block">
+                Accessibility Status
+              </span>
               <div className="grid grid-cols-2 gap-1 text-[10px]">
-                <button
-                  onClick={() => handleRoadStatusChange('open')}
-                  className={`py-1 border rounded font-semibold cursor-pointer transition-colors ${
-                    selectedEdge.status === 'open' 
-                      ? 'bg-slate-900 border-slate-700 text-slate-200' 
-                      : 'border-slate-850 hover:bg-slate-900 text-slate-500'
-                  }`}
-                >
-                  Open (Gray)
-                </button>
-                <button
-                  onClick={() => handleRoadStatusChange('slow')}
-                  className={`py-1 border rounded font-semibold cursor-pointer transition-colors ${
-                    selectedEdge.status === 'slow' 
-                      ? 'bg-amber-950/60 border-amber-800 text-amber-300' 
-                      : 'border-slate-850 hover:bg-slate-900 text-slate-500'
-                  }`}
-                >
-                  Slow (Amber)
-                </button>
-                <button
-                  onClick={() => handleRoadStatusChange('blocked')}
-                  className={`py-1 border rounded font-semibold cursor-pointer transition-colors ${
-                    selectedEdge.status === 'blocked' 
-                      ? 'bg-red-950/60 border-red-800 text-red-300' 
-                      : 'border-slate-850 hover:bg-slate-900 text-slate-500'
-                  }`}
-                >
-                  Blocked (Dashed)
-                </button>
-                <button
-                  onClick={() => handleRoadStatusChange('damaged')}
-                  className={`py-1 border rounded font-semibold cursor-pointer transition-colors ${
-                    selectedEdge.status === 'damaged' 
-                      ? 'bg-red-950 border-red-800 text-red-200' 
-                      : 'border-slate-850 hover:bg-slate-900 text-slate-500'
-                  }`}
-                >
-                  Damaged (Thick)
-                </button>
+                {(['open','slow','blocked','damaged'] as const).map((s) => {
+                  const styles: Record<string, string> = {
+                    open:    'bg-slate-900 border-slate-700 text-slate-200',
+                    slow:    'bg-amber-950/60 border-amber-800 text-amber-300',
+                    blocked: 'bg-red-950/60 border-red-800 text-red-300',
+                    damaged: 'bg-red-950 border-red-800 text-red-200',
+                  };
+                  const labels: Record<string, string> = {
+                    open: 'Open (Gray)', slow: 'Slow (Amber)',
+                    blocked: 'Blocked (Dashed)', damaged: 'Damaged (Thick)',
+                  };
+                  const active = selectedEdge.status === s;
+                  return (
+                    <button
+                      key={s}
+                      onClick={() => handleRoadStatusChange(s)}
+                      className={`py-1 border rounded font-semibold cursor-pointer transition-colors ${
+                        active ? styles[s] : 'border-slate-800 hover:bg-slate-900 text-slate-500'
+                      }`}
+                    >
+                      {labels[s]}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
             <div className="space-y-1 mt-1">
-              <label className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block">Obstruction Notes</label>
+              <label className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block">
+                Obstruction Notes
+              </label>
               <textarea
                 value={roadNotes}
                 onChange={(e) => setRoadNotes(e.target.value)}
                 placeholder="Details of blockage..."
-                className="w-full bg-slate-900 border border-slate-850 p-1.5 rounded text-[10.5px] text-slate-300 focus:outline-none focus:border-teal-500 resize-none h-12"
+                className="w-full bg-slate-900 border border-slate-800 p-1.5 rounded text-[10.5px] text-slate-300 focus:outline-none focus:border-teal-500 resize-none h-12"
               />
             </div>
 
@@ -720,23 +622,25 @@ export default function InteractiveCommandMap({
                 onUpdateRoadStatus(selectedEdge.id, selectedEdge.status, roadNotes);
                 setSelectedEdge(null);
               }}
-              className="w-full py-1.5 bg-teal-900 hover:bg-teal-850 border border-teal-800 text-teal-200 font-bold rounded transition-colors cursor-pointer"
+              className="w-full py-1.5 bg-teal-900 hover:bg-teal-800 border border-teal-800 text-teal-200 font-bold rounded transition-colors cursor-pointer"
             >
               Save Road Status
             </button>
           </div>
         )}
 
-        {/* 2. FIELD REPORT DETAIL POPUP */}
+        {/* ── Field report popup ── */}
         {selectedReport && (
-          <div className="absolute top-4 left-4 w-[280px] bg-slate-950 border border-slate-800 p-3.5 rounded-lg text-xs flex flex-col gap-2 z-20 shadow-2xl">
+          <div className="absolute top-4 left-4 w-[280px] bg-slate-950/95 border border-slate-800 p-3.5 rounded-lg text-xs flex flex-col gap-2 z-[1000] shadow-2xl backdrop-blur-sm">
             <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
               <div className="flex items-center gap-1.5">
                 <FileText className="w-3.5 h-3.5 text-teal-400" />
-                <span className="font-bold text-slate-300 uppercase">Report #{selectedReport.id}</span>
+                <span className="font-bold text-slate-300 uppercase">
+                  Report #{selectedReport.id}
+                </span>
               </div>
-              <button 
-                onClick={() => onSelectReport(null as any)}
+              <button
+                onClick={() => onSelectReport(null as unknown as FieldReport)}
                 className="text-slate-500 hover:text-slate-300 font-semibold cursor-pointer"
               >
                 ✕
@@ -745,22 +649,39 @@ export default function InteractiveCommandMap({
 
             <div className="space-y-2">
               <div className="flex items-center justify-between text-[10px] text-slate-500">
-                <span>Reporter: <strong className="text-slate-400">{selectedReport.reporterName}</strong></span>
-                <span className="flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" /> {new Date(selectedReport.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                <span>
+                  Reporter:{' '}
+                  <strong className="text-slate-400">{selectedReport.reporterName}</strong>
+                </span>
+                <span className="flex items-center gap-0.5">
+                  <Clock className="w-2.5 h-2.5" />
+                  {new Date(selectedReport.createdAt).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </span>
               </div>
 
-              <div className="bg-slate-900/60 border border-slate-850 p-2 rounded italic text-[11px] text-slate-300 leading-relaxed">
-                "{selectedReport.rawText}"
+              <div className="bg-slate-900/60 border border-slate-800 p-2 rounded italic text-[11px] text-slate-300 leading-relaxed">
+                &ldquo;{selectedReport.rawText}&rdquo;
               </div>
 
               <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-500">
                 <div>
-                  <span className="block text-[8px] uppercase font-bold text-slate-500">Related Barangay</span>
-                  <span className="text-slate-300 font-semibold">{selectedReport.barangayName || 'Unknown'}</span>
+                  <span className="block text-[8px] uppercase font-bold text-slate-500">
+                    Related Barangay
+                  </span>
+                  <span className="text-slate-300 font-semibold">
+                    {selectedReport.barangayName ?? 'Unknown'}
+                  </span>
                 </div>
                 <div>
-                  <span className="block text-[8px] uppercase font-bold text-slate-500">Confidence Score</span>
-                  <span className="text-slate-300 font-semibold">{Math.round(selectedReport.confidence * 100)}%</span>
+                  <span className="block text-[8px] uppercase font-bold text-slate-500">
+                    Confidence Score
+                  </span>
+                  <span className="text-slate-300 font-semibold">
+                    {Math.round(selectedReport.confidence * 100)}%
+                  </span>
                 </div>
               </div>
             </div>
@@ -770,18 +691,18 @@ export default function InteractiveCommandMap({
                 <button
                   onClick={() => {
                     onConfirmReport(selectedReport.id);
-                    onSelectReport(null as any);
+                    onSelectReport(null as unknown as FieldReport);
                   }}
-                  className="flex-1 py-1.5 bg-teal-900 hover:bg-teal-850 border border-teal-800 text-teal-200 font-bold rounded flex items-center justify-center gap-0.5 cursor-pointer transition-colors"
+                  className="flex-1 py-1.5 bg-teal-900 hover:bg-teal-800 border border-teal-800 text-teal-200 font-bold rounded flex items-center justify-center gap-0.5 cursor-pointer transition-colors"
                 >
                   <Check className="w-3 h-3" /> Confirm
                 </button>
                 <button
                   onClick={() => {
                     onFlagReport(selectedReport.id);
-                    onSelectReport(null as any);
+                    onSelectReport(null as unknown as FieldReport);
                   }}
-                  className="px-2 py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-red-400 font-bold rounded flex items-center justify-center gap-0.5 cursor-pointer transition-colors"
+                  className="px-2 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-red-400 font-bold rounded flex items-center justify-center gap-0.5 cursor-pointer transition-colors"
                 >
                   <AlertOctagon className="w-3 h-3" /> Flag
                 </button>
@@ -790,43 +711,57 @@ export default function InteractiveCommandMap({
           </div>
         )}
 
-        {/* 3. STATIC MAP LEGEND PANEL */}
-        <div className="absolute bottom-4 right-4 bg-slate-950 border border-slate-800 p-2.5 rounded-lg text-[9px] text-slate-400 flex flex-col gap-1.5 max-w-[150px] shadow-lg select-none">
-          <div className="font-bold text-slate-300 border-b border-slate-800 pb-0.5 uppercase tracking-wide">Map Legend</div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#0d5c56] border border-slate-950"></span>
-            <span>Normal (Dark Teal)</span>
+        {/* ── Legend ── */}
+        <div className="absolute bottom-4 right-4 z-[1000] bg-slate-950/90 border border-slate-800 p-2.5 rounded-lg text-[9px] text-slate-400 flex flex-col gap-1.5 max-w-[150px] shadow-lg select-none backdrop-blur-sm">
+          <div className="font-bold text-slate-300 border-b border-slate-800 pb-0.5 uppercase tracking-wide">
+            Map Legend
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#d97706] border border-slate-950"></span>
-            <span>Watch (Amber)</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#dc2626] border border-slate-950"></span>
-            <span>High Risk (Red)</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#7f1d1d] border border-slate-950 animate-pulse"></span>
-            <span>Critical Silence (Pulse)</span>
-          </div>
-          
+
+          {[
+            { color: '#0d5c56', label: 'Normal (Dark Teal)' },
+            { color: '#d97706', label: 'Watch (Amber)' },
+            { color: '#dc2626', label: 'High Risk (Red)' },
+            { color: '#7f1d1d', label: 'Critical Silence', pulse: true },
+          ].map(({ color, label, pulse }) => (
+            <div key={label} className="flex items-center gap-1.5">
+              <span
+                className={`w-2 h-2 rounded-full border border-slate-950 ${pulse ? 'animate-pulse' : ''}`}
+                style={{ background: color }}
+              />
+              <span>{label}</span>
+            </div>
+          ))}
+
           <div className="border-t border-slate-800 pt-1 flex flex-col gap-1.5 mt-0.5">
             <div className="flex items-center gap-1.5">
-              <span className="w-3.5 h-0.5 bg-[#475569] inline-block"></span>
+              <span className="w-3.5 h-0.5 bg-[#475569] inline-block" />
               <span>Road: Open</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-3.5 h-0.5 bg-[#d97706] inline-block"></span>
+              <span className="w-3.5 h-0.5 bg-[#d97706] inline-block" />
               <span>Road: Slow</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-3.5 h-0.5 border-t-2 border-dashed border-[#ef4444] inline-block"></span>
+              <span className="w-3.5 h-0 border-t-2 border-dashed border-[#ef4444] inline-block" />
               <span>Road: Blocked</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-3.5 h-1 border-t-[3px] border-dashed border-[#b91c1c] inline-block"></span>
+              <span className="w-3.5 h-0 border-t-[3px] border-dashed border-[#b91c1c] inline-block" />
               <span>Road: Damaged</span>
             </div>
+          </div>
+
+          <div className="border-t border-slate-800 pt-1 flex flex-col gap-1.5 mt-0.5">
+            {[
+              { color: '#06b6d4', label: 'Report: SMS' },
+              { color: '#0d9488', label: 'Report: Mobile' },
+              { color: '#a855f7', label: 'Report: Parsed' },
+            ].map(({ color, label }) => (
+              <div key={label} className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full" style={{ background: color }} />
+                <span>{label}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
