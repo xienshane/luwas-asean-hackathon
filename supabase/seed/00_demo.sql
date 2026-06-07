@@ -37,6 +37,22 @@ insert into auth.users (
    jsonb_build_object('display_name', 'Maria Santos'), now(), now())
 on conflict do nothing;
 
+-- GoTrue scans these token columns into Go strings; a NULL (which a direct SQL
+-- insert leaves behind, unlike the Auth API which writes '') makes login fail
+-- with "Database error querying schema". Normalise any NULLs to empty string.
+update auth.users
+set confirmation_token         = coalesce(confirmation_token, ''),
+    recovery_token             = coalesce(recovery_token, ''),
+    email_change_token_new     = coalesce(email_change_token_new, ''),
+    email_change               = coalesce(email_change, ''),
+    email_change_token_current = coalesce(email_change_token_current, ''),
+    phone_change               = coalesce(phone_change, ''),
+    phone_change_token         = coalesce(phone_change_token, ''),
+    reauthentication_token     = coalesce(reauthentication_token, '')
+ where id in ('a0000000-0000-0000-0000-000000000001',
+              'a0000000-0000-0000-0000-000000000002',
+              'a0000000-0000-0000-0000-000000000003');
+
 -- 2) Email identities (gotrue requires one per user for password login). ----
 insert into auth.identities (
   id, user_id, provider_id, identity_data, provider,
