@@ -27,13 +27,15 @@ import {
   Activity,
   History,
   Archive,
-  ChevronRight
+  ChevronRight,
+  Flag
 } from 'lucide-react';
 import { FieldReport } from '@/lib/mockData';
 
 interface ReportsViewProps {
   reports: FieldReport[];
   onConfirmReport: (id: string) => void;
+  onFlagReport: (reportId: string) => void;
   onRefresh?: () => void;
 }
 
@@ -54,11 +56,13 @@ const SEVERITY_ICONS: Record<string, React.ElementType> = {
 const STATUS_STYLES: Record<string, string> = {
   pending:   'bg-amber-950 text-amber-300 border-amber-800',
   confirmed: 'bg-teal-950 text-teal-300 border-teal-800',
+  flagged:   'bg-red-950 text-red-300 border-red-800',
 };
 
 const STATUS_ICONS: Record<string, React.ElementType> = {
   pending: Clock,
   confirmed: CheckCircle,
+  flagged: Flag,
 };
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -75,31 +79,35 @@ const SOURCE_ICONS: Record<string, React.ElementType> = {
 
 const SEVERITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
 
-export default function ReportsView({ reports, onConfirmReport, onRefresh }: ReportsViewProps) {
+export default function ReportsView({ reports, onConfirmReport, onFlagReport, onRefresh }: ReportsViewProps) {
   // Filter states
   const [filterSeverity, setFilterSeverity] = useState<'all' | 'critical' | 'high' | 'medium' | 'low'>('all');
   const [filterSource, setFilterSource] = useState<'all' | 'app' | 'sms' | 'parsed'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
+  const [expandedFlaggedId, setExpandedFlaggedId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'time' | 'severity'>('severity');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [showFilters, setShowFilters] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
+  const [showFlagged, setShowFlagged] = useState(true); // New state for flagged section
   const [selectedReports, setSelectedReports] = useState<Set<string>>(new Set());
 
-  // Separate pending and confirmed reports
+  // Separate reports by status
   const pendingReports = reports.filter(r => r.status === 'pending');
   const confirmedReports = reports.filter(r => r.status === 'confirmed');
+  const flaggedReports = reports.filter(r => r.status === 'flagged');
 
   // Stats calculations
   const stats = useMemo(() => {
     const total = reports.length;
     const pending = pendingReports.length;
     const confirmed = confirmedReports.length;
+    const flagged = flaggedReports.length;
     
-    return { total, pending, confirmed };
-  }, [reports, pendingReports.length, confirmedReports.length]);
+    return { total, pending, confirmed, flagged };
+  }, [reports, pendingReports.length, confirmedReports.length, flaggedReports.length]);
 
   // Filtered and sorted pending reports
   const filteredPending = useMemo(() => {
@@ -112,7 +120,6 @@ export default function ReportsView({ reports, onConfirmReport, onRefresh }: Rep
         r.reporterName.toLowerCase().includes(searchQuery.toLowerCase())
       );
 
-    // Sort
     filtered.sort((a, b) => {
       let comparison = 0;
       if (sortBy === 'severity') {
@@ -126,6 +133,22 @@ export default function ReportsView({ reports, onConfirmReport, onRefresh }: Rep
     return filtered;
   }, [pendingReports, filterSeverity, filterSource, searchQuery, sortBy, sortOrder]);
 
+  // Filtered flagged reports
+  const filteredFlagged = useMemo(() => {
+    let filtered = flaggedReports
+      .filter(r => filterSeverity === 'all' || r.needsSeverity === filterSeverity)
+      .filter(r => filterSource === 'all' || r.source === filterSource)
+      .filter(r => searchQuery === '' || 
+        r.rawText.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        r.barangayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        r.reporterName.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+
+    filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    return filtered;
+  }, [flaggedReports, filterSeverity, filterSource, searchQuery]);
+
   // Filtered confirmed reports for history
   const filteredConfirmed = useMemo(() => {
     let filtered = confirmedReports
@@ -137,7 +160,6 @@ export default function ReportsView({ reports, onConfirmReport, onRefresh }: Rep
         r.reporterName.toLowerCase().includes(searchQuery.toLowerCase())
       );
 
-    // Sort by time (newest first)
     filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     return filtered;
@@ -161,6 +183,13 @@ export default function ReportsView({ reports, onConfirmReport, onRefresh }: Rep
     setSelectedReports(new Set());
   };
 
+  const handleBulkFlag = () => {
+    selectedReports.forEach(id => {
+      onFlagReport(id);
+    });
+    setSelectedReports(new Set());
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full bg-slate-950 overflow-hidden">
       {/* Header with Stats */}
@@ -177,6 +206,20 @@ export default function ReportsView({ reports, onConfirmReport, onRefresh }: Rep
           </div>
           
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowFlagged(!showFlagged)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex items-center gap-2 ${
+                showFlagged ? 'bg-red-900/50 text-red-300 border border-red-800' : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Flag className="w-3.5 h-3.5" />
+              {showFlagged ? 'Hide Flagged' : 'Show Flagged'}
+              {stats.flagged > 0 && (
+                <span className="ml-1 bg-red-950 text-red-300 px-1.5 py-0.5 rounded-full text-[9px]">
+                  {stats.flagged}
+                </span>
+              )}
+            </button>
             <button
               onClick={() => setShowHistory(!showHistory)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex items-center gap-2 ${
@@ -206,7 +249,7 @@ export default function ReportsView({ reports, onConfirmReport, onRefresh }: Rep
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-4 gap-3">
           <div className="bg-slate-900/60 border border-slate-800 rounded-lg p-3 text-center">
             <Activity className="w-5 h-5 text-slate-500 mx-auto mb-1" />
             <p className="text-[10px] text-slate-500 uppercase font-bold">Total Reports</p>
@@ -217,6 +260,11 @@ export default function ReportsView({ reports, onConfirmReport, onRefresh }: Rep
             <Clock className="w-5 h-5 text-amber-400 mx-auto mb-1" />
             <p className="text-[10px] text-amber-400 uppercase font-bold">Pending</p>
             <p className="text-2xl font-bold text-amber-400">{stats.pending}</p>
+          </div>
+          <div className="bg-red-950/20 border border-red-800/30 rounded-lg p-3 text-center">
+            <Flag className="w-5 h-5 text-red-400 mx-auto mb-1" />
+            <p className="text-[10px] text-red-400 uppercase font-bold">Flagged</p>
+            <p className="text-2xl font-bold text-red-400">{stats.flagged}</p>
           </div>
           <div className="bg-teal-950/20 border border-teal-800/30 rounded-lg p-3 text-center">
             <Archive className="w-5 h-5 text-teal-400 mx-auto mb-1" />
@@ -328,6 +376,12 @@ export default function ReportsView({ reports, onConfirmReport, onRefresh }: Rep
               <Check className="w-3 h-3" /> Confirm All
             </button>
             <button
+              onClick={handleBulkFlag}
+              className="px-3 py-1 bg-red-900/50 hover:bg-red-900 text-red-300 font-bold rounded text-xs flex items-center gap-1 cursor-pointer"
+            >
+              <Flag className="w-3 h-3" /> Flag All
+            </button>
+            <button
               onClick={() => setSelectedReports(new Set())}
               className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs cursor-pointer"
             >
@@ -337,7 +391,7 @@ export default function ReportsView({ reports, onConfirmReport, onRefresh }: Rep
         </div>
       )}
 
-      {/* Main Content Area - Split between Pending and History */}
+      {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto">
         {/* Pending Reports Section */}
         <div className="border-b border-slate-800">
@@ -376,10 +430,8 @@ export default function ReportsView({ reports, onConfirmReport, onRefresh }: Rep
 
                 return (
                   <div key={report.id} className="bg-slate-900/20 hover:bg-slate-900/40 transition-colors">
-                    {/* Main row */}
                     <div className="px-6 py-3">
                       <div className="flex items-start gap-3">
-                        {/* Checkbox */}
                         <div className="pt-1">
                           <input
                             type="checkbox"
@@ -397,7 +449,6 @@ export default function ReportsView({ reports, onConfirmReport, onRefresh }: Rep
                           />
                         </div>
 
-                        {/* Content */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <span className="text-[10px] font-mono text-slate-500">#{report.id}</span>
@@ -429,6 +480,12 @@ export default function ReportsView({ reports, onConfirmReport, onRefresh }: Rep
                                 {isExpanded ? 'Show less' : 'Show details'}
                               </button>
                               <button
+                                onClick={() => onFlagReport(report.id)}
+                                className="px-2 py-1 bg-red-900/50 hover:bg-red-900 border border-red-800 text-red-300 font-bold rounded flex items-center gap-1 cursor-pointer transition-colors text-[10px]"
+                              >
+                                <Flag className="w-3 h-3" /> Flag
+                              </button>
+                              <button
                                 onClick={() => onConfirmReport(report.id)}
                                 className="px-2 py-1 bg-teal-900/70 hover:bg-teal-800 border border-teal-700 text-teal-300 font-bold rounded flex items-center gap-1 cursor-pointer transition-colors text-[10px]"
                               >
@@ -438,8 +495,7 @@ export default function ReportsView({ reports, onConfirmReport, onRefresh }: Rep
                           </div>
                         </div>
                       </div>
-
-                      {/* Expanded detail */}
+                            
                       {isExpanded && (
                         <div className="mt-3 ml-7 pl-4 border-l-2 border-teal-500/30">
                           <div className="grid grid-cols-2 gap-3 text-[11px]">
@@ -478,6 +534,112 @@ export default function ReportsView({ reports, onConfirmReport, onRefresh }: Rep
             </div>
           )}
         </div>
+
+        {/* Flagged Reports Section */}
+        {showFlagged && filteredFlagged.length > 0 && (
+          <div className="border-b border-red-800/30">
+            <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur-sm px-6 py-3 border-b border-red-800/30">
+              <div className="flex items-center gap-2">
+                <Flag className="w-4 h-4 text-red-400" />
+                <h3 className="font-bold text-sm uppercase tracking-wider text-red-400">Flagged Reports - Needs Review</h3>
+                <span className="bg-red-950 text-red-300 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                  {filteredFlagged.length}
+                </span>
+              </div>
+            </div>
+
+            <div className="divide-y divide-red-800/20">
+              {filteredFlagged.map(report => {
+                const isExpanded = expandedFlaggedId === report.id;
+                const ago = Math.round((Date.now() - new Date(report.createdAt).getTime()) / 60000);
+                const agoStr = ago < 60 ? `${ago}m ago` : `${Math.round(ago / 60)}h ago`;
+                const SeverityIcon = SEVERITY_ICONS[report.needsSeverity];
+                const SourceIcon = SOURCE_ICONS[report.source];
+
+                return (
+                  <div key={report.id} className="bg-red-950/5 hover:bg-red-950/20 transition-colors">
+                    <div className="px-6 py-3">
+                      <div className="flex items-start gap-3">
+                        <Flag className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <span className="text-[10px] font-mono text-slate-500">#{report.id}</span>
+                            <span className="flex items-center gap-0.5 text-[10px] text-slate-500">
+                              <MapPin className="w-2.5 h-2.5" /> {report.barangayName}
+                            </span>
+                            <span className="text-[10px] text-slate-600 flex items-center gap-0.5">
+                              <Clock className="w-2.5 h-2.5" /> {agoStr}
+                            </span>
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase flex items-center gap-1 ${SEVERITY_STYLES[report.needsSeverity]}`}>
+                              <SeverityIcon className="w-2.5 h-2.5" />
+                              {report.needsSeverity}
+                            </span>
+                            <span className="text-[9px] text-slate-500 flex items-center gap-1">
+                              <SourceIcon className="w-2.5 h-2.5" /> {SOURCE_LABEL[report.source]}
+                            </span>
+                          </div>
+                          <p className="text-slate-300 text-[11.5px] mb-2">"{report.rawText}"</p>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                              <Users className="w-2.5 h-2.5" /> {report.reporterName}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => setExpandedFlaggedId(isExpanded ? null : report.id)}
+                                className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors cursor-pointer flex items-center gap-1"
+                              >
+                                {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                {isExpanded ? 'Show less' : 'Show details'}
+                              </button>
+                              <button
+                                onClick={() => onConfirmReport(report.id)}
+                                className="px-2 py-1 bg-teal-900/70 hover:bg-teal-800 border border-teal-700 text-teal-300 font-bold rounded flex items-center gap-1 cursor-pointer transition-colors text-[10px]"
+                              >
+                                <Check className="w-3 h-3" /> Confirm & Remove Flag
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {isExpanded && (
+                        <div className="mt-3 ml-7 pl-4 border-l-2 border-red-500/30">
+                          <div className="grid grid-cols-2 gap-3 text-[11px]">
+                            <div className="bg-slate-900/60 rounded-lg p-3">
+                              <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-wider mb-2">Full Report</p>
+                              <p className="text-slate-300 italic">"{report.rawText}"</p>
+                            </div>
+                            <div className="space-y-2">
+                              <div className="bg-slate-900/60 rounded-lg p-3">
+                                <p className="text-[9px] text-slate-500 font-semibold uppercase tracking-wider mb-2 flex items-center gap-1">
+                                  <Bot className="w-2.5 h-2.5" /> AI Analysis
+                                </p>
+                                <div className="space-y-1">
+                                  <div className="flex justify-between text-[10px]">
+                                    <span className="text-slate-500">Confidence:</span>
+                                    <span className="text-slate-300 font-semibold">{Math.round(report.confidence * 100)}%</span>
+                                  </div>
+                                  <div className="flex justify-between text-[10px]">
+                                    <span className="text-slate-500">Est. Affected:</span>
+                                    <span className="text-slate-300 font-semibold">{report.populationEstimate.toLocaleString()}</span>
+                                  </div>
+                                  <div className="flex justify-between text-[10px]">
+                                    <span className="text-slate-500">Road Status:</span>
+                                    <span className="text-slate-300 font-semibold">{report.roadStatus}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* History Section - Confirmed Reports */}
         {showHistory && (
@@ -541,7 +703,6 @@ export default function ReportsView({ reports, onConfirmReport, onRefresh }: Rep
                           </div>
                         </div>
 
-                        {/* Expanded history details */}
                         {isExpanded && (
                           <div className="mt-2 ml-7 pl-4 border-l-2 border-teal-500/20">
                             <div className="grid grid-cols-2 gap-2 text-[10px]">

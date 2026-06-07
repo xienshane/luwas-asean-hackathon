@@ -458,7 +458,7 @@ export default function InteractiveCommandMap({
             ['get', 'status'],
             'slow', '#d97706',
             'damaged', '#dc2626',
-            '#475569'
+            '#c3c4c5'
           ],
           'line-width': [
             'match',
@@ -487,40 +487,7 @@ export default function InteractiveCommandMap({
         },
       });
 
-      // Route layers
-      map.addLayer({
-        id: 'routes-layer-active',
-        type: 'line',
-        source: 'routes-source',
-        filter: ['==', ['get', 'status'], 'active'],
-        layout: {
-          'line-cap': 'round',
-          'line-join': 'round',
-        },
-        paint: {
-          'line-color': '#f59e0b',
-          'line-width': 3,
-          'line-opacity': 0.85,
-        },
-      });
-
-      map.addLayer({
-        id: 'routes-layer-other',
-        type: 'line',
-        source: 'routes-source',
-        filter: ['!=', ['get', 'status'], 'active'],
-        layout: {
-          'line-cap': 'round',
-          'line-join': 'round',
-        },
-        paint: {
-          'line-color': '#94a3b8',
-          'line-width': 2,
-          'line-opacity': 0.5,
-          'line-dasharray': [3, 3],
-        },
-      });
-
+  
       // Event handlers
       map.on('click', 'roads-layer-solid', handleRoadClick);
       map.on('click', 'roads-layer-blocked', handleRoadClick);
