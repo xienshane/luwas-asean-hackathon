@@ -14,7 +14,12 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "LUWAS",
-  description: "Post-disaster logistics coordination for NGO coordinators.",
+  // description: "Post-disaster logistics coordination for NGO coordinators.",
+  icons: {
+    icon: "/LUWAS_logo.png",
+    shortcut: "/LUWAS_logo.png",
+    apple: "/LUWAS_logo.png",
+  },
 };
 
 export default function RootLayout({

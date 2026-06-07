@@ -12,6 +12,7 @@ import {
   LogOut,
   User
 } from 'lucide-react';
+import Image from 'next/image';
 
 interface LeftSidebarProps {
   currentView: string;
@@ -96,45 +97,50 @@ export default function LeftSidebar({
         className="h-full bg-slate-950 border-r border-slate-800 flex flex-col justify-between select-none shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out"
         style={{ width: collapsed ? '56px' : '260px' }}
       >
-        {/* Brand header */}
-        <div className="p-3 border-b border-slate-800 bg-slate-900/40 flex items-center justify-between min-h-[56px]">
-          {!collapsed ? (
-            <>
-              <div className="flex items-center gap-2 overflow-hidden">
-                <div className="bg-teal-900/80 border border-teal-500/30 p-1.5 rounded-lg shrink-0">
-                  <AlertOctagon className="w-4 h-4 text-teal-400" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">LUWAS OPS</p>
-                  <h1 className="text-sm font-bold text-slate-100 tracking-tight flex items-center gap-1.5">
-                    Cebu Command
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse shrink-0" />
-                  </h1>
-                </div>
-              </div>
-              <button
-                onClick={() => setCollapsed(true)}
-                className="shrink-0 w-6 h-6 rounded flex items-center justify-center text-slate-500 hover:text-teal-400 hover:bg-slate-800 transition-colors cursor-pointer"
-                title="Collapse sidebar"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-            </>
-          ) : (
-            <div className="w-full flex flex-col items-center gap-2">
-              <div className="bg-teal-900/80 border border-teal-500/30 p-1.5 rounded-lg">
-                <AlertOctagon className="w-4 h-4 text-teal-400" />
-              </div>
-              <button
-                onClick={() => setCollapsed(false)}
-                className="w-6 h-6 rounded flex items-center justify-center text-slate-500 hover:text-teal-400 hover:bg-slate-800 transition-colors cursor-pointer"
-                title="Expand sidebar"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          )}
+ {/* Brand header */}
+<div className={`p-3 border-b border-slate-800 bg-slate-900/40 flex items-center justify-between ${collapsed ? 'min-h-[80px]' : 'min-h-[56px]'}`}>
+  {!collapsed ? (
+    <>
+      <div className="flex items-center overflow-hidden flex-1">
+        <div className="min-w-0 flex-1">
+          <Image
+            src="/LUWAS_font.png"
+            alt="LUWAS"
+            width={120}
+            height={32}
+            className="h-8 w-auto object-contain"
+            priority
+          />
         </div>
+      </div>
+      <button
+        onClick={() => setCollapsed(true)}
+        className="shrink-0 w-6 h-6 rounded flex items-center justify-center text-slate-500 hover:text-teal-400 hover:bg-slate-800 transition-colors cursor-pointer"
+        title="Collapse sidebar"
+      >
+        <ChevronLeft className="w-4 h-4" />
+      </button>
+    </>
+  ) : (
+    <div className="w-full flex flex-col items-center gap-3">
+      <Image
+        src="/LUWAS_logo.png"
+        alt="LUWAS"
+        width={40}
+        height={40}
+        className="w-10 h-10 object-contain"
+        priority
+      />
+      <button
+        onClick={() => setCollapsed(false)}
+        className="w-6 h-6 rounded flex items-center justify-center text-slate-500 hover:text-teal-400 hover:bg-slate-800 transition-colors cursor-pointer"
+        title="Expand sidebar"
+      >
+        <ChevronRight className="w-4 h-4" />
+      </button>
+    </div>
+  )}
+</div>
 
         {/* Navigation */}
         <nav className="flex-1 py-3 px-1.5 space-y-1 overflow-y-auto overflow-x-hidden text-xs">
