@@ -13,7 +13,7 @@ export default function Home() {
 
       <div className="flex flex-col gap-3">
         <Link
-          href="/coordinator/health"
+          href="/coordinator"
           className="rounded-md bg-zinc-900 px-4 py-2 text-center text-sm font-medium text-white hover:bg-zinc-800"
         >
           Coordinator area
