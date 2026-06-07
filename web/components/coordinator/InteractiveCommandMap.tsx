@@ -124,6 +124,7 @@ export default function InteractiveCommandMap({
 
   const [routeGeometries, setRouteGeometries] = useState<Record<string, [number, number][]>>({});
   const [roadGeometries, setRoadGeometries] = useState<Record<string, [number, number][]>>({}); // Store actual road paths
+  const [selectedRoutePath, setSelectedRoutePath] = useState<[number, number][] | null>(null); // Dynamic path for selected report
 
   const [mapLayers, setMapLayers] = useState({
     barangays: true,
@@ -165,29 +166,6 @@ export default function InteractiveCommandMap({
     });
     return { hub: nearest, distance: minDist };
   }, []);
-
-  // Filter edges dynamically to implement: "possible roads will open from nearest hubs"
-  const getVisibleEdges = useCallback((): RoadEdge[] => {
-    if (!selectedReport) return [];
-
-    const { hub } = getNearestHubToCoords(selectedReport.latitude, selectedReport.longitude);
-
-    // Filter edges that are within the route vicinity corridor between nearest hub and the active report
-    return edges.filter((edge) => {
-      const distToHubSrc = calculateDistanceKm(edge.sourceCoords.lat, edge.sourceCoords.lng, hub.latitude, hub.longitude);
-      const distToHubTgt = calculateDistanceKm(edge.targetCoords.lat, edge.targetCoords.lng, hub.latitude, hub.longitude);
-      const distToRepSrc = calculateDistanceKm(edge.sourceCoords.lat, edge.sourceCoords.lng, selectedReport.latitude, selectedReport.longitude);
-      const distToRepTgt = calculateDistanceKm(edge.targetCoords.lat, edge.targetCoords.lng, selectedReport.latitude, selectedReport.longitude);
-
-      const proximityThreshold = 7.5; 
-      return (
-        distToHubSrc < proximityThreshold ||
-        distToHubTgt < proximityThreshold ||
-        distToRepSrc < proximityThreshold ||
-        distToRepTgt < proximityThreshold
-      );
-    });
-  }, [selectedReport, edges, getNearestHubToCoords]);
 
   // ── 1. Generate Barangay Polygons ─────────────────────────────────
   const generateBarangayPolygon = useCallback((barangay: Barangay): [number, number][] => {
@@ -268,61 +246,56 @@ export default function InteractiveCommandMap({
     };
   }, [edges]);
 
-  // ── 3. Route fetching with simplification ─────────────────────
+  // ── 3. Dynamic Route Generation to selected Report from Nearest Hub ──
   useEffect(() => {
+    if (!selectedReport) {
+      setSelectedRoutePath(null);
+      return;
+    }
+
     let active = true;
-    const routeCache = new Map<string, [number, number][]>();
+    const { hub } = getNearestHubToCoords(selectedReport.latitude, selectedReport.longitude);
 
-    const fetchRoutesSequentially = async () => {
-      for (const route of routes) {
-        if (route.path.length < 2) continue;
-
-        const pathKey = `${route.id}`;
+    const fetchIncidentRoute = async () => {
+      try {
+        const correctCoords = `${hub.longitude},${hub.latitude};${selectedReport.longitude},${selectedReport.latitude}`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
         
-        if (routeCache.has(pathKey)) {
-          setRouteGeometries(prev => ({ ...prev, [pathKey]: routeCache.get(pathKey)! }));
-          continue;
-        }
+        const res = await fetch(
+          `https://router.project-osrm.org/route/v1/driving/${correctCoords}?overview=full&geometries=geojson`,
+          { signal: controller.signal }
+        );
+        clearTimeout(timeoutId);
 
-        await new Promise((resolve) => setTimeout(resolve, 200));
-
-        try {
-          const coords = route.path.map((p) => `${p.lng},${p.lat}`).join(';');
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 8000);
-          
-          const res = await fetch(
-            `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`,
-            { signal: controller.signal }
-          );
-          clearTimeout(timeoutId);
-
-          if (res.ok && active) {
-            const data = await res.json();
-            const geometry = data.routes?.[0]?.geometry?.coordinates;
-            if (geometry?.length) {
-              const simplified = geometry.filter((_: any, i: number) => i % 2 === 0 || i === geometry.length - 1);
-              routeCache.set(pathKey, simplified);
-              setRouteGeometries((prev) => ({
-                ...prev,
-                [pathKey]: simplified,
-              }));
-            }
+        if (res.ok && active) {
+          const data = await res.json();
+          const geometry = data.routes?.[0]?.geometry?.coordinates;
+          if (geometry?.length) {
+            setSelectedRoutePath(geometry);
+          } else {
+            setSelectedRoutePath([
+              [hub.longitude, hub.latitude],
+              [selectedReport.longitude, selectedReport.latitude]
+            ]);
           }
-        } catch (error) {
-          console.warn(`Failed to fetch route ${route.id}:`, error);
-          const directLine = route.path.map(p => [p.lng, p.lat] as [number, number]);
-          routeCache.set(pathKey, directLine);
-          setRouteGeometries(prev => ({ ...prev, [pathKey]: directLine }));
+        }
+      } catch (e) {
+        console.warn("Failed to fetch custom OSRM path to selected incident", e);
+        if (active) {
+          setSelectedRoutePath([
+            [hub.longitude, hub.latitude],
+            [selectedReport.longitude, selectedReport.latitude]
+          ]);
         }
       }
     };
 
-    fetchRoutesSequentially();
+    fetchIncidentRoute();
     return () => {
       active = false;
     };
-  }, [routes]);
+  }, [selectedReport, getNearestHubToCoords]);
 
   // ── Load MapLibre CSS + JS once ──────────────────────────────────────────
   useEffect(() => {
@@ -550,6 +523,39 @@ export default function InteractiveCommandMap({
         },
       });
 
+      // Dynamic Teal Route Layers [1]
+      map.addLayer({
+        id: 'routes-layer-casing',
+        type: 'line',
+        source: 'routes-source',
+        paint: {
+          'line-color': '#083344', // Dark teal backing outline
+          'line-width': 9,
+          'line-opacity': 0.4,
+        },
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+          'visibility': 'none'
+        }
+      });
+
+      map.addLayer({
+        id: 'routes-layer',
+        type: 'line',
+        source: 'routes-source',
+        paint: {
+          'line-color': '#0d9488', // Verified Teal
+          'line-width': 5,
+          'line-opacity': 0.95,
+        },
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+          'visibility': 'none'
+        }
+      });
+
       // Event handlers
       map.on('click', 'roads-layer-solid', handleRoadClick);
       map.on('click', 'roads-layer-blocked', handleRoadClick);
@@ -568,6 +574,8 @@ export default function InteractiveCommandMap({
             ? `${feat.properties.hoursSinceContact}h ago` 
             : 'No contact';
 
+          // Close active hover windows to prevent overlapping states
+          hoverPopupRef.current.remove(); 
           hoverPopupRef.current
             .setLngLat(e.lngLat)
             .setHTML(`
@@ -609,6 +617,8 @@ export default function InteractiveCommandMap({
             0.6
           ]);
 
+          // Close active hover windows to prevent overlapping states
+          hoverPopupRef.current.remove();
           hoverPopupRef.current
             .setLngLat(e.lngLat)
             .setHTML(`
@@ -679,16 +689,14 @@ export default function InteractiveCommandMap({
     }
   }, [isMapLoaded, mapLayers.barangays, barangays, getScoreData, generateBarangayPolygon, selectedBarangay, hoveredBarangay]);
 
-  // ── Dynamic Road Rendering (Implements: "road should not show first... possible roads open from nearest hubs") ──
+  // ── Road network rendering (All roads remain visible) ──
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isMapLoaded) return;
 
     const roadsSource = map.getSource('roads-source');
     if (roadsSource && mapLayers.roads) {
-      const activeEdges = getVisibleEdges();
-      
-      const features = activeEdges.map((edge) => {
+      const features = edges.map((edge) => {
         const geometry = roadGeometries[edge.id];
         if (!geometry) return null;
         
@@ -711,40 +719,45 @@ export default function InteractiveCommandMap({
         features: features
       });
     }
-  }, [isMapLoaded, mapLayers.roads, edges, roadGeometries, selectedReport, getVisibleEdges]);
+  }, [isMapLoaded, mapLayers.roads, edges, roadGeometries]);
 
-  // ── Update Routes ──
+  // ── Active Teal Route Rendering ──
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isMapLoaded) return;
 
     const routesSource = map.getSource('routes-source');
-    if (routesSource && mapLayers.routes) {
-      const features = routes.map((route) => {
-        if (route.path.length < 2) return null;
-        const pathKey = `${route.id}`;
-        const coords = routeGeometries[pathKey] || route.path.map((p) => [p.lng, p.lat]);
-        return {
-          type: 'Feature',
-          properties: {
-            id: route.id,
-            status: route.status,
-          },
-          geometry: {
-            type: 'LineString',
-            coordinates: coords
-          }
-        };
-      }).filter(Boolean);
-      
-      routesSource.setData({
-        type: 'FeatureCollection',
-        features: features
-      });
+    if (routesSource) {
+      if (mapLayers.routes && selectedRoutePath) {
+        routesSource.setData({
+          type: 'FeatureCollection',
+          features: [
+            {
+              type: 'Feature',
+              properties: { status: 'active' },
+              geometry: {
+                type: 'LineString',
+                coordinates: selectedRoutePath
+              }
+            }
+          ]
+        });
+        map.setLayoutProperty('routes-layer', 'visibility', 'visible');
+        map.setLayoutProperty('routes-layer-casing', 'visibility', 'visible');
+      } else {
+        routesSource.setData({
+          type: 'FeatureCollection',
+          features: []
+        });
+        if (map.getLayer('routes-layer')) {
+          map.setLayoutProperty('routes-layer', 'visibility', 'none');
+          map.setLayoutProperty('routes-layer-casing', 'visibility', 'none');
+        }
+      }
     }
-  }, [isMapLoaded, mapLayers.routes, routes, routeGeometries]);
+  }, [isMapLoaded, mapLayers.routes, selectedRoutePath]);
 
-  // ── Interactive Report Markers (Pulsing fix applied strictly to INNER element) ──
+  // ── Interactive Report Markers (Custom SVG styling for Pending/Confirmed/Flagged) ──
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isMapLoaded) return;
@@ -760,8 +773,6 @@ export default function InteractiveCommandMap({
       const status = report.status;
 
       const el = document.createElement('div');
-      
-      // Outer element holds size and positions clean (DO NOT apply translate animations here!) [1.1.7]
       el.className = 'flex items-center justify-center relative cursor-pointer group';
       
       const size = isSelected ? 32 : 25;
@@ -774,16 +785,16 @@ export default function InteractiveCommandMap({
       let pulseClass = '';
 
       if (status === 'pending') {
-        // Enforce solid warning yellow background and bright amber borders to match the legend [1]
-        bg = '#d97706'; 
-        border = '2px solid #fbbf24'; 
-        pulseClass = 'marker-pulse'; // Applied exclusively to the inner div to avoid transform overriding [1.1.7]
-        el.style.setProperty('--pulse-color', '#fbbf24'); // Match pulsing glow to warning yellow [1]
+        bg = '#d97706'; // Enforce solid warning yellow background [1]
+        border = '2px solid #fbbf24'; // Warning yellow borders [1]
+        pulseClass = 'marker-pulse'; // applied directly to inner div [1.1.7]
+        el.style.setProperty('--pulse-color', '#fbbf24'); // Yellow pulse glow [1]
+        
+        // Exclamation point (!) matching the legend exactly [1]
         iconMarkup = `
-          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="12" y1="9" x2="12" y2="13"></line>
-            <circle cx="12" cy="17" r="1"></circle>
-          </svg>
+          <span style="color: #ffffff; font-size: 12px; font-weight: 900; font-family: sans-serif; line-height: 1; margin-top: -1px;">
+            !
+          </span>
         `;
       } else if (status === 'confirmed') {
         bg = '#16a34a'; // Verified Forest Green
@@ -796,15 +807,15 @@ export default function InteractiveCommandMap({
       } else if (status === 'flagged') {
         bg = '#dc2626'; // Alert Crimson
         border = '2.5px solid #ef4444';
+        // Flag icon replacing previous close/X [1]
         iconMarkup = `
-          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
+          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
+            <line x1="4" y1="22" x2="4" y2="15"></line>
           </svg>
         `;
       }
 
-      // Inside layout: Pulse class animates only this inner div [1.1.7]
       el.innerHTML = `
         <div style="
           background: ${bg};
@@ -826,6 +837,7 @@ export default function InteractiveCommandMap({
         const statusLabelColor = status === 'confirmed' ? 'text-green-400 bg-green-950/40' :
           status === 'flagged' ? 'text-red-400 bg-red-950/40' : 'text-amber-400 bg-amber-950/40';
 
+        hoverPopupRef.current.remove();
         hoverPopupRef.current
           .setLngLat([report.longitude, report.latitude])
           .setHTML(`
@@ -939,6 +951,7 @@ export default function InteractiveCommandMap({
       `;
 
       el.addEventListener('mouseenter', () => {
+        hoverPopupRef.current.remove();
         hoverPopupRef.current
           .setLngLat([team.baseLocation.lng + 0.005, team.baseLocation.lat + 0.005])
           .setHTML(`
@@ -1000,6 +1013,7 @@ export default function InteractiveCommandMap({
       `;
 
       el.addEventListener('mouseenter', () => {
+        hoverPopupRef.current.remove();
         hoverPopupRef.current
           .setLngLat([vol.longitude, vol.latitude])
           .setHTML(`
@@ -1090,6 +1104,7 @@ export default function InteractiveCommandMap({
       `;
 
       el.addEventListener('mouseenter', () => {
+        hoverPopupRef.current.remove();
         hoverPopupRef.current
           .setLngLat([hub.longitude, hub.latitude])
           .setHTML(`
