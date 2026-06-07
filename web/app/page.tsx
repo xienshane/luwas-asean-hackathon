@@ -75,7 +75,7 @@ export default function Home() {
         </div>
 
         {/* Tag */}
-        <div className="font-mono text-[9px] tracking-[0.25em] text-teal-600/80 uppercase mb-6">
+        <div className="text-[10px] tracking-[0.2em] text-teal-600/80 uppercase mb-6 font-medium">
           Emergency Operations Command
         </div>
 
@@ -87,7 +87,7 @@ export default function Home() {
         </div>
 
         {/* Description */}
-        <p className="text-[12px] text-slate-500 font-mono leading-relaxed mb-8 px-2">
+      <p className="text-[13px] text-slate-500 leading-relaxed mb-8 px-2 font-normal">
           Post-disaster logistics coordination for<br />NGO responders and field teams.
         </p>
 
@@ -96,7 +96,7 @@ export default function Home() {
 
           {/* Coordinator — primary */}
           <Link
-            href="/coordinator"
+            href="/login"
             className="w-full rounded bg-teal-700 hover:bg-teal-600 border border-teal-600/50 hover:border-teal-500 px-4 py-2.5 text-[12px] font-mono font-semibold tracking-[0.1em] uppercase text-teal-50 transition-colors text-center focus:outline-none focus:ring-2 focus:ring-teal-500/40"
           >
             Coordinator Area →
@@ -104,7 +104,7 @@ export default function Home() {
 
           {/* Volunteer — secondary */}
           <Link
-            href="/volunteer/health"
+            href="login"
             className="w-full rounded bg-transparent border border-slate-700 hover:border-teal-700 px-4 py-2.5 text-[12px] font-mono font-semibold tracking-[0.1em] uppercase text-slate-400 hover:text-teal-400 transition-colors text-center focus:outline-none focus:ring-2 focus:ring-teal-500/20"
           >
             Volunteer Area

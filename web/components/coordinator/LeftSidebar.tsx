@@ -82,7 +82,7 @@ export default function LeftSidebar({
         sessionStorage.clear();
         
         // Redirect to login page or refresh
-        window.location.href = '/login';
+        window.location.href = '/';
       }
     }
   };
