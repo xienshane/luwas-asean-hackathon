@@ -22,6 +22,9 @@ import LeftSidebar from './LeftSidebar';
 import InteractiveCommandMap from './InteractiveCommandMap';
 import BottomOperationsConsole from './BottomOperationsConsole';
 import RightIntelligencePanel from './RightIntelligencePanel';
+import ReportsView from './ReportsView';
+import TeamsView from './TeamsView';
+import ManifestsView from './ManifestsView';
 
 export default function CommandDashboard() {
   // Navigation View selection State
@@ -245,16 +248,6 @@ export default function CommandDashboard() {
     alert('LUWAS Action: Incident creation form triggered. NGO logs updated.');
   };
 
-  const handleBroadcastAlert = () => {
-    addActivityLog('BROADCAST: Emergency SMS warning broadcasted to all active volunteers in pilot sector.', 'warn');
-    alert('LUWAS Action: Broadcaster SMS engine triggered. SMS dispatched.');
-  };
-
-  const handleExportReport = () => {
-    addActivityLog('SYSTEM: Situation Report generated and exported as CSV.', 'success');
-    alert('LUWAS Action: Generating Situation Report PDF/CSV download bundle.');
-  };
-
   const handleClearBarangaySelection = () => {
     setSelectedBarangay(null);
     setSelectedReport(null);
@@ -266,65 +259,95 @@ export default function CommandDashboard() {
 
   return (
     <div className="flex h-screen w-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
-      {/* Column 1: Left Navigation Sidebar (280px) */}
+      {/* Left Sidebar */}
       <LeftSidebar
         currentView={currentView}
         onViewChange={setCurrentView}
         reportsCount={reportsCount}
         highPriorityCount={highPriorityCount}
         onCreateIncident={handleCreateIncident}
-        onBroadcastAlert={handleBroadcastAlert}
-        onExportReport={handleExportReport}
+        onBroadcastAlert={() => {}}
+        onExportReport={() => {}}
       />
 
-      {/* Main EOC Workspace Section */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Column 2: Center Panel (70% Width on viewport) */}
-        <div className="flex-1 flex flex-col min-h-0">
-          {/* Operations map */}
-          <div className="flex-1 min-h-0 p-4">
-            <InteractiveCommandMap
-              barangays={barangays}
-              reports={reports}
-              teams={teams}
-              edges={edges}
-              routes={routes}
-              selectedBarangay={selectedBarangay}
-              onSelectBarangay={handleSelectBarangay}
-              selectedReport={selectedReport}
-              onSelectReport={handleSelectReport}
-              scores={scores}
-              onUpdateRoadStatus={handleUpdateRoadStatus}
-              onConfirmReport={handleConfirmReport}
-              onFlagReport={handleFlagReport}
-            />
-          </div>
+      {/* Main workspace — switches based on currentView */}
+      <div className="flex-1 flex min-w-0 min-h-0 overflow-hidden">
 
-          {/* Bottom telemetry console */}
-          <BottomOperationsConsole
+        {/* ── VIEW: Live Map (3-column EOC layout) ── */}
+        {currentView === 'map' && (
+          <>
+            <div className="flex-1 flex flex-col min-w-0">
+              <div className="flex-1 min-h-0 p-4">
+                <InteractiveCommandMap
+                  barangays={barangays}
+                  reports={reports}
+                  teams={teams}
+                  edges={edges}
+                  routes={routes}
+                  selectedBarangay={selectedBarangay}
+                  onSelectBarangay={handleSelectBarangay}
+                  selectedReport={selectedReport}
+                  onSelectReport={handleSelectReport}
+                  scores={scores}
+                  onUpdateRoadStatus={handleUpdateRoadStatus}
+                  onConfirmReport={handleConfirmReport}
+                  onFlagReport={handleFlagReport}
+                />
+              </div>
+              <BottomOperationsConsole
+                reports={reports}
+                activityLogs={activityLogs}
+                onConfirmReport={handleConfirmReport}
+                onFlagReport={handleFlagReport}
+              />
+            </div>
+            <RightIntelligencePanel
+              selectedBarangay={selectedBarangay}
+              barangays={barangays}
+              reportsCount={reportsCount}
+              scores={scores}
+              prediction={selectedBarangay ? predictions[selectedBarangay.id] : undefined}
+              manifest={selectedBarangay ? manifests[selectedBarangay.id] : undefined}
+              teams={teams}
+              routes={routes}
+              onSaveOverrides={handleSaveOverrides}
+              onUpdateManifestStatus={handleUpdateManifestStatus}
+              onDispatchTeam={handleDispatchTeam}
+              onClearBarangaySelection={handleClearBarangaySelection}
+            />
+          </>
+        )}
+
+        {/* ── VIEW: Field Reports ── */}
+        {currentView === 'reports' && (
+          <ReportsView
             reports={reports}
-            activityLogs={activityLogs}
             onConfirmReport={handleConfirmReport}
             onFlagReport={handleFlagReport}
           />
-        </div>
-      </div>
+        )}
 
-      {/* Column 3: Right Intelligence Panel (Fixed 320px) */}
-      <RightIntelligencePanel
-        selectedBarangay={selectedBarangay}
-        barangays={barangays}
-        reportsCount={reportsCount}
-        scores={scores}
-        prediction={selectedBarangay ? predictions[selectedBarangay.id] : undefined}
-        manifest={selectedBarangay ? manifests[selectedBarangay.id] : undefined}
-        teams={teams}
-        routes={routes}
-        onSaveOverrides={handleSaveOverrides}
-        onUpdateManifestStatus={handleUpdateManifestStatus}
-        onDispatchTeam={handleDispatchTeam}
-        onClearBarangaySelection={handleClearBarangaySelection}
-      />
+        {/* ── VIEW: Teams & Dispatch ── */}
+        {currentView === 'teams' && (
+          <TeamsView
+            teams={teams}
+            routes={routes}
+            barangays={barangays}
+            onDispatchTeam={handleDispatchTeam}
+          />
+        )}
+
+        {/* ── VIEW: Supply Manifests ── */}
+        {currentView === 'manifests' && (
+          <ManifestsView
+            barangays={barangays}
+            manifests={manifests}
+            predictions={predictions}
+            onUpdateManifestStatus={handleUpdateManifestStatus}
+          />
+        )}
+
+      </div>
     </div>
   );
 }
