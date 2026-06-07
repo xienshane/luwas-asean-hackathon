@@ -14,16 +14,11 @@ import {
   Clock,
   TrendingUp,
   TrendingDown,
-  Truck,
   Check,
   AlertOctagon,
-  ChevronDown,
-  ChevronUp,
-  Gauge,
-  BarChart3,
   History,
-  Archive,
-  Filter
+  ChevronRight,
+  Zap,
 } from 'lucide-react';
 import { SupplyManifest, Barangay, ImpactPrediction } from '@/lib/mockData';
 
@@ -41,78 +36,61 @@ interface HistoryEntry {
   action: 'approved' | 'rejected' | 'modified';
   timestamp: Date;
   manifestSnapshot: SupplyManifest;
-  approvedBy?: string;
 }
 
-const STATUS_CONFIG: Record<string, { icon: React.ReactNode; style: string; label: string }> = {
-  pending:  { icon: <Clock className="w-3.5 h-3.5" />,         style: 'bg-amber-950 border-amber-800 text-amber-300',  label: 'Pending'  },
-  approved: { icon: <CheckCircle2 className="w-3.5 h-3.5" />,  style: 'bg-teal-950 border-teal-800 text-teal-300',    label: 'Approved' },
-  modified: { icon: <AlertTriangle className="w-3.5 h-3.5" />, style: 'bg-blue-950 border-blue-800 text-blue-300',    label: 'Modified' },
-  rejected: { icon: <XCircle className="w-3.5 h-3.5" />,       style: 'bg-red-950 border-red-800 text-red-400',       label: 'Rejected' },
-};
-
 const SUPPLY_ROWS = [
-  { key: 'waterL',          label: 'Water',          unit: 'L',     icon: <Droplets       className="w-3.5 h-3.5 text-blue-400" /> },
-  { key: 'foodPacks',       label: 'Food Packs',     unit: 'packs', icon: <UtensilsCrossed className="w-3.5 h-3.5 text-amber-400" /> },
-  { key: 'hygieneKits',     label: 'Hygiene Kits',  unit: 'kits',  icon: <ShieldCheck    className="w-3.5 h-3.5 text-purple-400" /> },
-  { key: 'medicalSupplies', label: 'Medical',        unit: 'packs', icon: <HeartPulse     className="w-3.5 h-3.5 text-red-400" /> },
-  { key: 'shelterMaterials',label: 'Shelter',        unit: 'units', icon: <Home           className="w-3.5 h-3.5 text-teal-400" /> },
+  { key: 'waterL',           label: 'Water',         unit: 'L',     icon: <Droplets        className="w-4 h-4 text-blue-400" />,   color: 'blue'   },
+  { key: 'foodPacks',        label: 'Food Packs',    unit: 'packs', icon: <UtensilsCrossed className="w-4 h-4 text-amber-400" />,  color: 'amber'  },
+  { key: 'hygieneKits',      label: 'Hygiene Kits',  unit: 'kits',  icon: <ShieldCheck     className="w-4 h-4 text-purple-400" />, color: 'purple' },
+  { key: 'medicalSupplies',  label: 'Medical',       unit: 'packs', icon: <HeartPulse      className="w-4 h-4 text-red-400" />,    color: 'red'    },
+  { key: 'shelterMaterials', label: 'Shelter',       unit: 'units', icon: <Home            className="w-4 h-4 text-teal-400" />,   color: 'teal'   },
 ] as const;
 
 type SupplyKey = typeof SUPPLY_ROWS[number]['key'];
 
-interface ConfirmationDialogProps {
-  isOpen: boolean;
-  title: string;
-  message: string;
-  onConfirm: () => void;
-  onCancel: () => void;
-  actionType: 'approve' | 'reject';
-  isProcessing?: boolean;
-}
+const BAR_COLORS: Record<string, string> = {
+  blue: 'bg-blue-500', amber: 'bg-amber-500', purple: 'bg-purple-500', red: 'bg-red-500', teal: 'bg-teal-500',
+};
+const BAR_COLORS_LOW: Record<string, string> = {
+  blue: 'bg-blue-900/60', amber: 'bg-amber-900/60', purple: 'bg-purple-900/60', red: 'bg-red-900/60', teal: 'bg-teal-900/60',
+};
 
-function ConfirmationDialog({ isOpen, title, message, onConfirm, onCancel, actionType, isProcessing = false }: ConfirmationDialogProps) {
+// ── Confirmation dialog ────────────────────────────────────────────────────
+function ConfirmationDialog({
+  isOpen, title, message, onConfirm, onCancel, actionType, isProcessing = false,
+}: {
+  isOpen: boolean; title: string; message: string;
+  onConfirm: () => void; onCancel: () => void;
+  actionType: 'approve' | 'reject'; isProcessing?: boolean;
+}) {
   if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl max-w-md w-full mx-4 overflow-hidden">
-        <div className={`p-4 ${actionType === 'approve' ? 'bg-teal-950/50' : 'bg-red-950/50'} border-b border-slate-700`}>
-          <div className="flex items-center gap-3">
-            {actionType === 'approve' ? (
-              <CheckCircle2 className="w-6 h-6 text-teal-400" />
-            ) : (
-              <AlertOctagon className="w-6 h-6 text-red-400" />
-            )}
-            <h3 className="font-bold text-lg text-slate-200">{title}</h3>
-          </div>
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden">
+        <div className={`px-5 py-4 border-b border-slate-800 flex items-center gap-3 ${
+          actionType === 'approve' ? 'bg-teal-950/40' : 'bg-red-950/40'
+        }`}>
+          {actionType === 'approve'
+            ? <CheckCircle2 className="w-5 h-5 text-teal-400 shrink-0" />
+            : <AlertOctagon  className="w-5 h-5 text-red-400 shrink-0" />}
+          <h3 className="font-bold text-slate-200 font-mono tracking-wide">{title}</h3>
         </div>
-        <div className="p-6">
-          <p className="text-slate-300">{message}</p>
-        </div>
-        <div className="p-4 border-t border-slate-700 flex justify-end gap-3">
-          <button
-            onClick={onCancel}
-            disabled={isProcessing}
-            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
+        <p className="px-5 py-4 text-sm text-slate-400 leading-relaxed">{message}</p>
+        <div className="px-5 pb-5 flex gap-2 justify-end">
+          <button onClick={onCancel} disabled={isProcessing}
+            className="px-4 py-2 text-xs font-mono font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-200 border border-slate-700 hover:border-slate-500 rounded-lg transition-colors disabled:opacity-40">
             Cancel
           </button>
-          <button
-            onClick={onConfirm}
-            disabled={isProcessing}
-            className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+          <button onClick={onConfirm} disabled={isProcessing}
+            className={`px-4 py-2 text-xs font-mono font-semibold uppercase tracking-wider rounded-lg flex items-center gap-2 transition-colors disabled:opacity-40 ${
               actionType === 'approve'
-                ? 'bg-teal-600 hover:bg-teal-700 text-white'
-                : 'bg-red-600 hover:bg-red-700 text-white'
-            }`}
-          >
-            {isProcessing ? (
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              actionType === 'approve' ? <Check className="w-4 h-4" /> : <XCircle className="w-4 h-4" />
-            )}
-            {isProcessing ? 'Processing...' : `Confirm ${actionType === 'approve' ? 'Approval' : 'Rejection'}`}
+                ? 'bg-teal-700 hover:bg-teal-600 text-teal-50 border border-teal-600'
+                : 'bg-red-800 hover:bg-red-700 text-red-50 border border-red-700'
+            }`}>
+            {isProcessing
+              ? <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              : actionType === 'approve' ? <Check className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+            {isProcessing ? 'Processing…' : actionType === 'approve' ? 'Approve' : 'Reject'}
           </button>
         </div>
       </div>
@@ -120,651 +98,496 @@ function ConfirmationDialog({ isOpen, title, message, onConfirm, onCancel, actio
   );
 }
 
-// Storage lock utility to prevent concurrent writes
-const storageLock = {
-  key: 'manifest-storage-lock',
-  acquire: async (): Promise<boolean> => {
-    const now = Date.now();
-    const lockData = localStorage.getItem('manifest-storage-lock');
-    if (lockData) {
-      try {
-        const lock = JSON.parse(lockData);
-        // Lock expires after 2 seconds (prevents deadlocks)
-        if (now - lock.timestamp < 2000) {
-          return false;
-        }
-      } catch (e) {
-        // Invalid lock data, proceed
-      }
-    }
-    localStorage.setItem('manifest-storage-lock', JSON.stringify({ timestamp: now, id: Math.random() }));
-    return true;
-  },
-  release: () => {
-    localStorage.removeItem('manifest-storage-lock');
-  }
-};
+// ── Supply bar row ─────────────────────────────────────────────────────────
+function SupplyBar({ row, item }: { row: typeof SUPPLY_ROWS[number]; item: { inventory: number; recommended: number; shortfall: number } }) {
+  const pct = Math.min(100, (item.inventory / Math.max(item.recommended, 1)) * 100);
+  const isShort = item.shortfall > 0;
+  const barFill = isShort ? 'bg-red-500' : BAR_COLORS[row.color];
+  const trackColor = isShort ? 'bg-red-950/40' : BAR_COLORS_LOW[row.color];
 
+  return (
+    <div className="flex items-center gap-3 py-2.5 border-b border-slate-800/60 last:border-0">
+      <div className="w-5 shrink-0">{row.icon}</div>
+      <div className="w-24 shrink-0">
+        <span className="text-[11px] font-mono font-semibold text-slate-400 uppercase tracking-wider">{row.label}</span>
+      </div>
+      <div className="flex-1">
+        <div className={`h-2 rounded-full ${trackColor} overflow-hidden`}>
+          <div className={`h-full rounded-full transition-all duration-500 ${barFill}`} style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+      <div className="w-36 text-right shrink-0">
+        <span className={`text-[12px] font-mono font-bold ${isShort ? 'text-red-400' : 'text-slate-200'}`}>
+          {item.inventory.toLocaleString()}
+        </span>
+        <span className="text-[11px] text-slate-600 mx-1">/</span>
+        <span className="text-[11px] text-slate-500 font-mono">{item.recommended.toLocaleString()} {row.unit}</span>
+      </div>
+      <div className="w-20 text-right shrink-0">
+        {isShort ? (
+          <span className="text-[10px] font-mono font-bold text-red-500 bg-red-950/50 border border-red-900/50 px-1.5 py-0.5 rounded">
+            −{item.shortfall.toLocaleString()}
+          </span>
+        ) : (
+          <span className="text-[10px] font-mono text-teal-600">{Math.round(pct)}%</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Main component ─────────────────────────────────────────────────────────
 export default function ManifestsView({
-  barangays,
-  manifests,
-  predictions,
-  onUpdateManifestStatus
+  barangays, manifests, predictions, onUpdateManifestStatus,
 }: ManifestsViewProps) {
-  const [expandedBarangay, setExpandedBarangay] = useState<string | null>(null);
+  const [selectedId, setSelectedId]   = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [history, setHistory]         = useState<HistoryEntry[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [confirmationDialog, setConfirmationDialog] = useState<{
-    isOpen: boolean;
-    barangayId: string;
-    action: 'approve' | 'reject';
-  }>({ isOpen: false, barangayId: '', action: 'approve' });
-  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
-  
-  // Refs for managing async operations
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const saveQueueRef = useRef<HistoryEntry[]>([]);
-  const isSavingRef = useRef(false);
-  const pendingOperationsRef = useRef<Map<string, boolean>>(new Map());
+  const [flashId, setFlashId]         = useState<string | null>(null);
+  const [filterStatus, setFilterStatus] = useState<'pending' | 'all'>('pending');
+  const [dialog, setDialog] = useState<{ open: boolean; id: string; action: 'approve' | 'reject' }>({
+    open: false, id: '', action: 'approve',
+  });
+  const pendingOpsRef = useRef<Set<string>>(new Set());
 
-  // Load history from localStorage on mount
+  // Auto-select first pending on mount
   useEffect(() => {
-    const loadHistory = async () => {
-      let lockAcquired = false;
-      for (let i = 0; i < 3; i++) {
-        if (await storageLock.acquire()) {
-          lockAcquired = true;
-          break;
-        }
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-      
-      if (!lockAcquired) {
-        console.warn('Could not acquire lock for loading history');
-        return;
-      }
-      
-      try {
-        const savedHistory = localStorage.getItem('manifest-history');
-        if (savedHistory) {
-          const parsed = JSON.parse(savedHistory);
-          setHistory(parsed.map((entry: any) => ({
-            ...entry,
-            timestamp: new Date(entry.timestamp)
-          })));
-        }
-      } catch (e) {
-        console.error('Failed to load history', e);
-      } finally {
-        storageLock.release();
-      }
-    };
-    
-    loadHistory();
-  }, []);
+    const firstPending = barangays.find(b => manifests[b.id]?.status === 'pending');
+    if (firstPending && !selectedId) setSelectedId(firstPending.id);
+  }, [barangays, manifests, selectedId]);
 
-  // Save history to localStorage with queue system to prevent conflicts
-  const saveToLocalStorage = useCallback(async (historyData: HistoryEntry[]) => {
-    // If a save is already in progress, queue this data
-    if (isSavingRef.current) {
-      saveQueueRef.current = historyData;
-      return;
-    }
-    
-    isSavingRef.current = true;
-    
-    // Acquire lock with retry
-    let lockAcquired = false;
-    for (let i = 0; i < 5; i++) {
-      if (await storageLock.acquire()) {
-        lockAcquired = true;
-        break;
-      }
-      await new Promise(resolve => setTimeout(resolve, 50 + (i * 50)));
-    }
-    
-    if (!lockAcquired) {
-      console.warn('Could not acquire storage lock after retries, skipping save');
-      isSavingRef.current = false;
-      return;
-    }
-    
+  // Load history
+  useEffect(() => {
     try {
-      // Small delay to ensure any pending operations complete
-      await new Promise(resolve => setTimeout(resolve, 10));
-      localStorage.setItem('manifest-history', JSON.stringify(historyData));
-      
-      // Check if there's queued data that needs to be saved
-      if (saveQueueRef.current.length > 0) {
-        const queuedData = saveQueueRef.current;
-        saveQueueRef.current = [];
-        await saveToLocalStorage(queuedData);
-      }
-    } catch (error) {
-      console.error('Failed to save history:', error);
-    } finally {
-      storageLock.release();
-      isSavingRef.current = false;
-    }
+      const raw = localStorage.getItem('manifest-history');
+      if (raw) setHistory(JSON.parse(raw).map((e: HistoryEntry) => ({ ...e, timestamp: new Date(e.timestamp) })));
+    } catch { /* ignore */ }
   }, []);
 
-  // Debounced save effect
+  // Persist history
   useEffect(() => {
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-    
-    saveTimeoutRef.current = setTimeout(() => {
-      if (history.length > 0) {
-        saveToLocalStorage(history);
-      }
-    }, 500);
-    
-    return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, [history, saveToLocalStorage]);
+    if (history.length === 0) return;
+    try { localStorage.setItem('manifest-history', JSON.stringify(history)); } catch { /* ignore */ }
+  }, [history]);
 
-  const addToHistory = useCallback((barangayId: string, barangayName: string, action: 'approved' | 'rejected' | 'modified', manifest: SupplyManifest) => {
-    // Check for duplicate pending operation
-    const operationKey = `${barangayId}-${action}`;
-    if (pendingOperationsRef.current.has(operationKey)) {
-      console.warn('Duplicate operation prevented:', operationKey);
-      return;
-    }
-    
-    pendingOperationsRef.current.set(operationKey, true);
-    
-    const entry: HistoryEntry = {
-      id: `${Date.now()}-${Math.random()}`,
-      barangayId,
-      barangayName,
-      action,
-      timestamp: new Date(),
-      manifestSnapshot: JSON.parse(JSON.stringify(manifest)),
-      approvedBy: 'Current User'
-    };
-    
-    setHistory(prev => {
-      // Prevent duplicate entries for the same manifest and action within a short time
-      const lastEntry = prev[0];
-      if (lastEntry && 
-          lastEntry.barangayId === barangayId && 
-          lastEntry.action === action &&
-          Date.now() - lastEntry.timestamp.getTime() < 1000) {
-        pendingOperationsRef.current.delete(operationKey);
-        return prev;
-      }
-      
-      const newHistory = [entry, ...prev].slice(0, 50);
-      
-      // Clear the operation flag after a short delay
-      setTimeout(() => {
-        pendingOperationsRef.current.delete(operationKey);
-      }, 500);
-      
-      return newHistory;
-    });
+  const addToHistory = useCallback((id: string, name: string, action: 'approved' | 'rejected', manifest: SupplyManifest) => {
+    const opKey = `${id}-${action}-${Date.now()}`;
+    if (pendingOpsRef.current.has(opKey)) return;
+    pendingOpsRef.current.add(opKey);
+    setTimeout(() => pendingOpsRef.current.delete(opKey), 1000);
+
+    setHistory(prev => [{
+      id: opKey, barangayId: id, barangayName: name, action,
+      timestamp: new Date(), manifestSnapshot: JSON.parse(JSON.stringify(manifest)),
+    }, ...prev].slice(0, 50));
   }, []);
 
-  const handleStatusUpdate = useCallback((barangayId: string, action: 'approved' | 'rejected') => {
-    setConfirmationDialog({
-      isOpen: true,
-      barangayId,
-      action: action === 'approved' ? 'approve' : 'reject'
-    });
-  }, []);
+  const openDialog = (id: string, action: 'approve' | 'reject') =>
+    setDialog({ open: true, id, action });
 
-  const confirmStatusUpdate = useCallback(async () => {
+  const confirmAction = useCallback(async () => {
     if (isProcessing) return;
-    
     setIsProcessing(true);
-    
-    const { barangayId, action } = confirmationDialog;
-    const barangay = barangays.find(b => b.id === barangayId);
-    const manifest = manifests[barangayId];
-    const resolvedAction: 'approved' | 'rejected' = action === 'approve' ? 'approved' : 'rejected';
-
-    if (barangay && manifest) {
-      try {
-        // Add to history first
-        addToHistory(barangayId, barangay.name, resolvedAction, manifest);
-        
-        // Give React time to update state and prevent race conditions
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        // Update the manifest status
-        onUpdateManifestStatus(barangayId, resolvedAction);
-        
-        // Wait for the status update to complete
-        await new Promise(resolve => setTimeout(resolve, 200));
-      } catch (error) {
-        console.error('Error updating manifest status:', error);
-      } finally {
-        // Close dialog and reset processing state
-        setConfirmationDialog({ isOpen: false, barangayId: '', action: 'approve' });
-        setIsProcessing(false);
-      }
-    } else {
-      setConfirmationDialog({ isOpen: false, barangayId: '', action: 'approve' });
-      setIsProcessing(false);
+    const { id, action } = dialog;
+    const b = barangays.find(x => x.id === id);
+    const m = manifests[id];
+    const resolved = action === 'approve' ? 'approved' : 'rejected';
+    if (b && m) {
+      addToHistory(id, b.name, resolved, m);
+      await new Promise(r => setTimeout(r, 120));
+      onUpdateManifestStatus(id, resolved);
+      setFlashId(id);
+      setTimeout(() => {
+        setFlashId(null);
+        // Auto-advance to next pending
+        const remaining = barangays.filter(x => x.id !== id && manifests[x.id]?.status === 'pending');
+        setSelectedId(remaining[0]?.id ?? null);
+      }, 600);
     }
-  }, [confirmationDialog, barangays, manifests, addToHistory, onUpdateManifestStatus, isProcessing]);
+    setDialog({ open: false, id: '', action: 'approve' });
+    setIsProcessing(false);
+  }, [dialog, barangays, manifests, addToHistory, onUpdateManifestStatus, isProcessing]);
 
-  const cancelStatusUpdate = useCallback(() => {
-    if (isProcessing) return;
-    setConfirmationDialog({ isOpen: false, barangayId: '', action: 'approve' });
-  }, [isProcessing]);
+  // Computed lists
+  const pending  = barangays.filter(b => manifests[b.id]?.status === 'pending');
+  const approved = barangays.filter(b => manifests[b.id]?.status === 'approved');
+  const rejected = barangays.filter(b => manifests[b.id]?.status === 'rejected');
 
-  // Compute metrics
-  const pendingManifests = Object.values(manifests).filter(m => m.status === 'pending');
-  const approvedManifests = Object.values(manifests).filter(m => m.status === 'approved');
-  const rejectedManifests = Object.values(manifests).filter(m => m.status === 'rejected');
-  
-  const pendingCount = pendingManifests.length;
-  const approvedCount = approvedManifests.length;
-  const rejectedCount = rejectedManifests.length;
-  
-  const totalShortfalls = pendingManifests.reduce((sum, manifest) => {
-    const manifestShortfall = SUPPLY_ROWS.reduce((rowSum, row) => {
-      return rowSum + (manifest[row.key].shortfall || 0);
-    }, 0);
-    return sum + manifestShortfall;
-  }, 0);
+  const listBarangays = filterStatus === 'pending'
+    ? [...pending].sort((a, b) => (predictions[b.id]?.predictedAffected ?? 0) - (predictions[a.id]?.predictedAffected ?? 0))
+    : [...pending, ...approved, ...rejected].sort((a, b) => (predictions[b.id]?.predictedAffected ?? 0) - (predictions[a.id]?.predictedAffected ?? 0));
 
-  const filteredBarangays = barangays.filter(barangay => {
-    const manifest = manifests[barangay.id];
-    if (!manifest) return false;
-    if (filterStatus === 'all') return true;
-    if (filterStatus === 'pending') return manifest.status === 'pending';
-    if (filterStatus === 'approved') return manifest.status === 'approved';
-    if (filterStatus === 'rejected') return manifest.status === 'rejected';
-    return true;
-  });
+  const selectedBarangay = barangays.find(b => b.id === selectedId);
+  const selectedManifest = selectedId ? manifests[selectedId] : null;
+  const selectedPred     = selectedId ? predictions[selectedId] : null;
 
-  const sorted = [...filteredBarangays].sort((a, b) => {
-    const pa = predictions[a.id]?.predictedAffected ?? 0;
-    const pb = predictions[b.id]?.predictedAffected ?? 0;
-    
-    if (filterStatus === 'pending') {
-      return pb - pa;
-    }
-    return 0;
-  });
+  // Metrics
+  const totalShortfall = pending.reduce((sum, b) =>
+    sum + SUPPLY_ROWS.reduce((s, r) => s + (manifests[b.id]?.[r.key]?.shortfall ?? 0), 0), 0);
+
+  const statusDot = (status: string) => {
+    if (status === 'pending')  return 'bg-amber-400';
+    if (status === 'approved') return 'bg-teal-400';
+    if (status === 'rejected') return 'bg-red-500';
+    return 'bg-slate-600';
+  };
+
+  const statusLabel = (status: string) => {
+    if (status === 'pending')  return <span className="text-amber-400">Pending</span>;
+    if (status === 'approved') return <span className="text-teal-400">Approved</span>;
+    if (status === 'rejected') return <span className="text-red-400">Rejected</span>;
+    return null;
+  };
 
   return (
     <div className="flex-1 flex flex-col h-full bg-slate-950 overflow-hidden">
       <ConfirmationDialog
-        isOpen={confirmationDialog.isOpen}
-        title={confirmationDialog.action === 'approve' ? 'Approve Manifest' : 'Reject Manifest'}
-        message={confirmationDialog.action === 'approve' 
-          ? 'Are you sure you want to approve this supply manifest? This will mark it as ready for dispatch and move it to the history.'
-          : 'Are you sure you want to reject this supply manifest? This action cannot be undone and the manifest will be moved to history.'}
-        onConfirm={confirmStatusUpdate}
-        onCancel={cancelStatusUpdate}
-        actionType={confirmationDialog.action}
+        isOpen={dialog.open}
+        title={dialog.action === 'approve' ? 'Approve Manifest' : 'Reject Manifest'}
+        message={dialog.action === 'approve'
+          ? 'Confirm approval — this manifest will be marked ready for dispatch.'
+          : 'Confirm rejection — the manifest will be archived and the barangay notified.'}
+        onConfirm={confirmAction}
+        onCancel={() => { if (!isProcessing) setDialog({ open: false, id: '', action: 'approve' }); }}
+        actionType={dialog.action}
         isProcessing={isProcessing}
       />
 
-      <div className="bg-gradient-to-r from-slate-900 to-slate-950 border-b border-slate-800 px-6 py-4">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="bg-teal-900/80 p-2 rounded-lg">
-              <Package className="w-5 h-5 text-teal-400" />
-            </div>
-            <div>
-              <h2 className="font-bold text-lg uppercase tracking-wider text-slate-200">Supply Manifests</h2>
-              <p className="text-[10px] text-slate-500">Sphere Standard · 3-day emergency ration</p>
-            </div>
+      {/* ── Top bar ── */}
+      <div className="shrink-0 bg-slate-900 border-b border-slate-800 px-5 py-3 flex items-center gap-4">
+        <div className="flex items-center gap-2.5">
+          <div className="bg-teal-900/60 p-1.5 rounded-lg">
+            <Package className="w-4 h-4 text-teal-400" />
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowHistory(!showHistory)}
-              className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-medium text-slate-300 transition-colors"
-            >
-              <History className="w-3.5 h-3.5" />
-              {showHistory ? 'Show Active' : 'View History'}
-            </button>
-            <span className="text-[10px] text-slate-500 font-mono">Last updated: {new Date().toLocaleTimeString()}</span>
+          <div>
+            <h2 className="font-mono font-bold text-[13px] uppercase tracking-[0.12em] text-slate-200">Supply Manifests</h2>
+            <p className="text-[9px] text-slate-600 font-mono">Sphere Standard · 3-day emergency</p>
           </div>
         </div>
 
-        {!showHistory && (
-          <div className="grid grid-cols-5 gap-3">
-            <div className="bg-slate-900/60 border border-slate-800 rounded-lg p-2 text-center">
-              <Clock className="w-4 h-4 text-amber-400 mx-auto mb-1" />
-              <p className="text-[9px] text-slate-500 uppercase font-bold">Pending</p>
-              <p className="text-xl font-bold text-amber-400">{pendingCount}</p>
-            </div>
-            <div className="bg-teal-950/20 border border-teal-800/30 rounded-lg p-2 text-center">
-              <CheckCircle2 className="w-4 h-4 text-teal-400 mx-auto mb-1" />
-              <p className="text-[9px] text-slate-500 uppercase font-bold">Approved</p>
-              <p className="text-xl font-bold text-teal-400">{approvedCount}</p>
-            </div>
-            <div className="bg-red-950/20 border border-red-800/30 rounded-lg p-2 text-center">
-              <XCircle className="w-4 h-4 text-red-400 mx-auto mb-1" />
-              <p className="text-[9px] text-slate-500 uppercase font-bold">Rejected</p>
-              <p className="text-xl font-bold text-red-400">{rejectedCount}</p>
-            </div>
-            <div className="bg-red-950/20 border border-red-800/30 rounded-lg p-2 text-center">
-              <AlertTriangle className="w-4 h-4 text-red-400 mx-auto mb-1" />
-              <p className="text-[9px] text-slate-500 uppercase font-bold">Total Shortfall</p>
-              <p className="text-xl font-bold text-red-400">{totalShortfalls.toLocaleString()}</p>
-            </div>
-            <div className="bg-blue-950/20 border border-blue-800/30 rounded-lg p-2 text-center relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-r from-blue-500/0 via-blue-500/5 to-blue-500/0 animate-pulse"></div>
-              <Truck className="w-4 h-4 text-blue-400 mx-auto mb-1" />
-              <p className="text-[9px] text-slate-500 uppercase font-bold">Pending Items</p>
-              <p className="text-xl font-bold text-blue-400">{pendingCount}</p>
-            </div>
+        {/* Metric pills */}
+        <div className="flex items-center gap-2 ml-4">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-950/50 border border-amber-900/50 rounded-full">
+            <Clock className="w-3 h-3 text-amber-400" />
+            <span className="font-mono text-[11px] font-bold text-amber-400">{pending.length} pending</span>
           </div>
-        )}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-teal-950/50 border border-teal-900/50 rounded-full">
+            <CheckCircle2 className="w-3 h-3 text-teal-400" />
+            <span className="font-mono text-[11px] font-bold text-teal-400">{approved.length} approved</span>
+          </div>
+          {totalShortfall > 0 && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-red-950/50 border border-red-900/50 rounded-full">
+              <AlertTriangle className="w-3 h-3 text-red-400" />
+              <span className="font-mono text-[11px] font-bold text-red-400">{totalShortfall.toLocaleString()} shortfall</span>
+            </div>
+          )}
+        </div>
 
-        {!showHistory && (
-          <div className="flex gap-2 mt-4">
+        <div className="ml-auto flex items-center gap-2">
+          {/* Filter toggle */}
+          <div className="flex bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-[10px] font-mono">
             <button
               onClick={() => setFilterStatus('pending')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-2 ${
-                filterStatus === 'pending'
-                  ? 'bg-amber-950 border border-amber-800 text-amber-300'
-                  : 'bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-300'
-              }`}
-            >
-              <Clock className="w-3.5 h-3.5" />
-              Pending Only
-            </button>
+              className={`px-2.5 py-1 rounded transition-colors ${filterStatus === 'pending' ? 'bg-slate-800 text-amber-400 font-bold' : 'text-slate-500 hover:text-slate-300'}`}
+            >Pending</button>
             <button
               onClick={() => setFilterStatus('all')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-2 ${
-                filterStatus === 'all'
-                  ? 'bg-slate-700 border border-slate-600 text-slate-200'
-                  : 'bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-300'
-              }`}
-            >
-              <Archive className="w-3.5 h-3.5" />
-              All Active
-            </button>
+              className={`px-2.5 py-1 rounded transition-colors ${filterStatus === 'all' ? 'bg-slate-800 text-slate-200 font-bold' : 'text-slate-500 hover:text-slate-300'}`}
+            >All</button>
           </div>
-        )}
+          {/* History toggle */}
+          <button
+            onClick={() => setShowHistory(h => !h)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-mono font-semibold border transition-colors ${
+              showHistory
+                ? 'bg-slate-700 border-slate-600 text-slate-200'
+                : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600'
+            }`}
+          >
+            <History className="w-3.5 h-3.5" />
+            History {history.length > 0 && <span className="bg-slate-600 text-slate-300 rounded-full px-1.5 py-0.5 text-[9px]">{history.length}</span>}
+          </button>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
-        {showHistory ? (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
-                <History className="w-4 h-4 text-teal-400" />
-                Approval & Rejection History
-              </h3>
-              <button
-                onClick={() => {
-                  if (confirm('Clear all history?')) {
-                    setHistory([]);
-                  }
-                }}
-                className="text-xs text-red-400 hover:text-red-300 transition-colors"
-              >
-                Clear History
+      {/* ── Body ── */}
+      {showHistory ? (
+        /* ── History panel ── */
+        <div className="flex-1 overflow-y-auto p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-[11px] font-mono font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+              <History className="w-3.5 h-3.5 text-teal-500" /> Action Log
+            </h3>
+            {history.length > 0 && (
+              <button onClick={() => { if (confirm('Clear all history?')) setHistory([]); }}
+                className="text-[10px] font-mono text-red-500/70 hover:text-red-400 transition-colors">
+                Clear
               </button>
+            )}
+          </div>
+          {history.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-slate-600">
+              <History className="w-10 h-10 mb-3 opacity-40" />
+              <p className="text-sm font-mono">No actions yet</p>
             </div>
-            {history.length === 0 ? (
-              <div className="text-center py-12 text-slate-500">
-                <History className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                <p className="text-sm">No history yet</p>
-                <p className="text-xs mt-1">Approved or rejected manifests will appear here</p>
-              </div>
-            ) : (
-              history.map(entry => (
-                <div key={entry.id} className="bg-slate-900 border border-slate-800 rounded-lg p-4">
+          ) : (
+            <div className="space-y-2">
+              {history.map(entry => (
+                <div key={entry.id} className={`bg-slate-900 border rounded-xl p-4 ${
+                  entry.action === 'approved' ? 'border-teal-900/50' : 'border-red-900/50'
+                }`}>
                   <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className={`p-1.5 rounded-lg ${
-                        entry.action === 'approved' ? 'bg-teal-950' : 'bg-red-950'
-                      }`}>
-                        {entry.action === 'approved' ? (
-                          <CheckCircle2 className="w-4 h-4 text-teal-400" />
-                        ) : (
-                          <XCircle className="w-4 h-4 text-red-400" />
-                        )}
+                    <div className="flex items-center gap-2.5">
+                      <div className={`p-1.5 rounded-lg ${entry.action === 'approved' ? 'bg-teal-950' : 'bg-red-950'}`}>
+                        {entry.action === 'approved'
+                          ? <CheckCircle2 className="w-3.5 h-3.5 text-teal-400" />
+                          : <XCircle      className="w-3.5 h-3.5 text-red-400" />}
                       </div>
                       <div>
-                        <p className="font-semibold text-slate-200">{entry.barangayName}</p>
-                        <p className="text-[10px] text-slate-500">
-                          {entry.action === 'approved' ? 'Approved' : 'Rejected'} by {entry.approvedBy}
-                        </p>
+                        <p className="text-[12px] font-bold text-slate-200">{entry.barangayName}</p>
+                        <p className="text-[10px] text-slate-500 font-mono capitalize">{entry.action}</p>
                       </div>
                     </div>
-                    <p className="text-[10px] text-slate-500 font-mono">
-                      {entry.timestamp.toLocaleString()}
-                    </p>
+                    <p className="text-[10px] font-mono text-slate-600">{entry.timestamp.toLocaleString()}</p>
                   </div>
-                  <div className="grid grid-cols-5 gap-2 text-[10px]">
+                  <div className="grid grid-cols-5 gap-1 text-[10px] font-mono">
                     {SUPPLY_ROWS.map(row => {
                       const item = entry.manifestSnapshot[row.key];
                       return (
-                        <div key={row.key} className="text-center">
-                          <p className="text-slate-500">{row.label}</p>
-                          <p className="text-slate-300 font-mono">
-                            {item.inventory.toLocaleString()} / {item.recommended.toLocaleString()} {row.unit}
-                          </p>
+                        <div key={row.key} className="bg-slate-800/50 rounded-lg p-2 text-center">
+                          <p className="text-slate-600 mb-0.5">{row.label}</p>
+                          <p className="text-slate-300 font-bold">{item.inventory.toLocaleString()}</p>
+                          <p className="text-slate-600">/{item.recommended.toLocaleString()}</p>
                         </div>
                       );
                     })}
                   </div>
                 </div>
-              ))
-            )}
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        /* ── Split pane ── */
+        <div className="flex-1 flex overflow-hidden min-h-0">
+
+          {/* ── Left: list ── */}
+          <div className="w-64 shrink-0 border-r border-slate-800 flex flex-col overflow-hidden bg-slate-950">
+            <div className="shrink-0 px-3 py-2 border-b border-slate-800">
+              <p className="text-[9px] font-mono uppercase tracking-widest text-slate-600">
+                {listBarangays.length} barangay{listBarangays.length !== 1 ? 's' : ''}
+              </p>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {listBarangays.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 px-4 text-slate-600">
+                  <CheckCircle2 className="w-8 h-8 mb-2 opacity-40 text-teal-600" />
+                  <p className="text-[11px] font-mono text-center">All manifests reviewed</p>
+                </div>
+              ) : listBarangays.map(b => {
+                const m = manifests[b.id];
+                if (!m) return null;
+                const pred = predictions[b.id];
+                const affected = pred?.overrideValue ?? pred?.predictedAffected ?? 0;
+                const isCritical = pred?.damageSeverity === 'severe' || pred?.confidence === 'high';
+                const isSelected = selectedId === b.id;
+                const isFlashing = flashId === b.id;
+                const totalRec = SUPPLY_ROWS.reduce((s, r) => s + m[r.key].recommended, 0);
+                const totalInv = SUPPLY_ROWS.reduce((s, r) => s + m[r.key].inventory, 0);
+                const readiness = totalRec > 0 ? (totalInv / totalRec) * 100 : 0;
+
+                return (
+                  <button
+                    key={b.id}
+                    onClick={() => setSelectedId(b.id)}
+                    className={`w-full text-left px-3 py-3 border-b border-slate-800/60 transition-all relative ${
+                      isFlashing ? 'bg-teal-950/40' :
+                      isSelected ? 'bg-slate-800/80' : 'hover:bg-slate-900/60'
+                    }`}
+                  >
+                    {isSelected && (
+                      <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-teal-500 rounded-r" />
+                    )}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 ${statusDot(m.status)}`} />
+                        <div className="min-w-0">
+                          <p className={`text-[12px] font-bold truncate ${isSelected ? 'text-slate-100' : 'text-slate-300'}`}>
+                            {b.name}
+                          </p>
+                          <p className="text-[9px] font-mono text-slate-600">{affected.toLocaleString()} affected</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        {isCritical && m.status === 'pending' && (
+                          <span className="text-[8px] font-mono font-bold text-red-500 bg-red-950/60 border border-red-900/50 px-1 py-0.5 rounded uppercase">
+                            Crit
+                          </span>
+                        )}
+                        <ChevronRight className={`w-3 h-3 ${isSelected ? 'text-teal-500' : 'text-slate-700'}`} />
+                      </div>
+                    </div>
+                    {/* Mini readiness bar */}
+                    <div className="mt-2 h-0.5 bg-slate-800 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          readiness >= 80 ? 'bg-teal-600' : readiness >= 50 ? 'bg-amber-500' : 'bg-red-600'
+                        }`}
+                        style={{ width: `${Math.min(100, readiness)}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between mt-1">
+                      <span className="text-[8px] font-mono text-slate-600">{statusLabel(m.status)}</span>
+                      <span className="text-[8px] font-mono text-slate-700">{Math.round(readiness)}%</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        ) : (
-          sorted.map(barangay => {
-            const manifest = manifests[barangay.id];
-            const pred = predictions[barangay.id];
-            if (!manifest) return null;
-            
-            if (manifest.status === 'approved' || manifest.status === 'rejected') return null;
 
-            const effectiveAffected = pred?.overrideValue ?? pred?.predictedAffected ?? 0;
-            const statusCfg = STATUS_CONFIG[manifest.status] ?? STATUS_CONFIG.pending;
-            const hasShortfall = SUPPLY_ROWS.some(row => manifest[row.key].shortfall > 0);
-            const isExpanded = expandedBarangay === barangay.id;
-            const isCritical = pred?.damageSeverity === 'severe' || pred?.confidence === 'high';
-            
-            const totalRecommended = SUPPLY_ROWS.reduce((sum, row) => sum + manifest[row.key].recommended, 0);
-            const totalInventory = SUPPLY_ROWS.reduce((sum, row) => sum + manifest[row.key].inventory, 0);
-            const readinessPercent = totalRecommended > 0 ? (totalInventory / totalRecommended) * 100 : 0;
-
-            return (
-              <div 
-                key={barangay.id} 
-                className={`bg-slate-900 border rounded-xl overflow-hidden transition-all ${
-                  isCritical && manifest.status === 'pending' 
-                    ? 'border-red-500/50 ring-1 ring-red-500/30' 
-                    : 'border-slate-800'
-                }`}
-              >
-                <div className="px-5 py-3 border-b border-slate-800 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+          {/* ── Right: detail pane ── */}
+          <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+            {!selectedManifest || !selectedBarangay ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-slate-600">
+                <Package className="w-12 h-12 mb-3 opacity-30" />
+                <p className="font-mono text-sm">Select a barangay</p>
+              </div>
+            ) : (
+              <>
+                {/* Detail header */}
+                <div className={`shrink-0 px-6 py-4 border-b border-slate-800 ${
+                  selectedManifest.status === 'pending' ? 'bg-slate-900' : 'bg-slate-900/50'
+                }`}>
+                  <div className="flex items-start justify-between">
                     <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-bold text-slate-200">{barangay.name}</h3>
-                        {isCritical && manifest.status === 'pending' && (
-                          <span className="flex items-center gap-1 text-[9px] bg-red-950 border border-red-800 text-red-400 px-1.5 py-0.5 rounded font-bold">
-                            <AlertOctagon className="w-2.5 h-2.5" /> CRITICAL
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="font-bold text-lg text-slate-100">{selectedBarangay.name}</h3>
+                        {(selectedPred?.damageSeverity === 'severe' || selectedPred?.confidence === 'high') && selectedManifest.status === 'pending' && (
+                          <span className="flex items-center gap-1 text-[9px] font-mono font-bold bg-red-950 border border-red-800 text-red-400 px-2 py-0.5 rounded-full uppercase">
+                            <Zap className="w-2.5 h-2.5" /> Critical
                           </span>
                         )}
                       </div>
-                      <p className="text-[10px] text-slate-500">{barangay.cityMunicipality} · Pop. {barangay.population.toLocaleString()}</p>
-                    </div>
-                    {hasShortfall && (
-                      <span className="flex items-center gap-1 text-[10px] bg-red-950 border border-red-800 text-red-400 px-2 py-0.5 rounded font-bold">
-                        <AlertTriangle className="w-2.5 h-2.5" /> Shortfall Detected
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <div className="text-right">
-                      <div className="flex items-center gap-1">
-                        <Gauge className="w-3 h-3 text-slate-500" />
-                        <p className="text-[9px] text-slate-600 uppercase font-bold">Readiness</p>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <p className="text-slate-200 font-bold font-mono text-sm">{Math.round(readinessPercent)}%</p>
-                        {readinessPercent >= 80 ? (
-                          <TrendingUp className="w-3 h-3 text-teal-400" />
-                        ) : readinessPercent < 50 ? (
-                          <TrendingDown className="w-3 h-3 text-red-400" />
-                        ) : null}
-                      </div>
-                      <div className="w-20 bg-slate-800 rounded-full h-1 mt-1">
-                        <div 
-                          className={`h-1 rounded-full transition-all ${
-                            readinessPercent >= 80 ? 'bg-teal-500' : 
-                            readinessPercent >= 50 ? 'bg-amber-500' : 'bg-red-500'
-                          }`}
-                          style={{ width: `${Math.min(100, readinessPercent)}%` }}
-                        />
-                      </div>
+                      <p className="text-[11px] text-slate-500 font-mono">
+                        {selectedBarangay.cityMunicipality} · Pop. {selectedBarangay.population.toLocaleString()}
+                        {selectedPred && (
+                          <> · <span className="text-amber-400">{(selectedPred.overrideValue ?? selectedPred.predictedAffected ?? 0).toLocaleString()} est. affected</span></>
+                        )}
+                      </p>
                     </div>
 
-                    <div className="text-right mr-2">
-                      <p className="text-[9px] text-slate-600 uppercase font-bold">Est. Affected</p>
-                      <p className="text-slate-200 font-bold font-mono text-sm">{effectiveAffected.toLocaleString()}</p>
-                      {pred?.overrideValue != null && (
-                        <p className="text-[9px] text-teal-500">coordinator override</p>
-                      )}
-                    </div>
-                    <span className={`flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full border ${statusCfg.style}`}>
-                      {statusCfg.icon}
-                      {statusCfg.label}
-                    </span>
-                    <button
-                      onClick={() => setExpandedBarangay(isExpanded ? null : barangay.id)}
-                      className="p-1 text-slate-500 hover:text-slate-300 transition-colors"
-                    >
-                      {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                    </button>
+                    {/* Readiness ring */}
+                    {(() => {
+                      const totalRec = SUPPLY_ROWS.reduce((s, r) => s + selectedManifest[r.key].recommended, 0);
+                      const totalInv = SUPPLY_ROWS.reduce((s, r) => s + selectedManifest[r.key].inventory, 0);
+                      const pct = Math.round(totalRec > 0 ? (totalInv / totalRec) * 100 : 0);
+                      return (
+                        <div className="flex items-center gap-4">
+                          <div className="text-right">
+                            <p className="text-[9px] font-mono uppercase tracking-widest text-slate-600 mb-1">Readiness</p>
+                            <div className="flex items-baseline gap-1">
+                              <span className={`text-2xl font-bold font-mono ${
+                                pct >= 80 ? 'text-teal-400' : pct >= 50 ? 'text-amber-400' : 'text-red-400'
+                              }`}>{pct}%</span>
+                              {pct >= 80 ? <TrendingUp className="w-4 h-4 text-teal-500" /> : <TrendingDown className="w-4 h-4 text-red-500" />}
+                            </div>
+                          </div>
+                          <div className={`px-3 py-1 rounded-full text-[10px] font-mono font-bold border ${
+                            selectedManifest.status === 'pending'  ? 'bg-amber-950/60 border-amber-800 text-amber-300' :
+                            selectedManifest.status === 'approved' ? 'bg-teal-950/60 border-teal-800 text-teal-300' :
+                                                                     'bg-red-950/60 border-red-800 text-red-400'
+                          }`}>
+                            {selectedManifest.status.toUpperCase()}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
 
-                <div className="grid grid-cols-5 divide-x divide-slate-800">
-                  {SUPPLY_ROWS.map(row => {
-                    const item = manifest[row.key];
-                    const pct = Math.min(100, Math.round((item.inventory / Math.max(item.recommended, 1)) * 100));
-                    const isShort = item.shortfall > 0;
+                {/* Supply rows */}
+                <div className="flex-1 overflow-y-auto px-6 py-4">
+                  <p className="text-[9px] font-mono uppercase tracking-[0.15em] text-slate-600 mb-3">Supply Breakdown</p>
+                  <div className="bg-slate-900/50 border border-slate-800 rounded-xl px-4 divide-y-0">
+                    {SUPPLY_ROWS.map(row => (
+                      <SupplyBar key={row.key} row={row} item={selectedManifest[row.key]} />
+                    ))}
+                  </div>
 
-                    return (
-                      <div key={row.key} className="px-4 py-3 flex flex-col gap-1.5">
-                        <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-semibold uppercase">
-                          {row.icon}
-                          {row.label}
-                        </div>
-                        <div className="flex items-baseline gap-1">
-                          <p className={`text-sm font-bold font-mono ${isShort ? 'text-red-400' : 'text-teal-300'}`}>
-                            {item.inventory.toLocaleString()}
-                          </p>
-                          <span className="text-[10px] text-slate-500">/ {item.recommended.toLocaleString()} {row.unit}</span>
-                        </div>
-                        <div className="w-full bg-slate-800 rounded-full h-1">
-                          <div
-                            className={`h-1 rounded-full transition-all ${isShort ? 'bg-red-500' : 'bg-teal-500'}`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                        <p className={`text-[9px] font-mono ${isShort ? 'text-red-400' : 'text-slate-500'}`}>
-                          {isShort ? `Short: ${item.shortfall.toLocaleString()} ${row.unit}` : `${pct}% stocked`}
-                        </p>
+                  {/* Totals row */}
+                  <div className="mt-3 grid grid-cols-3 gap-3">
+                    {[
+                      {
+                        label: 'Total Required',
+                        value: SUPPLY_ROWS.reduce((s, r) => s + selectedManifest[r.key].recommended, 0).toLocaleString(),
+                        sub: 'units',
+                        color: 'text-slate-300',
+                      },
+                      {
+                        label: 'Total Available',
+                        value: SUPPLY_ROWS.reduce((s, r) => s + selectedManifest[r.key].inventory, 0).toLocaleString(),
+                        sub: 'units',
+                        color: 'text-slate-300',
+                      },
+                      {
+                        label: 'Total Gap',
+                        value: SUPPLY_ROWS.reduce((s, r) => s + selectedManifest[r.key].shortfall, 0).toLocaleString(),
+                        sub: 'units',
+                        color: SUPPLY_ROWS.some(r => selectedManifest[r.key].shortfall > 0) ? 'text-red-400' : 'text-teal-400',
+                      },
+                    ].map(({ label, value, sub, color }) => (
+                      <div key={label} className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-center">
+                        <p className="text-[9px] font-mono uppercase tracking-widest text-slate-600 mb-1">{label}</p>
+                        <p className={`text-lg font-bold font-mono ${color}`}>{value}</p>
+                        <p className="text-[9px] text-slate-700 font-mono">{sub}</p>
                       </div>
-                    );
-                  })}
+                    ))}
+                  </div>
                 </div>
 
-                {isExpanded && (
-                  <div className="px-5 py-3 border-t border-slate-800 bg-slate-900/30">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-2 flex items-center gap-1">
-                          <BarChart3 className="w-3 h-3" /> Inventory Analysis
-                        </p>
-                        <div className="space-y-2">
-                          {SUPPLY_ROWS.map(row => {
-                            const item = manifest[row.key];
-                            const shortfall = Math.max(0, item.recommended - item.inventory);
-                            return (
-                              <div key={row.key} className="flex justify-between text-xs">
-                                <span className="text-slate-400">{row.label}</span>
-                                <div className="text-right">
-                                  <span className="text-slate-300">{item.inventory.toLocaleString()}</span>
-                                  <span className="text-slate-600 mx-1">/</span>
-                                  <span className="text-slate-500">{item.recommended.toLocaleString()}</span>
-                                  {shortfall > 0 && (
-                                    <span className="text-red-400 ml-2 text-[10px]">
-                                      (Short: {shortfall.toLocaleString()})
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-2">Resource Requirements</p>
-                        <div className="space-y-1 text-xs">
-                          <div className="flex justify-between">
-                            <span className="text-slate-400">Total Required:</span>
-                            <span className="text-slate-300 font-mono">
-                              {SUPPLY_ROWS.reduce((sum, row) => sum + manifest[row.key].recommended, 0).toLocaleString()} units
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-slate-400">Total Available:</span>
-                            <span className="text-slate-300 font-mono">
-                              {SUPPLY_ROWS.reduce((sum, row) => sum + manifest[row.key].inventory, 0).toLocaleString()} units
-                            </span>
-                          </div>
-                          <div className="flex justify-between pt-1 border-t border-slate-800">
-                            <span className="text-slate-400 font-bold">Gap:</span>
-                            <span className={`font-mono font-bold ${hasShortfall ? 'text-red-400' : 'text-teal-400'}`}>
-                              {SUPPLY_ROWS.reduce((sum, row) => sum + manifest[row.key].shortfall, 0).toLocaleString()} units
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {(manifest.status === 'pending' || manifest.status === 'modified') && (
-                  <div className="px-5 py-2.5 border-t border-slate-800 bg-slate-900/40 flex items-center justify-end gap-2">
-                    <span className="text-[10px] text-slate-500 mr-auto flex items-center gap-1">
-                      <ShieldCheck className="w-3 h-3" />
+                {/* Action bar — only for pending */}
+                {selectedManifest.status === 'pending' && (
+                  <div className="shrink-0 border-t border-slate-800 bg-slate-900/80 px-6 py-3 flex items-center gap-3">
+                    <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-600 mr-auto">
+                      <ShieldCheck className="w-3.5 h-3.5 text-slate-500" />
                       Human approval required before dispatch
-                    </span>
+                    </div>
                     <button
-                      onClick={() => handleStatusUpdate(barangay.id, 'approved')}
+                      onClick={() => openDialog(selectedBarangay.id, 'reject')}
                       disabled={isProcessing}
-                      className="px-3 py-1.5 bg-teal-900/80 hover:bg-teal-800 border border-teal-700 text-teal-200 font-bold rounded-lg text-[11px] cursor-pointer transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Approve
-                    </button>
-                    <button
-                      onClick={() => handleStatusUpdate(barangay.id, 'rejected')}
-                      disabled={isProcessing}
-                      className="px-3 py-1.5 bg-red-950/80 hover:bg-red-900 border border-red-800 text-red-300 font-bold rounded-lg text-[11px] cursor-pointer transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-4 py-2 rounded-lg text-[11px] font-mono font-bold uppercase tracking-wider border border-red-900 bg-red-950/50 text-red-400 hover:bg-red-900/60 hover:border-red-700 transition-colors flex items-center gap-1.5 disabled:opacity-40"
                     >
                       <XCircle className="w-3.5 h-3.5" /> Reject
                     </button>
+                    <button
+                      onClick={() => openDialog(selectedBarangay.id, 'approve')}
+                      disabled={isProcessing}
+                      className="px-5 py-2 rounded-lg text-[11px] font-mono font-bold uppercase tracking-wider bg-teal-700 hover:bg-teal-600 border border-teal-600 text-teal-50 transition-colors flex items-center gap-1.5 disabled:opacity-40"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Approve
+                    </button>
                   </div>
                 )}
-              </div>
-            );
-          })
-        )}
-      </div>
+
+                {/* Approved/rejected state footer */}
+                {(selectedManifest.status === 'approved' || selectedManifest.status === 'rejected') && (
+                  <div className={`shrink-0 border-t px-6 py-3 flex items-center gap-2 text-[11px] font-mono ${
+                    selectedManifest.status === 'approved'
+                      ? 'border-teal-900/50 bg-teal-950/20 text-teal-500'
+                      : 'border-red-900/50 bg-red-950/20 text-red-500'
+                  }`}>
+                    {selectedManifest.status === 'approved'
+                      ? <><CheckCircle2 className="w-3.5 h-3.5" /> Manifest approved and queued for dispatch</>
+                      : <><XCircle className="w-3.5 h-3.5" /> Manifest rejected — barangay notified</>}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
