@@ -40,9 +40,25 @@ interface InteractiveCommandMapProps {
   onUpdateRoadStatus: (edgeId: string, status: 'open' | 'slow' | 'blocked' | 'damaged', notes?: string) => void;
   onConfirmReport: (reportId: string) => void;
   onFlagReport: (reportId: string) => void;
+  onResetReports?: () => void;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Distance Helper (Haversine Formula) ──────────────────────────────────────
+const calculateDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+  const R = 6371; // Earth radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
+// ─── Theme Helpers ────────────────────────────────────────────────────────────
 
 function scoreColor(score: number): string {
   if (score >= 0.7) return '#7f1d1d';
@@ -62,12 +78,6 @@ function reportFillColor(source: string): string {
   if (source === 'sms')    return '#06b6d4';
   if (source === 'parsed') return '#a855f7';
   return '#0d9488';
-}
-
-function reportOutlineColor(status: string): string {
-  if (status === 'pending') return '#eab308';
-  if (status === 'flagged') return '#ef4444';
-  return '#22c55e';
 }
 
 function volColor(availability: string): string {
@@ -92,6 +102,7 @@ export default function InteractiveCommandMap({
   onUpdateRoadStatus,
   onConfirmReport,
   onFlagReport,
+  onResetReports,
 }: InteractiveCommandMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -104,12 +115,15 @@ export default function InteractiveCommandMap({
   const volunteerMarkersRef = useRef<any[]>([]);
   const hubMarkersRef = useRef<any[]>([]);
 
+  // Tooltip popup reference
+  const hoverPopupRef = useRef<any>(null);
+
   const maplibreLoadedRef = useRef(false);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const [routeGeometries, setRouteGeometries] = useState<Record<string, [number, number][]>>({});
-  const [roadGeometries, setRoadGeometries] = useState<Record<string, [number, number][]>>({}); // NEW: Store actual road paths
+  const [roadGeometries, setRoadGeometries] = useState<Record<string, [number, number][]>>({}); // Store actual road paths
 
   const [mapLayers, setMapLayers] = useState({
     barangays: true,
@@ -138,6 +152,43 @@ export default function InteractiveCommandMap({
     [scores],
   );
 
+  // Helper to find the nearest hub to a specific coordinate
+  const getNearestHubToCoords = useCallback((lat: number, lng: number) => {
+    let nearest = mockLocationHubs[0];
+    let minDist = Infinity;
+    mockLocationHubs.forEach((hub) => {
+      const dist = calculateDistanceKm(lat, lng, hub.latitude, hub.longitude);
+      if (dist < minDist) {
+        minDist = dist;
+        nearest = hub;
+      }
+    });
+    return { hub: nearest, distance: minDist };
+  }, []);
+
+  // Filter edges dynamically to implement: "possible roads will open from nearest hubs"
+  const getVisibleEdges = useCallback((): RoadEdge[] => {
+    if (!selectedReport) return [];
+
+    const { hub } = getNearestHubToCoords(selectedReport.latitude, selectedReport.longitude);
+
+    // Filter edges that are within the route vicinity corridor between nearest hub and the active report
+    return edges.filter((edge) => {
+      const distToHubSrc = calculateDistanceKm(edge.sourceCoords.lat, edge.sourceCoords.lng, hub.latitude, hub.longitude);
+      const distToHubTgt = calculateDistanceKm(edge.targetCoords.lat, edge.targetCoords.lng, hub.latitude, hub.longitude);
+      const distToRepSrc = calculateDistanceKm(edge.sourceCoords.lat, edge.sourceCoords.lng, selectedReport.latitude, selectedReport.longitude);
+      const distToRepTgt = calculateDistanceKm(edge.targetCoords.lat, edge.targetCoords.lng, selectedReport.latitude, selectedReport.longitude);
+
+      const proximityThreshold = 7.5; 
+      return (
+        distToHubSrc < proximityThreshold ||
+        distToHubTgt < proximityThreshold ||
+        distToRepSrc < proximityThreshold ||
+        distToRepTgt < proximityThreshold
+      );
+    });
+  }, [selectedReport, edges, getNearestHubToCoords]);
+
   // ── 1. Generate Barangay Polygons ─────────────────────────────────
   const generateBarangayPolygon = useCallback((barangay: Barangay): [number, number][] => {
     const centerLng = barangay.longitude;
@@ -156,7 +207,7 @@ export default function InteractiveCommandMap({
     return coords;
   }, []);
 
-  // ── 2. NEW: Fetch real road paths from OSRM ─────────────────────
+  // ── 2. Fetch real road paths from OSRM ─────────────────────
   useEffect(() => {
     let active = true;
     const roadCache = new Map<string, [number, number][]>();
@@ -170,7 +221,6 @@ export default function InteractiveCommandMap({
           continue;
         }
 
-        // Add delay to respect rate limits
         await new Promise((resolve) => setTimeout(resolve, 150));
 
         try {
@@ -188,12 +238,10 @@ export default function InteractiveCommandMap({
             const data = await res.json();
             const geometry = data.routes?.[0]?.geometry?.coordinates;
             if (geometry?.length) {
-              // Simplify geometry slightly for performance
               const simplified = geometry.filter((_: any, i: number) => i % 2 === 0 || i === geometry.length - 1);
               roadCache.set(cacheKey, simplified);
               setRoadGeometries(prev => ({ ...prev, [edge.id]: simplified }));
             } else {
-              // Fallback to straight line
               const straightLine = [
                 [edge.sourceCoords.lng, edge.sourceCoords.lat],
                 [edge.targetCoords.lng, edge.targetCoords.lat]
@@ -204,7 +252,6 @@ export default function InteractiveCommandMap({
           }
         } catch (error) {
           console.warn(`Failed to fetch road path for ${edge.id}:`, error);
-          // Fallback to straight line
           const straightLine = [
             [edge.sourceCoords.lng, edge.sourceCoords.lat],
             [edge.targetCoords.lng, edge.targetCoords.lat]
@@ -254,7 +301,6 @@ export default function InteractiveCommandMap({
             const data = await res.json();
             const geometry = data.routes?.[0]?.geometry?.coordinates;
             if (geometry?.length) {
-              // Simplify geometry
               const simplified = geometry.filter((_: any, i: number) => i % 2 === 0 || i === geometry.length - 1);
               routeCache.set(pathKey, simplified);
               setRouteGeometries((prev) => ({
@@ -345,6 +391,11 @@ export default function InteractiveCommandMap({
     if (barangay) {
       onSelectBarangay(barangay);
       setSelectedEdge(null);
+      mapRef.current?.flyTo({
+        center: [barangay.longitude, barangay.latitude],
+        zoom: 12.5,
+        essential: true
+      });
     }
   }, [barangays, onSelectBarangay]);
 
@@ -353,9 +404,6 @@ export default function InteractiveCommandMap({
     const maplibregl = window.maplibregl;
     if (!mapContainerRef.current || mapRef.current || !maplibregl) return;
 
-    // Boundaries configured to encapsulate the entire Cebu Province / Island [2]
-    // Southwest: Santander / Samboan area (9.30 latitude)
-    // Northeast: Bantayan, Camotes, and Daanbantayan (11.50 latitude)
     const WHOLE_CEBU_BOUNDS: [[number, number], [number, number]] = [
       [123.15, 9.30], 
       [124.60, 11.50]
@@ -366,13 +414,17 @@ export default function InteractiveCommandMap({
       style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
       center: [123.905, 10.33], 
       zoom: 11.5,
-      minZoom: 8.0,                   // Lower minZoom to let users zoom out and view the entire province
-      maxBounds: WHOLE_CEBU_BOUNDS,   // Restricts panning strictly within Cebu's geographical boundaries
+      minZoom: 8.0,
+      maxBounds: WHOLE_CEBU_BOUNDS,
       attributionControl: false,
     });
 
-    // NOTE: Default MapLibre Navigation Control (which generates white background buttons) 
-    // has been removed here to rely entirely on your custom dark JSX controls.
+    hoverPopupRef.current = new maplibregl.Popup({
+      closeButton: false,
+      closeOnClick: false,
+      offset: 15,
+      className: 'command-map-tooltip'
+    });
 
     map.on('load', () => {
       // Add sources
@@ -453,7 +505,7 @@ export default function InteractiveCommandMap({
         },
       });
 
-      // Road layers - these will now show actual curved roads
+      // Road layers
       map.addLayer({
         id: 'roads-layer-solid',
         type: 'line',
@@ -498,7 +550,6 @@ export default function InteractiveCommandMap({
         },
       });
 
-  
       // Event handlers
       map.on('click', 'roads-layer-solid', handleRoadClick);
       map.on('click', 'roads-layer-blocked', handleRoadClick);
@@ -508,20 +559,84 @@ export default function InteractiveCommandMap({
       // Hover effects
       map.on('mouseenter', 'barangays-fill', (e: any) => {
         if (e.features?.[0]?.properties?.id) {
-          setHoveredBarangay(e.features[0].properties.id);
+          const feat = e.features[0];
+          setHoveredBarangay(feat.properties.id);
           map.getCanvas().style.cursor = 'pointer';
+
+          const score = Math.round(feat.properties.score * 100);
+          const contactStr = feat.properties.hoursSinceContact 
+            ? `${feat.properties.hoursSinceContact}h ago` 
+            : 'No contact';
+
+          hoverPopupRef.current
+            .setLngLat(e.lngLat)
+            .setHTML(`
+              <div class="px-2 py-1 text-xs font-sans">
+                <div class="font-bold text-teal-400 mb-0.5">${feat.properties.name}</div>
+                <div class="text-slate-400">Risk Score: <span class="font-bold text-slate-200">${score}%</span></div>
+                <div class="text-slate-400">Last Contact: <span class="text-slate-200">${contactStr}</span></div>
+              </div>
+            `)
+            .addTo(map);
         }
       });
       
+      map.on('mousemove', 'barangays-fill', (e: any) => {
+        hoverPopupRef.current.setLngLat(e.lngLat);
+      });
+
       map.on('mouseleave', 'barangays-fill', () => {
         setHoveredBarangay(null);
         map.getCanvas().style.cursor = '';
+        hoverPopupRef.current.remove();
       });
 
-      map.on('mouseenter', 'roads-layer-solid', () => { map.getCanvas().style.cursor = 'pointer'; });
-      map.on('mouseleave', 'roads-layer-solid', () => { map.getCanvas().style.cursor = ''; });
-      map.on('mouseenter', 'roads-layer-blocked', () => { map.getCanvas().style.cursor = 'pointer'; });
-      map.on('mouseleave', 'roads-layer-blocked', () => { map.getCanvas().style.cursor = ''; });
+      // Road hover interactive swell effect + tooltip
+      const onRoadHover = (e: any) => {
+        map.getCanvas().style.cursor = 'pointer';
+        const props = e.features?.[0]?.properties;
+        if (props) {
+          map.setPaintProperty('roads-layer-solid', 'line-width', [
+            'case',
+            ['==', ['get', 'id'], props.id],
+            5.5,
+            ['match', ['get', 'status'], 'damaged', 4, 3]
+          ]);
+          map.setPaintProperty('roads-layer-solid', 'line-opacity', [
+            'case',
+            ['==', ['get', 'id'], props.id],
+            1.0,
+            0.6
+          ]);
+
+          hoverPopupRef.current
+            .setLngLat(e.lngLat)
+            .setHTML(`
+              <div class="px-2 py-1 text-xs font-sans">
+                <div class="font-bold text-slate-100">${props.name}</div>
+                <div class="text-[10px] mt-0.5 capitalize">Status: <span class="font-bold text-slate-300">${props.status}</span></div>
+              </div>
+            `)
+            .addTo(map);
+        }
+      };
+
+      const onRoadLeave = () => {
+        map.getCanvas().style.cursor = '';
+        hoverPopupRef.current.remove();
+        map.setPaintProperty('roads-layer-solid', 'line-width', [
+          'match', ['get', 'status'], 'damaged', 4, 3
+        ]);
+        map.setPaintProperty('roads-layer-solid', 'line-opacity', 0.85);
+      };
+
+      map.on('mouseenter', 'roads-layer-solid', onRoadHover);
+      map.on('mousemove', 'roads-layer-solid', (e: { lngLat: any; }) => hoverPopupRef.current.setLngLat(e.lngLat));
+      map.on('mouseleave', 'roads-layer-solid', onRoadLeave);
+
+      map.on('mouseenter', 'roads-layer-blocked', onRoadHover);
+      map.on('mousemove', 'roads-layer-blocked', (e: { lngLat: any; }) => hoverPopupRef.current.setLngLat(e.lngLat));
+      map.on('mouseleave', 'roads-layer-blocked', onRoadLeave);
 
       mapRef.current = map;
       setIsMapLoaded(true);
@@ -564,14 +679,16 @@ export default function InteractiveCommandMap({
     }
   }, [isMapLoaded, mapLayers.barangays, barangays, getScoreData, generateBarangayPolygon, selectedBarangay, hoveredBarangay]);
 
-  // ── NEW: Update Roads with actual curved geometries ──
+  // ── Dynamic Road Rendering (Implements: "road should not show first... possible roads open from nearest hubs") ──
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isMapLoaded) return;
 
     const roadsSource = map.getSource('roads-source');
     if (roadsSource && mapLayers.roads) {
-      const features = edges.map((edge) => {
+      const activeEdges = getVisibleEdges();
+      
+      const features = activeEdges.map((edge) => {
         const geometry = roadGeometries[edge.id];
         if (!geometry) return null;
         
@@ -594,7 +711,7 @@ export default function InteractiveCommandMap({
         features: features
       });
     }
-  }, [isMapLoaded, mapLayers.roads, edges, roadGeometries]);
+  }, [isMapLoaded, mapLayers.roads, edges, roadGeometries, selectedReport, getVisibleEdges]);
 
   // ── Update Routes ──
   useEffect(() => {
@@ -627,7 +744,7 @@ export default function InteractiveCommandMap({
     }
   }, [isMapLoaded, mapLayers.routes, routes, routeGeometries]);
 
-  // ── Report Markers ──
+  // ── Interactive Report Markers (Pulsing fix applied strictly to INNER element) ──
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isMapLoaded) return;
@@ -639,23 +756,105 @@ export default function InteractiveCommandMap({
 
     reports.forEach((report) => {
       const fill = reportFillColor(report.source);
-      const outline = reportOutlineColor(report.status);
       const isSelected = selectedReport?.id === report.id;
-      const size = isSelected ? 14 : 11;
+      const status = report.status;
 
       const el = document.createElement('div');
+      
+      // Outer element holds size and positions clean (DO NOT apply translate animations here!) [1.1.7]
+      el.className = 'flex items-center justify-center relative cursor-pointer group';
+      
+      const size = isSelected ? 32 : 25;
       el.style.width = `${size}px`;
       el.style.height = `${size}px`;
-      el.style.borderRadius = '50%';
-      el.style.background = fill;
-      el.style.border = `${isSelected ? 3 : 2}px solid ${outline}`;
-      el.style.boxShadow = '0 0 0 1px #020617';
-      el.style.cursor = 'pointer';
+
+      let bg = fill;
+      let border = '2px solid #ffffff';
+      let iconMarkup = '';
+      let pulseClass = '';
+
+      if (status === 'pending') {
+        // Enforce solid warning yellow background and bright amber borders to match the legend [1]
+        bg = '#d97706'; 
+        border = '2px solid #fbbf24'; 
+        pulseClass = 'marker-pulse'; // Applied exclusively to the inner div to avoid transform overriding [1.1.7]
+        el.style.setProperty('--pulse-color', '#fbbf24'); // Match pulsing glow to warning yellow [1]
+        iconMarkup = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <circle cx="12" cy="17" r="1"></circle>
+          </svg>
+        `;
+      } else if (status === 'confirmed') {
+        bg = '#16a34a'; // Verified Forest Green
+        border = '2px solid #22c55e';
+        iconMarkup = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+        `;
+      } else if (status === 'flagged') {
+        bg = '#dc2626'; // Alert Crimson
+        border = '2.5px solid #ef4444';
+        iconMarkup = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        `;
+      }
+
+      // Inside layout: Pulse class animates only this inner div [1.1.7]
+      el.innerHTML = `
+        <div style="
+          background: ${bg};
+          border: ${border};
+          border-radius: 50%;
+          width: ${size}px;
+          height: ${size}px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+          transition: transform 0.2s ease, width 0.2s ease, height 0.2s ease;
+        " class="hover:scale-125 ${pulseClass}">
+          ${iconMarkup}
+        </div>
+      `;
+
+      el.addEventListener('mouseenter', () => {
+        const statusLabelColor = status === 'confirmed' ? 'text-green-400 bg-green-950/40' :
+          status === 'flagged' ? 'text-red-400 bg-red-950/40' : 'text-amber-400 bg-amber-950/40';
+
+        hoverPopupRef.current
+          .setLngLat([report.longitude, report.latitude])
+          .setHTML(`
+            <div class="px-2 py-1 text-xs font-sans">
+              <div class="flex items-center gap-1.5 mb-0.5 border-b border-slate-800 pb-0.5 justify-between">
+                <span class="font-bold text-slate-100 uppercase text-[9px] tracking-wide">Report #${report.id}</span>
+                <span class="text-[9px] font-extrabold uppercase px-1 rounded-sm ${statusLabelColor}">${status}</span>
+              </div>
+              <div class="text-slate-300 font-medium mb-1 line-clamp-2 max-w-[200px]">"${report.rawText}"</div>
+              <div class="text-[9px] text-slate-500">Source: <span class="text-teal-400 uppercase font-bold">${report.source}</span></div>
+            </div>
+          `)
+          .addTo(map);
+      });
+
+      el.addEventListener('mouseleave', () => {
+        hoverPopupRef.current.remove();
+      });
 
       el.addEventListener('click', (ev) => {
         ev.stopPropagation();
         onSelectReport(report);
         setSelectedEdge(null);
+        map.flyTo({
+          center: [report.longitude, report.latitude],
+          zoom: 13.2,
+          essential: true,
+          speed: 1.2
+        });
       });
 
       const marker = new window.maplibregl.Marker({ element: el })
@@ -666,7 +865,7 @@ export default function InteractiveCommandMap({
     });
   }, [isMapLoaded, mapLayers.reports, reports, selectedReport, onSelectReport]);
 
-  // ── Team Markers ──
+  // ── Interactive Team Markers (Custom SVGs categorized by Team Type) ──
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isMapLoaded) return;
@@ -682,15 +881,80 @@ export default function InteractiveCommandMap({
         : `${team.capacityKg}k`;
 
       const el = document.createElement('div');
-      el.style.display = 'flex';
-      el.style.flexDirection = 'column';
-      el.style.alignItems = 'center';
-      el.style.gap = '2px';
-      el.style.cursor = 'pointer';
+      el.className = 'cursor-pointer flex flex-col items-center';
+
+      let iconColor = '#38bdf8'; 
+      let iconMarkup = '';
+
+      if (team.type === 'boat') {
+        iconColor = '#34d399'; 
+        iconMarkup = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v17M2 10c0 4.4 3.6 8 10 8s10-3.6 10-8H2z"/>
+          </svg>
+        `;
+      } else if (team.type === 'ambulance') {
+        iconColor = '#f43f5e'; 
+        iconMarkup = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 12h-4l-3 9L9 3l-3 9H2"/>
+          </svg>
+        `;
+      } else if (team.type === '4x4') {
+        iconColor = '#fbbf24'; 
+        iconMarkup = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="18.5" cy="17.5" r="2.5"/>
+            <circle cx="5.5" cy="17.5" r="2.5"/>
+            <path d="M14 6H5a2 2 0 0 0-2 2v6h18v-3a3 3 0 0 0-3-3h-4Z"/>
+          </svg>
+        `;
+      } else {
+        iconColor = '#38bdf8'; 
+        iconMarkup = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="1" y="3" width="15" height="13" rx="2" ry="2"/>
+            <polygon points="16 8 20 8 23 11 23 16 16 16"/>
+            <circle cx="5.5" cy="18.5" r="2.5"/>
+            <circle cx="18.5" cy="18.5" r="2.5"/>
+          </svg>
+        `;
+      }
+      
       el.innerHTML = `
-        <div style="width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:12px solid #64748b;filter:drop-shadow(0 0 0 1px #020617);"></div>
-        <div style="background:#1e293b;border:0.5px solid #475569;border-radius:3px;padding:1px 5px;font-size:8px;font-weight:700;color:#cbd5e1;font-family:monospace;">${label}</div>
+        <div style="
+          background: #1e293b;
+          border: 1.5px solid #64748b;
+          border-radius: 6px;
+          padding: 3px 5px;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+          transition: border-color 0.15s;
+        " class="hover:border-teal-400">
+          ${iconMarkup}
+          <span style="color: #cbd5e1; font-size: 8.5px; font-weight: 700; font-family: monospace;">${label}</span>
+        </div>
       `;
+
+      el.addEventListener('mouseenter', () => {
+        hoverPopupRef.current
+          .setLngLat([team.baseLocation.lng + 0.005, team.baseLocation.lat + 0.005])
+          .setHTML(`
+            <div class="px-2 py-1 text-xs font-sans">
+              <div class="font-bold text-sky-400 mb-0.5">${team.name}</div>
+              <div class="text-[10px] text-slate-400">Type: <span class="text-slate-200 font-semibold uppercase">${team.type}</span></div>
+              <div class="text-[10px] text-slate-400">Status: <span class="text-slate-200 font-semibold capitalize">${team.status}</span></div>
+              <div class="text-[10px] text-slate-400">Capacity: <span class="text-slate-200 font-semibold">${team.capacityKg.toLocaleString()} kg</span></div>
+            </div>
+          `)
+          .addTo(map);
+      });
+
+      el.addEventListener('mouseleave', () => {
+        hoverPopupRef.current.remove();
+      });
 
       const marker = new window.maplibregl.Marker({ element: el })
         .setLngLat([team.baseLocation.lng + 0.005, team.baseLocation.lat + 0.005])
@@ -700,7 +964,7 @@ export default function InteractiveCommandMap({
     });
   }, [isMapLoaded, mapLayers.teams, teams]);
 
-  // ── Volunteer Markers ──
+  // ── Interactive Volunteer Markers (Custom User SVG + Tooltip) ──
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isMapLoaded) return;
@@ -713,12 +977,47 @@ export default function InteractiveCommandMap({
     mockVolunteers.forEach((vol) => {
       const fill = volColor(vol.availability);
       const el = document.createElement('div');
-      el.style.width = '7px';
-      el.style.height = '7px';
-      el.style.borderRadius = '50%';
-      el.style.background = fill;
-      el.style.border = '1px solid #020617';
-      el.style.opacity = '0.85';
+      el.className = 'cursor-pointer';
+      
+      el.innerHTML = `
+        <div style="
+          background: #0f172a;
+          border: 1.5px solid ${fill};
+          border-radius: 50%;
+          width: 18px;
+          height: 18px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.6);
+          transition: transform 0.15s;
+        " class="hover:scale-125">
+          <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="${fill}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
+            <circle cx="12" cy="7" r="4"/>
+          </svg>
+        </div>
+      `;
+
+      el.addEventListener('mouseenter', () => {
+        hoverPopupRef.current
+          .setLngLat([vol.longitude, vol.latitude])
+          .setHTML(`
+            <div class="px-2 py-1 text-xs font-sans">
+              <div class="font-bold text-slate-100 mb-0.5">${vol.name}</div>
+              <div class="text-[10px] text-slate-400">Team: <span class="text-slate-200">${vol.teamName || 'Independent'}</span></div>
+              <div class="text-[10px] uppercase font-semibold tracking-wider flex items-center gap-1 mt-0.5" style="color: ${fill}">
+                <span class="w-1.5 h-1.5 rounded-full" style="background: ${fill}"></span>
+                ${vol.availability}
+              </div>
+            </div>
+          `)
+          .addTo(map);
+      });
+
+      el.addEventListener('mouseleave', () => {
+        hoverPopupRef.current.remove();
+      });
 
       const marker = new window.maplibregl.Marker({ element: el })
         .setLngLat([vol.longitude, vol.latitude])
@@ -728,7 +1027,7 @@ export default function InteractiveCommandMap({
     });
   }, [isMapLoaded, mapLayers.volunteers]);
 
-  // ── Hub Markers ──
+  // ── Interactive Hub Markers (SVGs categorized by Hub Type) ──
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isMapLoaded) return;
@@ -740,12 +1039,72 @@ export default function InteractiveCommandMap({
 
     mockLocationHubs.forEach((hub) => {
       const el = document.createElement('div');
-      el.style.width = '12px';
-      el.style.height = '12px';
-      el.style.background = '#38bdf8';
-      el.style.border = '2px solid #020617';
-      el.style.borderRadius = '2px';
-      el.style.cursor = 'pointer';
+      el.className = 'cursor-pointer';
+      
+      let hubColor = '#0284c7'; 
+      let iconMarkup = '';
+
+      if (hub.type === 'shelter') {
+        hubColor = '#f97316'; 
+        iconMarkup = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+            <polyline points="9 22 9 12 15 12 15 22"/>
+          </svg>
+        `;
+      } else if (hub.type === 'supply_hub') {
+        hubColor = '#a855f7'; 
+        iconMarkup = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/>
+            <line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/>
+          </svg>
+        `;
+      } else {
+        // Warehouse (Large Depot)
+        hubColor = '#0284c7'; 
+        iconMarkup = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 10v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V10l10-6 10 6Z"/>
+            <path d="M6 12h12v10H6z"/>
+          </svg>
+        `;
+      }
+
+      el.innerHTML = `
+        <div style="
+          background: ${hubColor};
+          border: 1.5px solid #ffffff;
+          border-radius: 4px;
+          width: 20px;
+          height: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 4px 8px rgba(0,0,0,0.6);
+          transition: transform 0.15s;
+        " class="hover:scale-110">
+          ${iconMarkup}
+        </div>
+      `;
+
+      el.addEventListener('mouseenter', () => {
+        hoverPopupRef.current
+          .setLngLat([hub.longitude, hub.latitude])
+          .setHTML(`
+            <div class="px-2 py-1 text-xs font-sans">
+              <div class="font-bold text-sky-400 mb-0.5">${hub.name}</div>
+              <div class="text-[9px] text-slate-400 uppercase tracking-wider font-semibold capitalize">Type: ${hub.type.replace('_', ' ')}</div>
+              <div class="text-[10px] text-slate-400 mt-0.5">Capacity Used: <span class="font-bold text-slate-200">${hub.capacityPercent}%</span></div>
+            </div>
+          `)
+          .addTo(map);
+      });
+
+      el.addEventListener('mouseleave', () => {
+        hoverPopupRef.current.remove();
+      });
 
       const marker = new window.maplibregl.Marker({ element: el })
         .setLngLat([hub.longitude, hub.latitude])
@@ -839,6 +1198,47 @@ export default function InteractiveCommandMap({
           width: 100%;
           height: 100%;
         }
+        /* Critical positioning fix for MapLibre markers and popups */
+        .maplibregl-marker {
+          position: absolute !important;
+          top: 0 !important;
+          left: 0 !important;
+          will-change: transform !important;
+        }
+        .maplibregl-popup {
+          position: absolute !important;
+          top: 0 !important;
+          left: 0 !important;
+          will-change: transform !important;
+          display: flex !important;
+        }
+        /* Pulse Animation for urgent items */
+        @keyframes marker-glow-pulse {
+          0%, 100% {
+            transform: scale(1);
+            filter: drop-shadow(0 0 2px var(--pulse-color));
+          }
+          50% {
+            transform: scale(1.15);
+            filter: drop-shadow(0 0 8px var(--pulse-color));
+          }
+        }
+        .marker-pulse {
+          animation: marker-glow-pulse 2s infinite ease-in-out;
+        }
+        /* Custom Tooltip Styling */
+        .command-map-tooltip .maplibregl-popup-content {
+          background-color: #020617 !important;
+          color: #f1f5f9 !important;
+          border: 1px solid #1e293b !important;
+          border-radius: 8px !important;
+          padding: 6px 10px !important;
+          box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.7) !important;
+        }
+        .command-map-tooltip .maplibregl-popup-tip {
+          border-top-color: #020617 !important;
+          border-bottom-color: #020617 !important;
+        }
       `}</style>
 
       {/* Header */}
@@ -848,6 +1248,18 @@ export default function InteractiveCommandMap({
           <span className="font-bold text-[11px] uppercase tracking-wider text-slate-300">
             Live Operations Map
           </span>
+          {onResetReports && (
+            <button
+              onClick={() => {
+                onResetReports();
+                onSelectReport(null as any);
+                setSelectedEdge(null);
+              }}
+              className="ml-2 px-2 py-0.5 bg-slate-850 hover:bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-200 text-[8px] font-bold rounded uppercase tracking-wider transition-colors cursor-pointer"
+            >
+              Reset States
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 p-0.5 rounded-lg text-[10px] text-slate-400">
@@ -906,9 +1318,9 @@ export default function InteractiveCommandMap({
           ))}
         </div>
 
-        {/* Road edge popup */}
+        {/* Road edge popup (Adjusted left position to sit right beside the top-left fullscreen icon) */}
         {selectedEdge && (
-          <div className="absolute top-4 left-4 w-[280px] bg-slate-950/95 border border-slate-800 p-3 rounded-lg text-xs flex flex-col gap-2 z-10 shadow-2xl backdrop-blur-sm">
+          <div className="absolute top-3 left-12 w-[290px] bg-slate-950/95 border border-slate-800 p-3.5 rounded-lg text-xs flex flex-col gap-2 z-10 shadow-2xl backdrop-blur-sm">
             <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
               <span className="font-bold text-slate-300 truncate max-w-[200px]">
                 {selectedEdge.name}
@@ -977,9 +1389,9 @@ export default function InteractiveCommandMap({
           </div>
         )}
 
-        {/* Report popup */}
+        {/* Report popup (Adjusted left position to sit right beside the top-left fullscreen icon) */}
         {selectedReport && (
-          <div className="absolute top-4 left-4 w-[280px] bg-slate-950/95 border border-slate-800 p-3.5 rounded-lg text-xs flex flex-col gap-2 z-10 shadow-2xl backdrop-blur-sm">
+          <div className="absolute top-3 left-12 w-[300px] bg-slate-950/95 border border-slate-800 p-3.5 rounded-lg text-xs flex flex-col gap-2 z-10 shadow-2xl backdrop-blur-sm">
             <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
               <div className="flex items-center gap-1.5">
                 <FileText className="w-3.5 h-3.5 text-teal-400" />
@@ -1014,7 +1426,8 @@ export default function InteractiveCommandMap({
                 &ldquo;{selectedReport.rawText}&rdquo;
               </div>
 
-              <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-500">
+              {/* Enhanced details panel matching our updated mock schema */}
+              <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-500 border-b border-slate-900 pb-2">
                 <div>
                   <span className="block text-[8px] uppercase font-bold text-slate-500">
                     Barangay
@@ -1025,12 +1438,48 @@ export default function InteractiveCommandMap({
                 </div>
                 <div>
                   <span className="block text-[8px] uppercase font-bold text-slate-500">
-                    Confidence
+                    Severity / Need
                   </span>
-                  <span className="text-slate-300 font-semibold">
-                    {Math.round(selectedReport.confidence * 100)}%
+                  <span className={`font-semibold uppercase tracking-wide text-[9px] ${
+                    selectedReport.needsSeverity === 'critical' ? 'text-red-400' :
+                    selectedReport.needsSeverity === 'high' ? 'text-amber-400' :
+                    selectedReport.needsSeverity === 'medium' ? 'text-sky-400' : 'text-slate-400'
+                  }`}>
+                    {selectedReport.needsSeverity}
                   </span>
                 </div>
+                <div>
+                  <span className="block text-[8px] uppercase font-bold text-slate-500">
+                    Est. Affected
+                  </span>
+                  <span className="text-slate-300 font-semibold">
+                    {selectedReport.populationEstimate > 0 ? `${selectedReport.populationEstimate} people` : 'None / Minor'}
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-[8px] uppercase font-bold text-slate-500">
+                    Impediment
+                  </span>
+                  <span className="text-slate-300 font-semibold">
+                    {selectedReport.roadImpassable ? 'Impassable St' : selectedReport.roadStatus || 'None'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-[10px]">
+                <span className="text-slate-500">Confidence Score:</span>
+                <span className="text-slate-300 font-semibold">{Math.round(selectedReport.confidence * 100)}%</span>
+              </div>
+
+              <div className="flex items-center justify-between text-[10px]">
+                <span className="text-slate-500">Verification Status:</span>
+                <span className={`font-bold uppercase text-[9px] px-1.5 py-0.5 rounded ${
+                  selectedReport.status === 'confirmed' ? 'bg-green-950 text-green-400 border border-green-800' :
+                  selectedReport.status === 'flagged' ? 'bg-red-950 text-red-400 border border-red-800' :
+                  'bg-yellow-950 text-yellow-400 border border-yellow-800'
+                }`}>
+                  {selectedReport.status}
+                </span>
               </div>
             </div>
 
@@ -1059,52 +1508,92 @@ export default function InteractiveCommandMap({
           </div>
         )}
 
-        {/* Legend */}
+        {/* Updated Legend Panel (Hub colors explicit to display the 3 distinct types) */}
         <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-1.5 select-none">
           {legendOpen && (
-            <div className="bg-slate-950/95 border border-slate-800 p-2.5 rounded-lg text-[9px] text-slate-400 flex flex-col gap-1.5 w-[118px] shadow-2xl backdrop-blur-sm">
-              <div className="font-bold text-[8px] text-slate-500 uppercase tracking-wider">Risk</div>
-              {[
-                { color: '#0d5c56', label: 'Normal' },
-                { color: '#d97706', label: 'Watch' },
-                { color: '#dc2626', label: 'High' },
-                { color: '#7f1d1d', label: 'Critical' },
-              ].map(({ color, label }) => (
-                <div key={label} className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
-                  <span>{label}</span>
+            <div className="bg-slate-950/95 border border-slate-800 p-3 rounded-lg text-[9.5px] text-slate-400 flex flex-col gap-2.5 w-[140px] shadow-2xl backdrop-blur-sm">
+              <div>
+                <div className="font-bold text-[8px] text-slate-500 uppercase tracking-wider mb-1">Barangay Risk</div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {[
+                    { color: '#0d5c56', label: 'Normal' },
+                    { color: '#d97706', label: 'Watch' },
+                    { color: '#dc2626', label: 'High' },
+                    { color: '#7f1d1d', label: 'Critical' },
+                  ].map(({ color, label }) => (
+                    <div key={label} className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
+                      <span className="text-[8.5px]">{label}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-
-              <div className="font-bold text-[8px] text-slate-500 uppercase tracking-wider border-t border-slate-800 pt-1.5 mt-0.5">Roads</div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-3.5 h-0.5 bg-[#475569] inline-block shrink-0" />
-                <span>Open</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-3.5 h-0.5 bg-[#d97706] inline-block shrink-0" />
-                <span>Slow</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-3.5 h-0 border-t-2 border-dashed border-[#ef4444] inline-block shrink-0" />
-                <span>Blocked</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-3.5 h-0 border-t-[3px] border-dashed border-[#dc2626] inline-block shrink-0" />
-                <span>Damaged</span>
               </div>
 
-              <div className="font-bold text-[8px] text-slate-500 uppercase tracking-wider border-t border-slate-800 pt-1.5 mt-0.5">Reports</div>
-              {[
-                { color: '#06b6d4', label: 'SMS' },
-                { color: '#0d9488', label: 'Mobile' },
-                { color: '#a855f7', label: 'Parsed' },
-              ].map(({ color, label }) => (
-                <div key={label} className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
-                  <span>{label}</span>
+              <div className="border-t border-slate-850 pt-1.5">
+                <div className="font-bold text-[8px] text-slate-500 uppercase tracking-wider mb-1">Road Network</div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-4 h-0.5 bg-[#475569] inline-block shrink-0" />
+                    <span>Open Access</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-4 h-0.5 bg-[#d97706] inline-block shrink-0" />
+                    <span>Slow Route</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-4 h-0 border-t-2 border-dashed border-[#ef4444] inline-block shrink-0" />
+                    <span>Blocked Way</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-4 h-0.5 bg-[#dc2626] inline-block shrink-0" />
+                    <span>Damaged Path</span>
+                  </div>
+                  <div className="text-[7.5px] text-slate-500 italic mt-1 leading-normal">
+                    *Road networks generate dynamically between nearest hub and selected reports.
+                  </div>
                 </div>
-              ))}
+              </div>
+
+              <div className="border-t border-slate-850 pt-1.5">
+                <div className="font-bold text-[8px] text-slate-500 uppercase tracking-wider mb-1">Report States</div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-3.5 h-3.5 rounded-full bg-amber-500/20 border border-amber-500 flex items-center justify-center text-[7px] text-amber-500 shrink-0 font-bold">!</span>
+                    <span>Pending Action</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-3.5 h-3.5 rounded-full bg-green-600 border border-green-400 flex items-center justify-center text-[7px] text-white shrink-0 font-bold">✓</span>
+                    <span>Verified</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-3.5 h-3.5 rounded-full bg-red-600 border border-red-400 flex items-center justify-center text-[7px] text-white shrink-0 font-bold">✕</span>
+                    <span>Flagged</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Asset Types split cleanly into specific operational categories */}
+              <div className="border-t border-slate-850 pt-1.5">
+                <div className="font-bold text-[8px] text-slate-500 uppercase tracking-wider mb-1">Asset Types</div>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-[8.5px]">
+                    <span className="w-2.5 h-2 bg-[#0284c7] border border-sky-400 rounded-sm inline-block shrink-0" />
+                    <span>Warehouse / Depot</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[8.5px]">
+                    <span className="w-2.5 h-2 bg-[#a855f7] border border-purple-400 rounded-sm inline-block shrink-0" />
+                    <span>Supply Hub</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[8.5px]">
+                    <span className="w-2.5 h-2 bg-[#f97316] border border-orange-400 rounded-sm inline-block shrink-0" />
+                    <span>Emergency Shelter</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[8.5px] border-t border-slate-900 pt-1 mt-1">
+                    <span className="w-2.5 h-1.5 bg-slate-850 border border-slate-500 inline-block shrink-0" />
+                    <span>Rescue Team</span>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -1115,7 +1604,7 @@ export default function InteractiveCommandMap({
             <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="3"/><path d="M3 12h1m16 0h1M12 3v1m0 16v1m-6.4-3.6.7-.7m11.4-11.4.7-.7M5.6 5.6l.7.7m11.4 11.4.7.7"/>
             </svg>
-            Legend
+            Legend Panel
             <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ transform: legendOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>
               <path d="M6 9l6 6 6-6"/>
             </svg>
