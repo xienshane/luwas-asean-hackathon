@@ -354,7 +354,6 @@ const ResizeHandle = () => (
           <ReportsView
             reports={reports}
             onConfirmReport={handleConfirmReport}
-            onFlagReport={handleFlagReport}
           />
         )}
 

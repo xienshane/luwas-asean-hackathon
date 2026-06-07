@@ -10,7 +10,7 @@ export async function login(formData: FormData) {
   const email = String(formData.get('email') ?? '')
   const password = String(formData.get('password') ?? '')
   const redirectedFrom = String(formData.get('redirectedFrom') ?? '')
-  const destination = redirectedFrom || '/coordinator/health'
+  const destination = redirectedFrom || '/coordinator'
 
   const { error } = await supabase.auth.signInWithPassword({ email, password })
 
