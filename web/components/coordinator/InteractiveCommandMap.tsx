@@ -353,15 +353,26 @@ export default function InteractiveCommandMap({
     const maplibregl = window.maplibregl;
     if (!mapContainerRef.current || mapRef.current || !maplibregl) return;
 
+    // Boundaries configured to encapsulate the entire Cebu Province / Island [2]
+    // Southwest: Santander / Samboan area (9.30 latitude)
+    // Northeast: Bantayan, Camotes, and Daanbantayan (11.50 latitude)
+    const WHOLE_CEBU_BOUNDS: [[number, number], [number, number]] = [
+      [123.15, 9.30], 
+      [124.60, 11.50]
+    ];
+
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
       style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
-      center: [123.905, 10.33],
+      center: [123.905, 10.33], 
       zoom: 11.5,
+      minZoom: 8.0,                   // Lower minZoom to let users zoom out and view the entire province
+      maxBounds: WHOLE_CEBU_BOUNDS,   // Restricts panning strictly within Cebu's geographical boundaries
       attributionControl: false,
     });
 
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    // NOTE: Default MapLibre Navigation Control (which generates white background buttons) 
+    // has been removed here to rely entirely on your custom dark JSX controls.
 
     map.on('load', () => {
       // Add sources
