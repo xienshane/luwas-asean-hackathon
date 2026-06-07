@@ -1,3 +1,5 @@
+// lib/mockData.ts
+
 export interface Barangay {
   id: string;
   name: string;
@@ -130,6 +132,57 @@ export interface HistoricalIncident {
   event: string;
   affectedCount: number;
   damageSeverity: 'severe' | 'moderate' | 'minor';
+}
+
+// Helper function to generate realistic curved routes between waypoints
+function generateRealisticRoute(
+  waypoints: Array<{ lat: number; lng: number }>,
+  segmentsPerPair: number = 10
+): Array<{ lat: number; lng: number }> {
+  if (waypoints.length < 2) return waypoints;
+  
+  const curvedRoute: Array<{ lat: number; lng: number }> = [];
+  
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const p1 = waypoints[i];
+    const p2 = waypoints[i + 1];
+    
+    // Add intermediate points for smoother curves
+    for (let j = 0; j <= segmentsPerPair; j++) {
+      const t = j / segmentsPerPair;
+      
+      // Linear interpolation
+      let lat = p1.lat * (1 - t) + p2.lat * t;
+      let lng = p1.lng * (1 - t) + p2.lng * t;
+      
+      // Add bezier-style curve for non-straight paths
+      if (i > 0 && i < waypoints.length - 2) {
+        const p0 = waypoints[i - 1];
+        const p3 = waypoints[i + 2];
+        
+        // Cubic Bezier interpolation for smoother curves
+        const t2 = t * t;
+        const t3 = t2 * t;
+        const mt = 1 - t;
+        const mt2 = mt * mt;
+        const mt3 = mt2 * mt;
+        
+        lat = mt3 * p0.lat + 3 * mt2 * t * p1.lat + 3 * mt * t2 * p2.lat + t3 * p3.lat;
+        lng = mt3 * p0.lng + 3 * mt2 * t * p1.lng + 3 * mt * t2 * p2.lng + t3 * p3.lng;
+      }
+      
+      // Add slight random offset for natural road variation (only for intermediate points)
+      if (j > 0 && j < segmentsPerPair) {
+        const offset = 0.0002 * Math.sin(t * Math.PI);
+        lat += (Math.random() - 0.5) * offset;
+        lng += (Math.random() - 0.5) * offset;
+      }
+      
+      curvedRoute.push({ lat, lng });
+    }
+  }
+  
+  return curvedRoute;
 }
 
 // Global Cebu Warehouses / Shelters / Supply Hubs
@@ -405,7 +458,8 @@ export const mockTeams: Team[] = [
     baseLocation: { lat: 10.3215, lng: 123.8967 },
     status: 'active',
     type: 'ambulance',
-    currentAssignment: 'Pasil Coast Medical Aid'
+    currentAssignment: 'Pasil Coast Medical Aid',
+    activeRouteId: 'route-3'
   }
 ];
 
@@ -426,7 +480,7 @@ export const mockRoadEdges: RoadEdge[] = [
     targetNode: 'Talamban Centroid',
     sourceCoords: { lat: 10.3382, lng: 123.9016 },
     targetCoords: { lat: 10.3705, lng: 123.9181 },
-    status: 'damaged', // thick red dashed
+    status: 'damaged',
     lengthM: 3800,
     notes: 'Blocked by landslide debris, heavy machinery required.'
   },
@@ -437,7 +491,7 @@ export const mockRoadEdges: RoadEdge[] = [
     targetNode: 'Mambaling Centroid',
     sourceCoords: { lat: 10.3157, lng: 123.8854 },
     targetCoords: { lat: 10.2928, lng: 123.8829 },
-    status: 'blocked', // red dashed
+    status: 'blocked',
     lengthM: 2600,
     notes: 'Flooded chest-deep, boat access only.'
   },
@@ -448,7 +502,7 @@ export const mockRoadEdges: RoadEdge[] = [
     targetNode: 'Subangdaku Centroid',
     sourceCoords: { lat: 10.3243, lng: 123.9167 },
     targetCoords: { lat: 10.3289, lng: 123.9298 },
-    status: 'slow', // amber
+    status: 'slow',
     lengthM: 1600,
     notes: 'High water overflow from Mahiga Creek, light vehicles advised to detour.'
   },
@@ -459,7 +513,7 @@ export const mockRoadEdges: RoadEdge[] = [
     targetNode: 'Pasil Centroid',
     sourceCoords: { lat: 10.3157, lng: 123.8854 },
     targetCoords: { lat: 10.2917, lng: 123.8936 },
-    status: 'open', // neutral gray
+    status: 'open',
     lengthM: 2700
   },
   {
@@ -491,39 +545,106 @@ export const mockRoadEdges: RoadEdge[] = [
     targetCoords: { lat: 10.3243, lng: 123.9167 },
     status: 'open',
     lengthM: 3500
+  },
+  {
+    id: 'edge-mabolo-subangdaku',
+    name: 'Subangdaku Access Rd',
+    sourceNode: 'Mabolo Centroid',
+    targetNode: 'Subangdaku Centroid',
+    sourceCoords: { lat: 10.3243, lng: 123.9167 },
+    targetCoords: { lat: 10.3289, lng: 123.9298 },
+    status: 'slow',
+    lengthM: 1800,
+    notes: 'Partial flooding, 4x4 vehicles only'
   }
 ];
 
+// Updated Routes with realistic curved paths using waypoints
 export const mockRoutes: Route[] = [
   {
     id: 'route-1',
     teamId: 'team-gamma',
     teamName: 'Water Rescue Gamma (Boat)',
-    status: 'active', // Teal solid route line
+    status: 'active',
     totalDistanceM: 5300,
     stops: [
       { sequence: 1, barangayId: 'b-pasil', barangayName: 'Pasil', action: 'Deliver Water & Medical Supplies' },
       { sequence: 2, barangayId: 'b-mambaling', barangayName: 'Mambaling', action: 'Search-and-Rescue Evacuation' }
     ],
-    path: [
-      { lat: 10.2917, lng: 123.9016 },
-      { lat: 10.2917, lng: 123.8936 },
-      { lat: 10.2928, lng: 123.8829 }
-    ]
+    path: generateRealisticRoute([
+      { lat: 10.2917, lng: 123.9016 }, // Start near Pasil coast
+      { lat: 10.2917, lng: 123.8936 }, // Pasil center
+      { lat: 10.2930, lng: 123.8880 }, // Midpoint coastal road
+      { lat: 10.2928, lng: 123.8829 }  // Mambaling center
+    ], 12)
   },
   {
     id: 'route-2',
     teamId: 'team-beta',
     teamName: 'Logistics Beta (Truck)',
-    status: 'planned', // Dashed route line
+    status: 'planned',
     totalDistanceM: 3800,
     stops: [
       { sequence: 1, barangayId: 'b-guadalupe', barangayName: 'Guadalupe', action: 'Deliver Shelter Materials' }
     ],
-    path: [
-      { lat: 10.3157, lng: 123.8854 },
-      { lat: 10.3225, lng: 123.8845 }
-    ]
+    path: generateRealisticRoute([
+      { lat: 10.3157, lng: 123.8854 }, // City Center Warehouse
+      { lat: 10.3185, lng: 123.8845 }, // Midway through residential area
+      { lat: 10.3225, lng: 123.8845 }  // Guadalupe center
+    ], 8)
+  },
+  {
+    id: 'route-3',
+    teamId: 'team-delta',
+    teamName: 'Medic Delta (Ambulance)',
+    status: 'active',
+    totalDistanceM: 4500,
+    stops: [
+      { sequence: 1, barangayId: 'b-ermita', barangayName: 'Ermita', action: 'Medical Evacuation' },
+      { sequence: 2, barangayId: 'b-pasil', barangayName: 'Pasil', action: 'Emergency Medical Response' }
+    ],
+    path: generateRealisticRoute([
+      { lat: 10.3215, lng: 123.8967 }, // Medical base
+      { lat: 10.3157, lng: 123.8854 }, // City center
+      { lat: 10.3100, lng: 123.8900 }, // Coastal road junction
+      { lat: 10.2961, lng: 123.8998 }, // Ermita
+      { lat: 10.2935, lng: 123.8965 }, // Midpoint coastal
+      { lat: 10.2917, lng: 123.8936 }  // Pasil
+    ], 10)
+  },
+  {
+    id: 'route-4',
+    teamId: 'team-alpha',
+    teamName: 'Rescue Alpha (4x4)',
+    status: 'active',
+    totalDistanceM: 4200,
+    stops: [
+      { sequence: 1, barangayId: 'b-lahug', barangayName: 'Lahug', action: 'Landslide Clearing Support' }
+    ],
+    path: generateRealisticRoute([
+      { lat: 10.3157, lng: 123.8854 }, // Base
+      { lat: 10.3240, lng: 123.8900 }, // Hillside approach
+      { lat: 10.3315, lng: 123.8955 }, // Upper Lahug
+      { lat: 10.3382, lng: 123.9016 }  // Lahug landslide site
+    ], 10)
+  },
+  {
+    id: 'route-5',
+    teamId: 'team-beta',
+    teamName: 'Logistics Beta (Truck)',
+    status: 'planned',
+    totalDistanceM: 6200,
+    stops: [
+      { sequence: 1, barangayId: 'b-subangdaku', barangayName: 'Subangdaku', action: 'Flood Relief Supplies' },
+      { sequence: 2, barangayId: 'b-mabolo', barangayName: 'Mabolo', action: 'Food Distribution' }
+    ],
+    path: generateRealisticRoute([
+      { lat: 10.3157, lng: 123.8854 }, // Warehouse
+      { lat: 10.3200, lng: 123.9000 }, // Midpoint
+      { lat: 10.3243, lng: 123.9167 }, // Mabolo
+      { lat: 10.3265, lng: 123.9230 }, // Highway approach
+      { lat: 10.3289, lng: 123.9298 }  // Subangdaku
+    ], 15)
   }
 ];
 

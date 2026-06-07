@@ -18,11 +18,11 @@ import {
   mockVolunteers,
 } from '@/lib/mockData';
 
-// ─── Leaflet types (avoid full @types/leaflet dep requirement) ───────────────
+// ─── MapLibre types ──────────────────────────────────────────────────────────
 declare global {
   interface Window {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    L: any;
+    maplibregl: any;
   }
 }
 
@@ -51,13 +51,11 @@ function scoreColor(score: number): string {
   return '#0d5c56';
 }
 
-function roadStyle(status: string) {
-  switch (status) {
-    case 'slow':    return { color: '#d97706', weight: 3,   dashArray: undefined };
-    case 'blocked': return { color: '#ef4444', weight: 2.5, dashArray: '6 4' };
-    case 'damaged': return { color: '#b91c1c', weight: 4,   dashArray: '5 4' };
-    default:        return { color: '#475569', weight: 2,   dashArray: undefined };
-  }
+function scoreBorderColor(score: number): string {
+  if (score >= 0.7) return '#ef4444';
+  if (score >= 0.4) return '#f97316';
+  if (score >= 0.2) return '#f59e0b';
+  return '#14b8a6';
 }
 
 function reportFillColor(source: string): string {
@@ -70,12 +68,6 @@ function reportOutlineColor(status: string): string {
   if (status === 'pending') return '#eab308';
   if (status === 'flagged') return '#ef4444';
   return '#22c55e';
-}
-
-function hubColor(type: string): string {
-  if (type === 'shelter')    return '#a855f7';
-  if (type === 'supply_hub') return '#3b82f6';
-  return '#2dd4bf';
 }
 
 function volColor(availability: string): string {
@@ -105,10 +97,19 @@ export default function InteractiveCommandMap({
   const wrapperRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapRef = useRef<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const layerGroupsRef = useRef<Record<string, any>>({});
-  const leafletLoadedRef = useRef(false);
+
+  // Separate, isolated refs for markers
+  const reportMarkersRef = useRef<any[]>([]);
+  const teamMarkersRef = useRef<any[]>([]);
+  const volunteerMarkersRef = useRef<any[]>([]);
+  const hubMarkersRef = useRef<any[]>([]);
+
+  const maplibreLoadedRef = useRef(false);
+  const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const [routeGeometries, setRouteGeometries] = useState<Record<string, [number, number][]>>({});
+  const [roadGeometries, setRoadGeometries] = useState<Record<string, [number, number][]>>({}); // NEW: Store actual road paths
 
   const [mapLayers, setMapLayers] = useState({
     barangays: true,
@@ -122,6 +123,14 @@ export default function InteractiveCommandMap({
 
   const [selectedEdge, setSelectedEdge] = useState<RoadEdge | null>(null);
   const [roadNotes, setRoadNotes] = useState('');
+  const [legendOpen, setLegendOpen] = useState(false);
+  const [hoveredBarangay, setHoveredBarangay] = useState<string | null>(null);
+
+  // Keep refs of edges for dynamic access
+  const edgesRef = useRef(edges);
+  useEffect(() => {
+    edgesRef.current = edges;
+  }, [edges]);
 
   const getScoreData = useCallback(
     (barangayId: string) =>
@@ -129,301 +138,666 @@ export default function InteractiveCommandMap({
     [scores],
   );
 
-  // ── Load Leaflet CSS + JS once ────────────────────────────────────────────
-  useEffect(() => {
-    if (leafletLoadedRef.current) return;
-    leafletLoadedRef.current = true;
+  // ── 1. Generate Barangay Polygons ─────────────────────────────────
+  const generateBarangayPolygon = useCallback((barangay: Barangay): [number, number][] => {
+    const centerLng = barangay.longitude;
+    const centerLat = barangay.latitude;
+    const size = 0.005; // Consistent size
+    
+    const angles = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330];
+    const coords = angles.map(angle => {
+      const rad = (angle * Math.PI) / 180;
+      const latOffset = Math.sin(rad) * size;
+      const lngOffset = Math.cos(rad) * size;
+      return [centerLng + lngOffset, centerLat + latOffset] as [number, number];
+    });
+    
+    coords.push(coords[0]);
+    return coords;
+  }, []);
 
-    if (!document.getElementById('leaflet-css')) {
+  // ── 2. NEW: Fetch real road paths from OSRM ─────────────────────
+  useEffect(() => {
+    let active = true;
+    const roadCache = new Map<string, [number, number][]>();
+
+    const fetchRoadPaths = async () => {
+      for (const edge of edges) {
+        const cacheKey = `${edge.sourceCoords.lat},${edge.sourceCoords.lng}|${edge.targetCoords.lat},${edge.targetCoords.lng}`;
+        
+        if (roadCache.has(cacheKey)) {
+          setRoadGeometries(prev => ({ ...prev, [edge.id]: roadCache.get(cacheKey)! }));
+          continue;
+        }
+
+        // Add delay to respect rate limits
+        await new Promise((resolve) => setTimeout(resolve, 150));
+
+        try {
+          const coords = `${edge.sourceCoords.lng},${edge.sourceCoords.lat};${edge.targetCoords.lng},${edge.targetCoords.lat}`;
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 8000);
+          
+          const res = await fetch(
+            `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`,
+            { signal: controller.signal }
+          );
+          clearTimeout(timeoutId);
+
+          if (res.ok && active) {
+            const data = await res.json();
+            const geometry = data.routes?.[0]?.geometry?.coordinates;
+            if (geometry?.length) {
+              // Simplify geometry slightly for performance
+              const simplified = geometry.filter((_: any, i: number) => i % 2 === 0 || i === geometry.length - 1);
+              roadCache.set(cacheKey, simplified);
+              setRoadGeometries(prev => ({ ...prev, [edge.id]: simplified }));
+            } else {
+              // Fallback to straight line
+              const straightLine = [
+                [edge.sourceCoords.lng, edge.sourceCoords.lat],
+                [edge.targetCoords.lng, edge.targetCoords.lat]
+              ] as [number, number][];
+              roadCache.set(cacheKey, straightLine);
+              setRoadGeometries(prev => ({ ...prev, [edge.id]: straightLine }));
+            }
+          }
+        } catch (error) {
+          console.warn(`Failed to fetch road path for ${edge.id}:`, error);
+          // Fallback to straight line
+          const straightLine = [
+            [edge.sourceCoords.lng, edge.sourceCoords.lat],
+            [edge.targetCoords.lng, edge.targetCoords.lat]
+          ] as [number, number][];
+          roadCache.set(cacheKey, straightLine);
+          setRoadGeometries(prev => ({ ...prev, [edge.id]: straightLine }));
+        }
+      }
+    };
+
+    fetchRoadPaths();
+    return () => {
+      active = false;
+    };
+  }, [edges]);
+
+  // ── 3. Route fetching with simplification ─────────────────────
+  useEffect(() => {
+    let active = true;
+    const routeCache = new Map<string, [number, number][]>();
+
+    const fetchRoutesSequentially = async () => {
+      for (const route of routes) {
+        if (route.path.length < 2) continue;
+
+        const pathKey = `${route.id}`;
+        
+        if (routeCache.has(pathKey)) {
+          setRouteGeometries(prev => ({ ...prev, [pathKey]: routeCache.get(pathKey)! }));
+          continue;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 200));
+
+        try {
+          const coords = route.path.map((p) => `${p.lng},${p.lat}`).join(';');
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 8000);
+          
+          const res = await fetch(
+            `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`,
+            { signal: controller.signal }
+          );
+          clearTimeout(timeoutId);
+
+          if (res.ok && active) {
+            const data = await res.json();
+            const geometry = data.routes?.[0]?.geometry?.coordinates;
+            if (geometry?.length) {
+              // Simplify geometry
+              const simplified = geometry.filter((_: any, i: number) => i % 2 === 0 || i === geometry.length - 1);
+              routeCache.set(pathKey, simplified);
+              setRouteGeometries((prev) => ({
+                ...prev,
+                [pathKey]: simplified,
+              }));
+            }
+          }
+        } catch (error) {
+          console.warn(`Failed to fetch route ${route.id}:`, error);
+          const directLine = route.path.map(p => [p.lng, p.lat] as [number, number]);
+          routeCache.set(pathKey, directLine);
+          setRouteGeometries(prev => ({ ...prev, [pathKey]: directLine }));
+        }
+      }
+    };
+
+    fetchRoutesSequentially();
+    return () => {
+      active = false;
+    };
+  }, [routes]);
+
+  // ── Load MapLibre CSS + JS once ──────────────────────────────────────────
+  useEffect(() => {
+    if (maplibreLoadedRef.current) return;
+    maplibreLoadedRef.current = true;
+
+    if (!document.getElementById('maplibre-css')) {
       const link = document.createElement('link');
-      link.id = 'leaflet-css';
+      link.id = 'maplibre-css';
       link.rel = 'stylesheet';
-      link.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css';
+      link.href = 'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css';
       document.head.appendChild(link);
     }
 
-    if (!window.L) {
+    if (!window.maplibregl) {
       const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js';
+      script.src = 'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js';
       script.onload = () => initMap();
       document.head.appendChild(script);
     } else {
       initMap();
     }
+
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Build / rebuild map overlays when data changes ────────────────────────
+  // ── Resize Observer ──
   useEffect(() => {
-    if (!mapRef.current) return;
-    rebuildOverlays();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [barangays, reports, edges, routes, teams, scores]);
+    const map = mapRef.current;
+    if (!map || !mapContainerRef.current) return;
 
-  // ── Sync visibility when layer toggles change ─────────────────────────────
-  useEffect(() => {
-    if (!mapRef.current) return;
-    const L = window.L;
-    Object.entries(mapLayers).forEach(([key, visible]) => {
-      const lg = layerGroupsRef.current[key];
-      if (!lg) return;
-      if (visible && !mapRef.current.hasLayer(lg)) lg.addTo(mapRef.current);
-      if (!visible && mapRef.current.hasLayer(lg))  mapRef.current.removeLayer(lg);
+    const resizeObserver = new ResizeObserver(() => {
+      map.resize();
     });
-  }, [mapLayers]);
 
-  // ── Highlight selected barangay ───────────────────────────────────────────
-  useEffect(() => {
-    // Re-render barangay layer so the selected ring updates
-    if (!mapRef.current) return;
-    rebuildBarangayLayer();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBarangay]);
+    resizeObserver.observe(mapContainerRef.current);
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [isMapLoaded]);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  function initMap() {
-    const L = window.L;
-    if (!mapContainerRef.current || mapRef.current) return;
+  // ── Map click handlers ──
+  const handleRoadClick = useCallback((e: any) => {
+    if (!e.features?.length) return;
+    const feat = e.features[0];
+    const edgeId = feat.properties.id;
+    const edge = edgesRef.current.find((ed) => ed.id === edgeId);
+    if (edge) {
+      setSelectedEdge(edge);
+      setRoadNotes(edge.notes ?? '');
+      onSelectReport(null as unknown as FieldReport);
+    }
+  }, [onSelectReport]);
 
-    const map = L.map(mapContainerRef.current, {
-      center: [10.33, 123.905],
-      zoom: 13,
-      zoomControl: false,
+  const handleBarangayClick = useCallback((e: any) => {
+    if (!e.features?.length) return;
+    const feat = e.features[0];
+    const barangayId = feat.properties.id;
+    const barangay = barangays.find(b => b.id === barangayId);
+    if (barangay) {
+      onSelectBarangay(barangay);
+      setSelectedEdge(null);
+    }
+  }, [barangays, onSelectBarangay]);
+
+  // ── Initialize MapLibre ──
+  const initMap = () => {
+    const maplibregl = window.maplibregl;
+    if (!mapContainerRef.current || mapRef.current || !maplibregl) return;
+
+    const map = new maplibregl.Map({
+      container: mapContainerRef.current,
+      style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+      center: [123.905, 10.33],
+      zoom: 11.5,
       attributionControl: false,
     });
 
-    // Muted OSM tile layer — desaturated so EOC overlays dominate
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      className: 'eoc-tiles',
-    }).addTo(map);
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
 
-    L.control.attribution({ prefix: false, position: 'bottomleft' })
-      .addAttribution('© OpenStreetMap')
-      .addTo(map);
+    map.on('load', () => {
+      // Add sources
+      map.addSource('barangays-source', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
 
-    // Inject tile filter CSS once
-    if (!document.getElementById('eoc-tile-style')) {
-      const style = document.createElement('style');
-      style.id = 'eoc-tile-style';
-      style.textContent = `.eoc-tiles { filter: invert(1) hue-rotate(180deg) saturate(0.25) brightness(0.75) contrast(1.1); } .leaflet-container { background: #020617; }`;
-      document.head.appendChild(style);
+      map.addSource('roads-source', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+
+      map.addSource('routes-source', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+
+      // Barangay layers
+      map.addLayer({
+        id: 'barangays-fill',
+        type: 'fill',
+        source: 'barangays-source',
+        paint: {
+          'fill-color': [
+            'case',
+            ['==', ['get', 'id'], selectedBarangay?.id || ''],
+            scoreBorderColor(getScoreData(selectedBarangay?.id || '').score),
+            'rgba(15, 23, 42, 0.4)'
+          ],
+          'fill-opacity': [
+            'case',
+            ['==', ['get', 'id'], hoveredBarangay || ''],
+            0.45,
+            ['==', ['get', 'id'], selectedBarangay?.id || ''],
+            0.35,
+            0.15
+          ],
+        },
+      });
+
+      map.addLayer({
+        id: 'barangays-outline',
+        type: 'line',
+        source: 'barangays-source',
+        paint: {
+          'line-color': [
+            'case',
+            ['==', ['get', 'id'], selectedBarangay?.id || ''],
+            '#2dd4bf',
+            '#475569'
+          ],
+          'line-width': [
+            'case',
+            ['==', ['get', 'id'], selectedBarangay?.id || ''],
+            2,
+            1
+          ],
+          'line-opacity': 0.6,
+        },
+      });
+
+      map.addLayer({
+        id: 'barangays-labels',
+        type: 'symbol',
+        source: 'barangays-source',
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+          'text-size': 10,
+          'text-offset': [0, -0.5],
+          'text-anchor': 'center',
+        },
+        paint: {
+          'text-color': '#e2e8f0',
+          'text-halo-color': '#0f172a',
+          'text-halo-width': 1.5,
+        },
+      });
+
+      // Road layers - these will now show actual curved roads
+      map.addLayer({
+        id: 'roads-layer-solid',
+        type: 'line',
+        source: 'roads-source',
+        filter: ['in', ['get', 'status'], ['literal', ['open', 'slow', 'damaged']]],
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-color': [
+            'match',
+            ['get', 'status'],
+            'slow', '#d97706',
+            'damaged', '#dc2626',
+            '#475569'
+          ],
+          'line-width': [
+            'match',
+            ['get', 'status'],
+            'damaged', 4,
+            3
+          ],
+          'line-opacity': 0.85,
+        },
+      });
+
+      map.addLayer({
+        id: 'roads-layer-blocked',
+        type: 'line',
+        source: 'roads-source',
+        filter: ['==', ['get', 'status'], 'blocked'],
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-color': '#ef4444',
+          'line-width': 3,
+          'line-dasharray': [4, 3],
+          'line-opacity': 0.85,
+        },
+      });
+
+      // Route layers
+      map.addLayer({
+        id: 'routes-layer-active',
+        type: 'line',
+        source: 'routes-source',
+        filter: ['==', ['get', 'status'], 'active'],
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-color': '#f59e0b',
+          'line-width': 3,
+          'line-opacity': 0.85,
+        },
+      });
+
+      map.addLayer({
+        id: 'routes-layer-other',
+        type: 'line',
+        source: 'routes-source',
+        filter: ['!=', ['get', 'status'], 'active'],
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-color': '#94a3b8',
+          'line-width': 2,
+          'line-opacity': 0.5,
+          'line-dasharray': [3, 3],
+        },
+      });
+
+      // Event handlers
+      map.on('click', 'roads-layer-solid', handleRoadClick);
+      map.on('click', 'roads-layer-blocked', handleRoadClick);
+      map.on('click', 'barangays-fill', handleBarangayClick);
+      map.on('click', 'barangays-outline', handleBarangayClick);
+
+      // Hover effects
+      map.on('mouseenter', 'barangays-fill', (e: any) => {
+        if (e.features?.[0]?.properties?.id) {
+          setHoveredBarangay(e.features[0].properties.id);
+          map.getCanvas().style.cursor = 'pointer';
+        }
+      });
+      
+      map.on('mouseleave', 'barangays-fill', () => {
+        setHoveredBarangay(null);
+        map.getCanvas().style.cursor = '';
+      });
+
+      map.on('mouseenter', 'roads-layer-solid', () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', 'roads-layer-solid', () => { map.getCanvas().style.cursor = ''; });
+      map.on('mouseenter', 'roads-layer-blocked', () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', 'roads-layer-blocked', () => { map.getCanvas().style.cursor = ''; });
+
+      mapRef.current = map;
+      setIsMapLoaded(true);
+
+      setTimeout(() => map.resize(), 100);
+    });
+  };
+
+  // ── Update Barangay Polygons ──
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded) return;
+
+    const barangaysSource = map.getSource('barangays-source');
+    if (barangaysSource && mapLayers.barangays) {
+      const features = barangays.map(barangay => {
+        const { score, hoursSinceContact } = getScoreData(barangay.id);
+        const color = scoreColor(score);
+        
+        return {
+          type: 'Feature',
+          properties: {
+            id: barangay.id,
+            name: barangay.name,
+            score: score,
+            hoursSinceContact: hoursSinceContact,
+            color: color,
+          },
+          geometry: {
+            type: 'Polygon',
+            coordinates: [generateBarangayPolygon(barangay)]
+          }
+        };
+      });
+      
+      barangaysSource.setData({
+        type: 'FeatureCollection',
+        features: features
+      });
     }
+  }, [isMapLoaded, mapLayers.barangays, barangays, getScoreData, generateBarangayPolygon, selectedBarangay, hoveredBarangay]);
 
-    // Create layer groups
-    const keys = ['barangays', 'roads', 'reports', 'routes', 'teams', 'volunteers', 'hubs'] as const;
-    keys.forEach((k) => {
-      layerGroupsRef.current[k] = L.layerGroup().addTo(map);
-    });
+  // ── NEW: Update Roads with actual curved geometries ──
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded) return;
 
-    mapRef.current = map;
-    rebuildOverlays();
-  }
+    const roadsSource = map.getSource('roads-source');
+    if (roadsSource && mapLayers.roads) {
+      const features = edges.map((edge) => {
+        const geometry = roadGeometries[edge.id];
+        if (!geometry) return null;
+        
+        return {
+          type: 'Feature',
+          properties: {
+            id: edge.id,
+            name: edge.name,
+            status: edge.status,
+          },
+          geometry: {
+            type: 'LineString',
+            coordinates: geometry
+          }
+        };
+      }).filter(Boolean);
+      
+      roadsSource.setData({
+        type: 'FeatureCollection',
+        features: features
+      });
+    }
+  }, [isMapLoaded, mapLayers.roads, edges, roadGeometries]);
 
-  function rebuildOverlays() {
-    rebuildBarangayLayer();
-    rebuildRoadLayer();
-    rebuildReportLayer();
-    rebuildRouteLayer();
-    rebuildTeamLayer();
-    rebuildVolunteerLayer();
-    rebuildHubLayer();
-  }
+  // ── Update Routes ──
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded) return;
 
-  function clearLayer(key: string) {
-    layerGroupsRef.current[key]?.clearLayers();
-  }
+    const routesSource = map.getSource('routes-source');
+    if (routesSource && mapLayers.routes) {
+      const features = routes.map((route) => {
+        if (route.path.length < 2) return null;
+        const pathKey = `${route.id}`;
+        const coords = routeGeometries[pathKey] || route.path.map((p) => [p.lng, p.lat]);
+        return {
+          type: 'Feature',
+          properties: {
+            id: route.id,
+            status: route.status,
+          },
+          geometry: {
+            type: 'LineString',
+            coordinates: coords
+          }
+        };
+      }).filter(Boolean);
+      
+      routesSource.setData({
+        type: 'FeatureCollection',
+        features: features
+      });
+    }
+  }, [isMapLoaded, mapLayers.routes, routes, routeGeometries]);
 
-  // ── 1. Barangays ──────────────────────────────────────────────────────────
-  function rebuildBarangayLayer() {
-    const L = window.L;
-    if (!L) return;
-    clearLayer('barangays');
-    const lg = layerGroupsRef.current['barangays'];
+  // ── Report Markers ──
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded) return;
 
-    barangays.forEach((b) => {
-      const { score } = getScoreData(b.id);
-      const fill = scoreColor(score);
-      const critical = score >= 0.7;
-      const isSelected = selectedBarangay?.id === b.id;
+    reportMarkersRef.current.forEach((m) => m.remove());
+    reportMarkersRef.current = [];
 
-      const size = isSelected ? 20 : 16;
-      const pulseRing = critical
-        ? `<div style="position:absolute;inset:-4px;border-radius:50%;border:2px solid ${fill};opacity:0.5;animation:eoc-ping 1.5s cubic-bezier(0,0,0.2,1) infinite;"></div>`
-        : '';
-      const selRing = isSelected
-        ? `<div style="position:absolute;inset:-5px;border-radius:50%;border:1.5px dashed #2dd4bf;"></div>`
-        : '';
-
-      const html = `
-        <div style="position:relative;width:${size}px;height:${size}px;">
-          ${pulseRing}${selRing}
-          <div style="position:absolute;inset:0;border-radius:50%;background:${fill};border:2px solid #020617;"></div>
-        </div>`;
-
-      const icon = L.divIcon({ html, className: '', iconAnchor: [size / 2, size / 2] });
-
-      L.marker([b.latitude, b.longitude], { icon })
-        .bindTooltip(
-          `<span style="font-size:11px;color:#e2e8f0;background:#0f172a;padding:3px 8px;border-radius:4px;border:0.5px solid #334155;">${b.name}</span>`,
-          { direction: 'top', opacity: 1, className: '', offset: [0, -(size / 2 + 4)] },
-        )
-        .on('click', () => onSelectBarangay(b))
-        .addTo(lg);
-    });
-  }
-
-  // ── 2. Roads ──────────────────────────────────────────────────────────────
-  function rebuildRoadLayer() {
-    const L = window.L;
-    if (!L) return;
-    clearLayer('roads');
-    const lg = layerGroupsRef.current['roads'];
-
-    edges.forEach((edge) => {
-      const s = roadStyle(edge.status);
-      const isSelected = selectedEdge?.id === edge.id;
-
-      if (isSelected) {
-        L.polyline(
-          [[edge.sourceCoords.lat, edge.sourceCoords.lng], [edge.targetCoords.lat, edge.targetCoords.lng]],
-          { color: '#2dd4bf', weight: s.weight + 3, opacity: 0.6, lineCap: 'round' },
-        ).addTo(lg);
-      }
-
-      L.polyline(
-        [[edge.sourceCoords.lat, edge.sourceCoords.lng], [edge.targetCoords.lat, edge.targetCoords.lng]],
-        { color: s.color, weight: s.weight, dashArray: s.dashArray, opacity: 0.9, lineCap: 'round' },
-      )
-        .on('click', () => {
-          setSelectedEdge(edge);
-          setRoadNotes(edge.notes ?? '');
-          onSelectReport(null as unknown as FieldReport);
-        })
-        .addTo(lg);
-    });
-  }
-
-  // ── 3. Reports ────────────────────────────────────────────────────────────
-  function rebuildReportLayer() {
-    const L = window.L;
-    if (!L) return;
-    clearLayer('reports');
-    const lg = layerGroupsRef.current['reports'];
+    if (!mapLayers.reports) return;
 
     reports.forEach((report) => {
       const fill = reportFillColor(report.source);
       const outline = reportOutlineColor(report.status);
       const isSelected = selectedReport?.id === report.id;
-      const size = isSelected ? 16 : 13;
+      const size = isSelected ? 14 : 11;
 
-      const html = `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${fill};border:${isSelected ? 3 : 2}px solid ${outline};box-shadow:0 0 0 1px #020617;"></div>`;
-      const icon = L.divIcon({ html, className: '', iconAnchor: [size / 2, size / 2] });
+      const el = document.createElement('div');
+      el.style.width = `${size}px`;
+      el.style.height = `${size}px`;
+      el.style.borderRadius = '50%';
+      el.style.background = fill;
+      el.style.border = `${isSelected ? 3 : 2}px solid ${outline}`;
+      el.style.boxShadow = '0 0 0 1px #020617';
+      el.style.cursor = 'pointer';
 
-      L.marker([report.latitude, report.longitude], { icon })
-        .bindTooltip(
-          `<span style="font-size:10px;color:#e2e8f0;background:#0f172a;padding:3px 8px;border-radius:4px;border:0.5px solid #334155;max-width:180px;display:block;">${report.rawText}</span>`,
-          { direction: 'top', opacity: 1, className: '', offset: [0, -(size / 2 + 4)] },
-        )
-        .on('click', () => {
-          onSelectReport(report);
-          setSelectedEdge(null);
-        })
-        .addTo(lg);
+      el.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        onSelectReport(report);
+        setSelectedEdge(null);
+      });
+
+      const marker = new window.maplibregl.Marker({ element: el })
+        .setLngLat([report.longitude, report.latitude])
+        .addTo(map);
+
+      reportMarkersRef.current.push(marker);
     });
-  }
+  }, [isMapLoaded, mapLayers.reports, reports, selectedReport, onSelectReport]);
 
-  // ── 4. Routes ─────────────────────────────────────────────────────────────
-  function rebuildRouteLayer() {
-    const L = window.L;
-    if (!L) return;
-    clearLayer('routes');
-    const lg = layerGroupsRef.current['routes'];
+  // ── Team Markers ──
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded) return;
 
-    routes.forEach((route) => {
-      if (route.path.length < 2) return;
-      const latlngs = route.path.map((p) => [p.lat, p.lng]);
-      const isActive    = route.status === 'active';
-      const isCompleted = route.status === 'completed';
+    teamMarkersRef.current.forEach((m) => m.remove());
+    teamMarkersRef.current = [];
 
-      L.polyline(latlngs, {
-        color: '#0d9488',
-        weight: isActive ? 3.5 : 2.5,
-        dashArray: isActive ? undefined : '5 4',
-        opacity: isCompleted ? 0.35 : 0.85,
-        lineCap: 'round',
-      }).addTo(lg);
-    });
-  }
-
-  // ── 5. Teams ──────────────────────────────────────────────────────────────
-  function rebuildTeamLayer() {
-    const L = window.L;
-    if (!L) return;
-    clearLayer('teams');
-    const lg = layerGroupsRef.current['teams'];
+    if (!mapLayers.teams) return;
 
     teams.forEach((team) => {
       const label = team.capacityKg >= 1000
         ? `${(team.capacityKg / 1000).toFixed(1)}t`
         : `${team.capacityKg}k`;
 
-      const html = `
-        <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
-          <div style="width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:12px solid #64748b;filter:drop-shadow(0 0 0 1px #020617);"></div>
-          <div style="background:#1e293b;border:0.5px solid #475569;border-radius:3px;padding:1px 5px;font-size:8px;font-weight:700;color:#cbd5e1;font-family:monospace;">${label}</div>
-        </div>`;
+      const el = document.createElement('div');
+      el.style.display = 'flex';
+      el.style.flexDirection = 'column';
+      el.style.alignItems = 'center';
+      el.style.gap = '2px';
+      el.style.cursor = 'pointer';
+      el.innerHTML = `
+        <div style="width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:12px solid #64748b;filter:drop-shadow(0 0 0 1px #020617);"></div>
+        <div style="background:#1e293b;border:0.5px solid #475569;border-radius:3px;padding:1px 5px;font-size:8px;font-weight:700;color:#cbd5e1;font-family:monospace;">${label}</div>
+      `;
 
-      const icon = L.divIcon({ html, className: '', iconAnchor: [7, 6] });
-      L.marker([team.baseLocation.lat + 0.005, team.baseLocation.lng + 0.005], { icon })
-        .bindTooltip(
-          `<span style="font-size:10px;color:#e2e8f0;background:#0f172a;padding:3px 8px;border-radius:4px;border:0.5px solid #334155;">${team.name}</span>`,
-          { direction: 'top', opacity: 1, className: '', offset: [0, -14] },
-        )
-        .addTo(lg);
+      const marker = new window.maplibregl.Marker({ element: el })
+        .setLngLat([team.baseLocation.lng + 0.005, team.baseLocation.lat + 0.005])
+        .addTo(map);
+
+      teamMarkersRef.current.push(marker);
     });
-  }
+  }, [isMapLoaded, mapLayers.teams, teams]);
 
-  // ── 6. Volunteers ─────────────────────────────────────────────────────────
-  function rebuildVolunteerLayer() {
-    const L = window.L;
-    if (!L) return;
-    clearLayer('volunteers');
-    const lg = layerGroupsRef.current['volunteers'];
+  // ── Volunteer Markers ──
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded) return;
+
+    volunteerMarkersRef.current.forEach((m) => m.remove());
+    volunteerMarkersRef.current = [];
+
+    if (!mapLayers.volunteers) return;
 
     mockVolunteers.forEach((vol) => {
       const fill = volColor(vol.availability);
-      const html = `<div style="width:7px;height:7px;border-radius:50%;background:${fill};border:1px solid #020617;opacity:0.85;"></div>`;
-      const icon = L.divIcon({ html, className: '', iconAnchor: [3.5, 3.5] });
-      L.marker([vol.latitude, vol.longitude], { icon }).addTo(lg);
-    });
-  }
+      const el = document.createElement('div');
+      el.style.width = '7px';
+      el.style.height = '7px';
+      el.style.borderRadius = '50%';
+      el.style.background = fill;
+      el.style.border = '1px solid #020617';
+      el.style.opacity = '0.85';
 
-  // ── 7. Hubs ───────────────────────────────────────────────────────────────
-  function rebuildHubLayer() {
-    const L = window.L;
-    if (!L) return;
-    clearLayer('hubs');
-    const lg = layerGroupsRef.current['hubs'];
+      const marker = new window.maplibregl.Marker({ element: el })
+        .setLngLat([vol.longitude, vol.latitude])
+        .addTo(map);
+
+      volunteerMarkersRef.current.push(marker);
+    });
+  }, [isMapLoaded, mapLayers.volunteers]);
+
+  // ── Hub Markers ──
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded) return;
+
+    hubMarkersRef.current.forEach((m) => m.remove());
+    hubMarkersRef.current = [];
+
+    if (!mapLayers.hubs) return;
 
     mockLocationHubs.forEach((hub) => {
-      const fill = hubColor(hub.type);
-      const html = `
-        <div style="position:relative;width:12px;height:12px;">
-          <div style="position:absolute;inset:0;background:${fill};border:2px solid #020617;"></div>
-          <div style="position:absolute;inset:3px;background:#020617;"></div>
-        </div>`;
-      const icon = L.divIcon({ html, className: '', iconAnchor: [6, 6] });
-      L.marker([hub.latitude, hub.longitude], { icon })
-        .bindTooltip(
-          `<span style="font-size:10px;color:#e2e8f0;background:#0f172a;padding:3px 8px;border-radius:4px;border:0.5px solid #334155;">${hub.name}</span>`,
-          { direction: 'top', opacity: 1, className: '', offset: [0, -8] },
-        )
-        .addTo(lg);
-    });
-  }
+      const el = document.createElement('div');
+      el.style.width = '12px';
+      el.style.height = '12px';
+      el.style.background = '#38bdf8';
+      el.style.border = '2px solid #020617';
+      el.style.borderRadius = '2px';
+      el.style.cursor = 'pointer';
 
-  // ── Fullscreen ────────────────────────────────────────────────────────────
+      const marker = new window.maplibregl.Marker({ element: el })
+        .setLngLat([hub.longitude, hub.latitude])
+        .addTo(map);
+
+      hubMarkersRef.current.push(marker);
+    });
+  }, [isMapLoaded, mapLayers.hubs]);
+
+  // ── Sync layer visibility ──
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded) return;
+
+    const toggleLayer = (layerId: string, visible: boolean) => {
+      if (map.getLayer(layerId)) {
+        map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
+      }
+    };
+
+    toggleLayer('barangays-fill', mapLayers.barangays);
+    toggleLayer('barangays-outline', mapLayers.barangays);
+    toggleLayer('barangays-labels', mapLayers.barangays);
+    toggleLayer('roads-layer-solid', mapLayers.roads);
+    toggleLayer('roads-layer-blocked', mapLayers.roads);
+    toggleLayer('routes-layer-active', mapLayers.routes);
+    toggleLayer('routes-layer-other', mapLayers.routes);
+  }, [mapLayers, isMapLoaded]);
+
+  // ── Fullscreen Setup ──
   const toggleFullscreen = useCallback(() => {
     const el = wrapperRef.current;
     if (!el) return;
@@ -446,24 +820,21 @@ export default function InteractiveCommandMap({
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => mapRef.current?.invalidateSize(), 200);
+    const timer = setTimeout(() => mapRef.current?.resize(), 200);
     return () => clearTimeout(timer);
   }, [isFullscreen]);
 
-  // ── Zoom helpers ──────────────────────────────────────────────────────────
+  // ── Zoom helpers ──
   const zoomIn    = () => mapRef.current?.zoomIn();
   const zoomOut   = () => mapRef.current?.zoomOut();
-  const resetView = () => mapRef.current?.setView([10.33, 123.905], 13);
+  const resetView = () => mapRef.current?.easeTo({ center: [123.905, 10.33], zoom: 11.5 });
 
-  // ── Road status update ────────────────────────────────────────────────────
+  // ── Road status update ──
   const handleRoadStatusChange = (status: 'open' | 'slow' | 'blocked' | 'damaged') => {
     if (!selectedEdge) return;
     onUpdateRoadStatus(selectedEdge.id, status, roadNotes);
     setSelectedEdge((prev) => (prev ? { ...prev, status, notes: roadNotes } : null));
-    rebuildRoadLayer();
   };
-
-  // ─────────────────────────────────────────────────────────────────────────
 
   const LAYER_BUTTONS: { key: keyof typeof mapLayers; label: string }[] = [
     { key: 'barangays', label: 'Barangays' },
@@ -482,16 +853,17 @@ export default function InteractiveCommandMap({
         isFullscreen && !document.fullscreenElement ? ' fixed inset-0 z-[9999] h-screen w-screen rounded-none border-0' : ' h-full'
       }`}
     >
-
-      {/* ── Inject keyframe for pulse animation ── */}
       <style>{`
-        @keyframes eoc-ping {
-          0%, 100% { transform: scale(1); opacity: 0.6; }
-          50%       { transform: scale(1.8); opacity: 0; }
+        .map-container {
+          position: absolute;
+          top: 0;
+          bottom: 0;
+          width: 100%;
+          height: 100%;
         }
       `}</style>
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div className="bg-slate-900 border-b border-slate-800 px-4 py-2 flex items-center justify-between z-10 select-none">
         <div className="flex items-center gap-2">
           <Compass className="w-4 h-4 text-teal-400" />
@@ -517,17 +889,15 @@ export default function InteractiveCommandMap({
         </div>
       </div>
 
-      {/* ── Map area ── */}
+      {/* Map area */}
       <div className="flex-1 relative overflow-hidden">
+        <div ref={mapContainerRef} className="map-container" />
 
-        {/* Leaflet container */}
-        <div ref={mapContainerRef} className="absolute inset-0" />
-
-        {/* ── Fullscreen button top-left ── */}
+        {/* Fullscreen button */}
         <button
           onClick={toggleFullscreen}
           title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
-          className="absolute top-3 left-3 z-[1000] w-7 h-7 bg-slate-900/90 border border-slate-700 hover:border-teal-600 text-slate-300 hover:text-teal-300 rounded flex items-center justify-center cursor-pointer transition-colors select-none backdrop-blur-sm"
+          className="absolute top-3 left-3 z-10 w-7 h-7 bg-slate-900/90 border border-slate-700 hover:border-teal-600 text-slate-300 hover:text-teal-300 rounded flex items-center justify-center cursor-pointer transition-colors select-none backdrop-blur-sm"
         >
           {isFullscreen ? (
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -535,13 +905,13 @@ export default function InteractiveCommandMap({
             </svg>
           ) : (
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
+              <path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
             </svg>
           )}
         </button>
 
-        {/* ── Zoom controls ── */}
-        <div className="absolute top-3 right-3 z-[1000] flex flex-col gap-1">
+        {/* Zoom controls */}
+        <div className="absolute top-3 right-3 z-10 flex flex-col gap-1">
           {[
             { label: '+', title: 'Zoom In',  action: zoomIn },
             { label: '−', title: 'Zoom Out', action: zoomOut },
@@ -558,9 +928,9 @@ export default function InteractiveCommandMap({
           ))}
         </div>
 
-        {/* ── Road edge popup ── */}
+        {/* Road edge popup */}
         {selectedEdge && (
-          <div className="absolute top-4 left-4 w-[280px] bg-slate-950/95 border border-slate-800 p-3 rounded-lg text-xs flex flex-col gap-2 z-[1000] shadow-2xl backdrop-blur-sm">
+          <div className="absolute top-4 left-4 w-[280px] bg-slate-950/95 border border-slate-800 p-3 rounded-lg text-xs flex flex-col gap-2 z-10 shadow-2xl backdrop-blur-sm">
             <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
               <span className="font-bold text-slate-300 truncate max-w-[200px]">
                 {selectedEdge.name}
@@ -586,8 +956,8 @@ export default function InteractiveCommandMap({
                     damaged: 'bg-red-950 border-red-800 text-red-200',
                   };
                   const labels: Record<string, string> = {
-                    open: 'Open (Gray)', slow: 'Slow (Amber)',
-                    blocked: 'Blocked (Dashed)', damaged: 'Damaged (Thick)',
+                    open: 'Open', slow: 'Slow',
+                    blocked: 'Blocked', damaged: 'Damaged',
                   };
                   const active = selectedEdge.status === s;
                   return (
@@ -607,12 +977,12 @@ export default function InteractiveCommandMap({
 
             <div className="space-y-1 mt-1">
               <label className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block">
-                Obstruction Notes
+                Notes
               </label>
               <textarea
                 value={roadNotes}
                 onChange={(e) => setRoadNotes(e.target.value)}
-                placeholder="Details of blockage..."
+                placeholder="Additional details..."
                 className="w-full bg-slate-900 border border-slate-800 p-1.5 rounded text-[10.5px] text-slate-300 focus:outline-none focus:border-teal-500 resize-none h-12"
               />
             </div>
@@ -624,14 +994,14 @@ export default function InteractiveCommandMap({
               }}
               className="w-full py-1.5 bg-teal-900 hover:bg-teal-800 border border-teal-800 text-teal-200 font-bold rounded transition-colors cursor-pointer"
             >
-              Save Road Status
+              Save Status
             </button>
           </div>
         )}
 
-        {/* ── Field report popup ── */}
+        {/* Report popup */}
         {selectedReport && (
-          <div className="absolute top-4 left-4 w-[280px] bg-slate-950/95 border border-slate-800 p-3.5 rounded-lg text-xs flex flex-col gap-2 z-[1000] shadow-2xl backdrop-blur-sm">
+          <div className="absolute top-4 left-4 w-[280px] bg-slate-950/95 border border-slate-800 p-3.5 rounded-lg text-xs flex flex-col gap-2 z-10 shadow-2xl backdrop-blur-sm">
             <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
               <div className="flex items-center gap-1.5">
                 <FileText className="w-3.5 h-3.5 text-teal-400" />
@@ -669,7 +1039,7 @@ export default function InteractiveCommandMap({
               <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-500">
                 <div>
                   <span className="block text-[8px] uppercase font-bold text-slate-500">
-                    Related Barangay
+                    Barangay
                   </span>
                   <span className="text-slate-300 font-semibold">
                     {selectedReport.barangayName ?? 'Unknown'}
@@ -677,7 +1047,7 @@ export default function InteractiveCommandMap({
                 </div>
                 <div>
                   <span className="block text-[8px] uppercase font-bold text-slate-500">
-                    Confidence Score
+                    Confidence
                   </span>
                   <span className="text-slate-300 font-semibold">
                     {Math.round(selectedReport.confidence * 100)}%
@@ -711,58 +1081,67 @@ export default function InteractiveCommandMap({
           </div>
         )}
 
-        {/* ── Legend ── */}
-        <div className="absolute bottom-4 right-4 z-[1000] bg-slate-950/90 border border-slate-800 p-2.5 rounded-lg text-[9px] text-slate-400 flex flex-col gap-1.5 max-w-[150px] shadow-lg select-none backdrop-blur-sm">
-          <div className="font-bold text-slate-300 border-b border-slate-800 pb-0.5 uppercase tracking-wide">
-            Map Legend
-          </div>
+        {/* Legend */}
+        <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-1.5 select-none">
+          {legendOpen && (
+            <div className="bg-slate-950/95 border border-slate-800 p-2.5 rounded-lg text-[9px] text-slate-400 flex flex-col gap-1.5 w-[118px] shadow-2xl backdrop-blur-sm">
+              <div className="font-bold text-[8px] text-slate-500 uppercase tracking-wider">Risk</div>
+              {[
+                { color: '#0d5c56', label: 'Normal' },
+                { color: '#d97706', label: 'Watch' },
+                { color: '#dc2626', label: 'High' },
+                { color: '#7f1d1d', label: 'Critical' },
+              ].map(({ color, label }) => (
+                <div key={label} className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
+                  <span>{label}</span>
+                </div>
+              ))}
 
-          {[
-            { color: '#0d5c56', label: 'Normal (Dark Teal)' },
-            { color: '#d97706', label: 'Watch (Amber)' },
-            { color: '#dc2626', label: 'High Risk (Red)' },
-            { color: '#7f1d1d', label: 'Critical Silence', pulse: true },
-          ].map(({ color, label, pulse }) => (
-            <div key={label} className="flex items-center gap-1.5">
-              <span
-                className={`w-2 h-2 rounded-full border border-slate-950 ${pulse ? 'animate-pulse' : ''}`}
-                style={{ background: color }}
-              />
-              <span>{label}</span>
-            </div>
-          ))}
-
-          <div className="border-t border-slate-800 pt-1 flex flex-col gap-1.5 mt-0.5">
-            <div className="flex items-center gap-1.5">
-              <span className="w-3.5 h-0.5 bg-[#475569] inline-block" />
-              <span>Road: Open</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-3.5 h-0.5 bg-[#d97706] inline-block" />
-              <span>Road: Slow</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-3.5 h-0 border-t-2 border-dashed border-[#ef4444] inline-block" />
-              <span>Road: Blocked</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-3.5 h-0 border-t-[3px] border-dashed border-[#b91c1c] inline-block" />
-              <span>Road: Damaged</span>
-            </div>
-          </div>
-
-          <div className="border-t border-slate-800 pt-1 flex flex-col gap-1.5 mt-0.5">
-            {[
-              { color: '#06b6d4', label: 'Report: SMS' },
-              { color: '#0d9488', label: 'Report: Mobile' },
-              { color: '#a855f7', label: 'Report: Parsed' },
-            ].map(({ color, label }) => (
-              <div key={label} className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full" style={{ background: color }} />
-                <span>{label}</span>
+              <div className="font-bold text-[8px] text-slate-500 uppercase tracking-wider border-t border-slate-800 pt-1.5 mt-0.5">Roads</div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-3.5 h-0.5 bg-[#475569] inline-block shrink-0" />
+                <span>Open</span>
               </div>
-            ))}
-          </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-3.5 h-0.5 bg-[#d97706] inline-block shrink-0" />
+                <span>Slow</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-3.5 h-0 border-t-2 border-dashed border-[#ef4444] inline-block shrink-0" />
+                <span>Blocked</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-3.5 h-0 border-t-[3px] border-dashed border-[#dc2626] inline-block shrink-0" />
+                <span>Damaged</span>
+              </div>
+
+              <div className="font-bold text-[8px] text-slate-500 uppercase tracking-wider border-t border-slate-800 pt-1.5 mt-0.5">Reports</div>
+              {[
+                { color: '#06b6d4', label: 'SMS' },
+                { color: '#0d9488', label: 'Mobile' },
+                { color: '#a855f7', label: 'Parsed' },
+              ].map(({ color, label }) => (
+                <div key={label} className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
+                  <span>{label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            onClick={() => setLegendOpen((o) => !o)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900/95 border border-slate-700 hover:border-teal-600 text-slate-400 hover:text-teal-300 rounded-lg text-[10px] font-semibold cursor-pointer transition-colors backdrop-blur-sm shadow-lg"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3"/><path d="M3 12h1m16 0h1M12 3v1m0 16v1m-6.4-3.6.7-.7m11.4-11.4.7-.7M5.6 5.6l.7.7m11.4 11.4.7.7"/>
+            </svg>
+            Legend
+            <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ transform: legendOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>
+              <path d="M6 9l6 6 6-6"/>
+            </svg>
+          </button>
         </div>
       </div>
     </div>
