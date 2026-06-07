@@ -112,11 +112,6 @@ export default function BottomOperationsConsole({
           </button>
         </div>
 
-        {/* EOC Diagnostic telemetry */}
-        <div className="text-[10px] text-slate-500 flex gap-4 font-mono select-none">
-          <span>SUPABASE: CONNECTED</span>
-          <span>REALTIME FEED: ACTIVE</span>
-        </div>
       </div>
 
       {/* Tab Panel Content */}

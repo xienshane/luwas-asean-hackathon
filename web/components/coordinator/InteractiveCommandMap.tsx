@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Compass, 
   Layers, 
@@ -79,6 +79,102 @@ export default function InteractiveCommandMap({
   // Selected road edge for direct on-map editing
   const [selectedEdge, setSelectedEdge] = useState<RoadEdge | null>(null);
   const [roadNotes, setRoadNotes] = useState('');
+
+  // ── Zoom & Pan state ──────────────────────────────────────────────────────
+  const [viewport, setViewport] = useState({ scale: 1, tx: 0, ty: 0 });
+  const svgRef = useRef<SVGSVGElement>(null);
+  // Pan tracking — use refs so state changes don't cause re-renders during drag
+  const isPanning = useRef(false);           // true only after drag threshold crossed
+  const pointerDownStart = useRef<{ x: number; y: number; pointerId: number } | null>(null);
+  const lastPointer = useRef({ x: 0, y: 0 });
+  const DRAG_THRESHOLD_PX = 5;              // pixels before pan locks in
+  const MIN_SCALE = 0.5;
+  const MAX_SCALE = 6;
+
+  const clampTranslate = useCallback((scale: number, tx: number, ty: number) => {
+    const maxTx = width  * scale * 0.8;
+    const maxTy = height * scale * 0.8;
+    return {
+      tx: Math.max(-maxTx, Math.min(maxTx, tx)),
+      ty: Math.max(-maxTy, Math.min(maxTy, ty)),
+    };
+  }, [width, height]);
+
+  const handleWheel = useCallback((e: React.WheelEvent<SVGSVGElement>) => {
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? 1.12 : 0.89;
+    setViewport(prev => {
+      const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, prev.scale * delta));
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (!rect) return prev;
+      const svgW = rect.width;
+      const svgH = rect.height;
+      const cursorX = ((e.clientX - rect.left) / svgW) * width;
+      const cursorY = ((e.clientY - rect.top)  / svgH) * height;
+      const scaleFactor = newScale / prev.scale;
+      const rawTx = cursorX + (prev.tx - cursorX) * scaleFactor;
+      const rawTy = cursorY + (prev.ty - cursorY) * scaleFactor;
+      const { tx, ty } = clampTranslate(newScale, rawTx, rawTy);
+      return { scale: newScale, tx, ty };
+    });
+  }, [clampTranslate, width, height]);
+
+  // ── Threshold-based pan: record intent on pointerdown, commit only after drag ──
+  const handlePointerDown = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
+    if (e.button !== 0) return;
+    // Record where the press started — don't pan yet, don't capture yet.
+    pointerDownStart.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
+    lastPointer.current = { x: e.clientX, y: e.clientY };
+  }, []);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
+    if (!pointerDownStart.current) return;
+
+    const dx = e.clientX - lastPointer.current.x;
+    const dy = e.clientY - lastPointer.current.y;
+
+    if (!isPanning.current) {
+      // Check if we've exceeded the drag threshold
+      const totalDx = e.clientX - pointerDownStart.current.x;
+      const totalDy = e.clientY - pointerDownStart.current.y;
+      const dist = Math.sqrt(totalDx * totalDx + totalDy * totalDy);
+      if (dist < DRAG_THRESHOLD_PX) return; // still just a click — ignore
+
+      // Threshold crossed — commit to panning now
+      isPanning.current = true;
+      (e.currentTarget as SVGSVGElement).setPointerCapture(pointerDownStart.current.pointerId);
+    }
+
+    lastPointer.current = { x: e.clientX, y: e.clientY };
+
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const svgDx = (dx / rect.width)  * width;
+    const svgDy = (dy / rect.height) * height;
+
+    setViewport(prev => {
+      const { tx, ty } = clampTranslate(prev.scale, prev.tx + svgDx, prev.ty + svgDy);
+      return { ...prev, tx, ty };
+    });
+  }, [clampTranslate, width, height]);
+
+  const handlePointerUp = useCallback(() => {
+    isPanning.current = false;
+    pointerDownStart.current = null;
+  }, []);
+
+  const zoomIn  = () => setViewport(prev => {
+    const newScale = Math.min(MAX_SCALE, prev.scale * 1.25);
+    const { tx, ty } = clampTranslate(newScale, prev.tx, prev.ty);
+    return { scale: newScale, tx, ty };
+  });
+  const zoomOut = () => setViewport(prev => {
+    const newScale = Math.max(MIN_SCALE, prev.scale / 1.25);
+    const { tx, ty } = clampTranslate(newScale, prev.tx, prev.ty);
+    return { scale: newScale, tx, ty };
+  });
+  const resetView = () => setViewport({ scale: 1, tx: 0, ty: 0 });
+  // ─────────────────────────────────────────────────────────────────────────
 
   // Projections
   const projectCoords = (lat: number, lng: number) => {
@@ -181,11 +277,45 @@ export default function InteractiveCommandMap({
       </div>
 
       {/* SVG Canvas Map */}
-      <div className="flex-1 relative bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-900/60 to-slate-950/80 p-4 flex items-center justify-center">
-        <svg 
-          viewBox={`0 0 ${width} ${height}`} 
-          className="w-full h-full max-h-[440px] select-none"
+      <div className="flex-1 relative bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-900/60 to-slate-950/80 flex items-center justify-center overflow-hidden">
+
+        {/* Zoom Controls */}
+        <div className="absolute top-3 right-3 z-10 flex flex-col gap-1">
+          <button
+            onClick={zoomIn}
+            className="w-7 h-7 bg-slate-900 border border-slate-700 hover:border-teal-600 text-slate-300 hover:text-teal-300 rounded flex items-center justify-center font-bold text-sm cursor-pointer transition-colors select-none"
+            title="Zoom In"
+          >+</button>
+          <button
+            onClick={zoomOut}
+            className="w-7 h-7 bg-slate-900 border border-slate-700 hover:border-teal-600 text-slate-300 hover:text-teal-300 rounded flex items-center justify-center font-bold text-sm cursor-pointer transition-colors select-none"
+            title="Zoom Out"
+          >−</button>
+          <button
+            onClick={resetView}
+            className="w-7 h-7 bg-slate-900 border border-slate-700 hover:border-teal-600 text-slate-400 hover:text-teal-300 rounded flex items-center justify-center text-[9px] font-bold cursor-pointer transition-colors select-none"
+            title="Reset View"
+          >⌂</button>
+        </div>
+
+        {/* Zoom level badge */}
+        <div className="absolute bottom-3 left-3 z-10 bg-slate-950/80 border border-slate-800 px-1.5 py-0.5 rounded text-[9px] font-mono text-slate-500 select-none">
+          {Math.round(viewport.scale * 100)}%
+        </div>
+
+        <svg
+          ref={svgRef}
+          viewBox={`0 0 ${width} ${height}`}
+          className="w-full h-full select-none"
+          style={{ cursor: isPanning.current ? 'grabbing' : 'grab' }}
+          onWheel={handleWheel}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerLeave={handlePointerUp}
         >
+          {/* Viewport transform group — all map content lives here */}
+          <g transform={`translate(${viewport.tx}, ${viewport.ty}) scale(${viewport.scale})`}>
           {/* Rigid grid for emergency coordination */}
           <g stroke="#1e293b" strokeWidth="0.5" opacity="0.4">
             {Array.from({ length: 15 }).map((_, i) => (
@@ -513,6 +643,7 @@ export default function InteractiveCommandMap({
               })}
             </g>
           )}
+          </g>{/* end viewport transform group */}
         </svg>
 
         {/* 1. ROAD ACTION DRAWER (Pop-up inside center panel) */}

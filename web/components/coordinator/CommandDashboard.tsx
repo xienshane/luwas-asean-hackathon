@@ -75,8 +75,7 @@ export default function CommandDashboard() {
       updatedManifests[b.id] = {
         ...sphereBase,
         status: manifests[b.id]?.status || 'pending',
-        overridden: !!manifests[b.id]?.overrides,
-        overrides: manifests[b.id]?.overrides
+        overridden: manifests[b.id]?.overridden ?? false
       };
     });
 
