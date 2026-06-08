@@ -44,6 +44,7 @@ interface InteractiveCommandMapProps {
   onConfirmReport: (reportId: string) => void;
   onFlagReport: (reportId: string) => void;
   onResetReports?: () => void;
+  active?: boolean;
 }
 
 // ─── Distance Helper (Haversine Formula) ──────────────────────────────────────
@@ -98,6 +99,7 @@ export default function InteractiveCommandMap({
   onConfirmReport,
   onFlagReport,
   onResetReports,
+  active = true,
 }: InteractiveCommandMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -335,6 +337,15 @@ export default function InteractiveCommandMap({
       resizeObserver.disconnect();
     };
   }, [isMapLoaded]);
+
+  // When this tab becomes active again, its container went display:none -> visible.
+  // Resize so MapLibre repaints the canvas at the correct size (the map stays
+  // mounted across tabs, so it is never re-created).
+  useEffect(() => {
+    if (!active || !mapRef.current) return;
+    const raf = requestAnimationFrame(() => mapRef.current?.resize());
+    return () => cancelAnimationFrame(raf);
+  }, [active, isMapLoaded]);
 
   // ── Map click handlers ──
   const handleRoadClick = useCallback((e: any) => {

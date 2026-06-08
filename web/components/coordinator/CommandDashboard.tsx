@@ -304,52 +304,53 @@ const ResizeHandle = () => (
       {/* Main workspace — switches based on currentView */}
       <div className="flex-1 flex min-w-0 min-h-0 overflow-hidden">
 
-        {/* ── VIEW: Live Map (3-column EOC layout) ── */}
-        {currentView === 'map' && (
-          <>
-            <div className="flex-1 flex flex-col min-w-0">
-              <div className="flex-1 min-h-0 p-4">
-                <InteractiveCommandMap
-                  barangays={barangays}
-                  reports={reports}
-                  teams={teams}
-                  edges={edges}
-                  routes={routes}
-                  selectedBarangay={selectedBarangay}
-                  onSelectBarangay={handleSelectBarangay}
-                  selectedReport={selectedReport}
-                  onSelectReport={handleSelectReport}
-                  scores={scores}
-                  onUpdateRoadStatus={handleUpdateRoadStatus}
-                  onConfirmReport={handleConfirmReport}
-                  onFlagReport={handleFlagReport}
-                />
-              </div>
-              <BottomOperationsConsole
+        {/* ── VIEW: Live Map (3-column EOC layout) ──
+            Kept mounted across tabs (hidden, not unmounted) so MapLibre is
+            created once — re-mounting it left the canvas blank on return. */}
+        <div className={`flex-1 min-w-0 min-h-0 ${currentView === 'map' ? 'flex' : 'hidden'}`}>
+          <div className="flex-1 flex flex-col min-w-0">
+            <div className="flex-1 min-h-0 p-4">
+              <InteractiveCommandMap
+                active={currentView === 'map'}
+                barangays={barangays}
                 reports={reports}
-                activityLogs={activityLogs}
+                teams={teams}
+                edges={edges}
+                routes={routes}
+                selectedBarangay={selectedBarangay}
+                onSelectBarangay={handleSelectBarangay}
+                selectedReport={selectedReport}
+                onSelectReport={handleSelectReport}
+                scores={scores}
+                onUpdateRoadStatus={handleUpdateRoadStatus}
                 onConfirmReport={handleConfirmReport}
                 onFlagReport={handleFlagReport}
               />
             </div>
-            {selectedBarangay && (
-              <RightIntelligencePanel
-                selectedBarangay={selectedBarangay}
-                barangays={barangays}
-                reportsCount={reportsCount}
-                scores={scores}
-                prediction={predictions[selectedBarangay.id]}
-                manifest={manifests[selectedBarangay.id]}
-                teams={teams}
-                routes={routes}
-                onSaveOverrides={handleSaveOverrides}
-                onUpdateManifestStatus={handleUpdateManifestStatus}
-                onDispatchTeam={handleDispatchTeam}
-                onClearBarangaySelection={handleClearBarangaySelection}
-              />
-            )}
-          </>
-        )}
+            <BottomOperationsConsole
+              reports={reports}
+              activityLogs={activityLogs}
+              onConfirmReport={handleConfirmReport}
+              onFlagReport={handleFlagReport}
+            />
+          </div>
+          {selectedBarangay && (
+            <RightIntelligencePanel
+              selectedBarangay={selectedBarangay}
+              barangays={barangays}
+              reportsCount={reportsCount}
+              scores={scores}
+              prediction={predictions[selectedBarangay.id]}
+              manifest={manifests[selectedBarangay.id]}
+              teams={teams}
+              routes={routes}
+              onSaveOverrides={handleSaveOverrides}
+              onUpdateManifestStatus={handleUpdateManifestStatus}
+              onDispatchTeam={handleDispatchTeam}
+              onClearBarangaySelection={handleClearBarangaySelection}
+            />
+          )}
+        </div>
 
         {/* ── VIEW: Field Reports ── */}
         {currentView === 'reports' && (
