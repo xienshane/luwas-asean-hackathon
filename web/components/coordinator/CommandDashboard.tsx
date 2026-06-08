@@ -22,6 +22,7 @@ import LeftSidebar from './LeftSidebar';
 import InteractiveCommandMap from './InteractiveCommandMap';
 import BottomOperationsConsole from './BottomOperationsConsole';
 import RightIntelligencePanel from './RightIntelligencePanel';
+import OperationsPanel from './OperationsPanel';
 import ReportsView from './ReportsView';
 import TeamsView from './TeamsView';
 import ManifestsView from './ManifestsView';
@@ -327,14 +328,11 @@ const ResizeHandle = () => (
                 onFlagReport={handleFlagReport}
               />
             </div>
-            <BottomOperationsConsole
-              reports={reports}
-              activityLogs={activityLogs}
-              onConfirmReport={handleConfirmReport}
-              onFlagReport={handleFlagReport}
-            />
+            <BottomOperationsConsole activityLogs={activityLogs} />
           </div>
-          {selectedBarangay && (
+          {/* Persistent right rail: Operations (triage) by default,
+              entity detail when a barangay/report is selected. */}
+          {selectedBarangay ? (
             <RightIntelligencePanel
               selectedBarangay={selectedBarangay}
               barangays={barangays}
@@ -348,6 +346,17 @@ const ResizeHandle = () => (
               onUpdateManifestStatus={handleUpdateManifestStatus}
               onDispatchTeam={handleDispatchTeam}
               onClearBarangaySelection={handleClearBarangaySelection}
+            />
+          ) : (
+            <OperationsPanel
+              reports={reports}
+              routes={routes}
+              manifests={manifests}
+              barangays={barangays}
+              onSelectReport={handleSelectReport}
+              onConfirmReport={handleConfirmReport}
+              onFlagReport={handleFlagReport}
+              onViewChange={setCurrentView}
             />
           )}
         </div>

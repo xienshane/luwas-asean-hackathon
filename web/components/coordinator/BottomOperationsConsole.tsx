@@ -1,16 +1,12 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Check, AlertOctagon, Send, Maximize2, Minimize2 } from 'lucide-react';
-import { FieldReport } from '@/lib/mockData';
-import { Timeline, StatusDot, SEVERITY_TONE } from './ui';
+import { Send, Maximize2, Minimize2 } from 'lucide-react';
+import { Timeline } from './ui';
 import type { TimelineItem, Tone } from './ui';
 
 interface BottomOperationsConsoleProps {
-  reports: FieldReport[];
   activityLogs: { id: string; time: string; event: string; type: 'info' | 'warn' | 'success' | 'alert' }[];
-  onConfirmReport: (id: string) => void;
-  onFlagReport: (id: string) => void;
   initialHeight?: number;
   minHeight?: number;
   maxHeight?: number;
@@ -32,15 +28,12 @@ const LOG_TONE: Record<string, Tone> = {
 };
 
 export default function BottomOperationsConsole({
-  reports,
   activityLogs,
-  onConfirmReport,
-  onFlagReport,
   initialHeight = 240,
   minHeight = 160,
   maxHeight = 560,
 }: BottomOperationsConsoleProps) {
-  const [activeTab, setActiveTab] = useState<'feed' | 'queue' | 'comms'>('feed');
+  const [activeTab, setActiveTab] = useState<'feed' | 'comms'>('feed');
   const [height, setHeight] = useState(initialHeight);
   const [isDragging, setIsDragging] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -54,8 +47,6 @@ export default function BottomOperationsConsole({
     { id: 'c-4', sender: 'PDRRMO Center', agency: 'LGU', text: 'Coastal high-tide alert issued for south Cebu coastline.', time: '1h ago' },
   ]);
   const [newMsgText, setNewMsgText] = useState('');
-
-  const pendingReports = reports.filter((r) => r.status === 'pending');
 
   const feedItems: TimelineItem[] = activityLogs.map((log) => ({
     id: log.id,
@@ -101,9 +92,8 @@ export default function BottomOperationsConsole({
     setIsExpanded(!isExpanded);
   };
 
-  const tabs: { id: 'feed' | 'queue' | 'comms'; label: string; count?: number }[] = [
+  const tabs: { id: 'feed' | 'comms'; label: string }[] = [
     { id: 'feed', label: 'Activity' },
-    { id: 'queue', label: 'Verification', count: pendingReports.length },
     { id: 'comms', label: 'Comms' },
   ];
 
@@ -119,17 +109,11 @@ export default function BottomOperationsConsole({
             <button
               key={t.id}
               onClick={() => setActiveTab(t.id)}
-              className={`px-4 py-2 border-b-2 transition-colors duration-100 cursor-pointer flex items-center gap-1.5 ${
+              className={`px-4 py-2 border-b-2 transition-colors duration-100 cursor-pointer ${
                 activeTab === t.id ? 'border-fg/50 text-fg' : 'border-transparent text-muted hover:text-fg'
               }`}
             >
               {t.label}
-              {t.count ? (
-                <span className="flex items-center gap-1 text-[12px] text-muted">
-                  <StatusDot tone="warning" />
-                  {t.count}
-                </span>
-              ) : null}
             </button>
           ))}
         </div>
@@ -145,39 +129,6 @@ export default function BottomOperationsConsole({
       {/* Panel */}
       <div className="flex-1 overflow-y-auto">
         {activeTab === 'feed' && <div className="py-1.5">{feedItems.length > 0 ? <Timeline items={feedItems} /> : <Empty>No activity yet.</Empty>}</div>}
-
-        {activeTab === 'queue' &&
-          (pendingReports.length === 0 ? (
-            <Empty>No reports awaiting verification.</Empty>
-          ) : (
-            <div>
-              {pendingReports.map((report) => (
-                <div
-                  key={report.id}
-                  className="relative flex items-center gap-3 px-4 py-2 border-b border-line hover:bg-raised/40 transition-colors duration-100"
-                >
-                  <StatusDot tone={SEVERITY_TONE[report.needsSeverity] ?? 'neutral'} />
-                  <span className="font-mono tabular-nums text-[12px] text-muted shrink-0 w-12">#{report.id}</span>
-                  <span className="text-[13px] text-fg shrink-0 w-28 truncate">{report.barangayName}</span>
-                  <span className="text-[13px] text-muted truncate flex-1">{report.rawText}</span>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      onClick={() => onConfirmReport(report.id)}
-                      className="px-2 py-1 border border-active/40 bg-active/10 text-active hover:bg-active/20 rounded-control text-[12px] flex items-center gap-1 transition-colors duration-100 cursor-pointer"
-                    >
-                      <Check className="w-3 h-3" /> Confirm
-                    </button>
-                    <button
-                      onClick={() => onFlagReport(report.id)}
-                      className="px-2 py-1 border border-line text-muted hover:text-critical hover:border-critical/40 rounded-control text-[12px] flex items-center gap-1 transition-colors duration-100 cursor-pointer"
-                    >
-                      <AlertOctagon className="w-3 h-3" /> Flag
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ))}
 
         {activeTab === 'comms' && (
           <div className="flex flex-col h-full">

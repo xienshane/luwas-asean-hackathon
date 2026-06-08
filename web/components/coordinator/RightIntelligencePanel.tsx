@@ -132,7 +132,7 @@ export default function RightIntelligencePanel({
 
   return (
     <DetailPanel
-      className="w-[340px]"
+      className="w-[360px]"
       eyebrow="Silent Area"
       title={selectedBarangay.name}
       subtitle={

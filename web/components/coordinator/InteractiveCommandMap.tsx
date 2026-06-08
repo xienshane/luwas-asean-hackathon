@@ -347,6 +347,19 @@ export default function InteractiveCommandMap({
     return () => cancelAnimationFrame(raf);
   }, [active, isMapLoaded]);
 
+  // Recentre when a barangay/report is selected from outside the map (e.g. the
+  // Operations panel queue) — map clicks already fly on their own.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded) return;
+    if (selectedReport) {
+      map.flyTo({ center: [selectedReport.longitude, selectedReport.latitude], zoom: 13.2, essential: true });
+    } else if (selectedBarangay) {
+      map.flyTo({ center: [selectedBarangay.longitude, selectedBarangay.latitude], zoom: 12.5, essential: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBarangay?.id, selectedReport?.id, isMapLoaded]);
+
   // ── Map click handlers ──
   const handleRoadClick = useCallback((e: any) => {
     if (!e.features?.length) return;
