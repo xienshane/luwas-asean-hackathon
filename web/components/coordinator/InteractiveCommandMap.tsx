@@ -17,14 +17,7 @@ import {
   mockLocationHubs,
   mockVolunteers,
 } from '@/lib/mockData';
-
-// ─── MapLibre types ──────────────────────────────────────────────────────────
-declare global {
-  interface Window {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    maplibregl: any;
-  }
-}
+import 'maplibre-gl/dist/maplibre-gl.css';
 
 interface InteractiveCommandMapProps {
   barangays: Barangay[];
@@ -108,6 +101,8 @@ export default function InteractiveCommandMap({
   const wrapperRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const maplibreglRef = useRef<any>(null); // npm maplibre-gl module (client-only dynamic import)
 
   // Separate, isolated refs for markers
   const reportMarkersRef = useRef<any[]>([]);
@@ -299,29 +294,21 @@ export default function InteractiveCommandMap({
     };
   }, [selectedReport, getNearestHubToCoords]);
 
-  // ── Load MapLibre CSS + JS once ──────────────────────────────────────────
+  // ── Load MapLibre from npm (client-only dynamic import) once ─────────────
   useEffect(() => {
     if (maplibreLoadedRef.current) return;
     maplibreLoadedRef.current = true;
 
-    if (!document.getElementById('maplibre-css')) {
-      const link = document.createElement('link');
-      link.id = 'maplibre-css';
-      link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css';
-      document.head.appendChild(link);
-    }
-
-    if (!window.maplibregl) {
-      const script = document.createElement('script');
-      script.src = 'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js';
-      script.onload = () => initMap();
-      document.head.appendChild(script);
-    } else {
+    let cancelled = false;
+    import('maplibre-gl').then((mod) => {
+      if (cancelled) return;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      maplibreglRef.current = (mod as any).default ?? mod;
       initMap();
-    }
+    });
 
     return () => {
+      cancelled = true;
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
@@ -376,7 +363,7 @@ export default function InteractiveCommandMap({
 
   // ── Initialize MapLibre ──
   const initMap = () => {
-    const maplibregl = window.maplibregl;
+    const maplibregl = maplibreglRef.current;
     if (!mapContainerRef.current || mapRef.current || !maplibregl) return;
 
     const WHOLE_CEBU_BOUNDS: [[number, number], [number, number]] = [
@@ -1098,7 +1085,7 @@ export default function InteractiveCommandMap({
         });
       });
 
-      const marker = new window.maplibregl.Marker({ element: el })
+      const marker = new maplibreglRef.current.Marker({ element: el })
         .setLngLat([report.longitude, report.latitude])
         .addTo(map);
 
@@ -1198,7 +1185,7 @@ export default function InteractiveCommandMap({
         hoverPopupRef.current.remove();
       });
 
-      const marker = new window.maplibregl.Marker({ element: el })
+      const marker = new maplibreglRef.current.Marker({ element: el })
         .setLngLat([team.baseLocation.lng + 0.005, team.baseLocation.lat + 0.005])
         .addTo(map);
 
@@ -1262,7 +1249,7 @@ export default function InteractiveCommandMap({
         hoverPopupRef.current.remove();
       });
 
-      const marker = new window.maplibregl.Marker({ element: el })
+      const marker = new maplibreglRef.current.Marker({ element: el })
         .setLngLat([vol.longitude, vol.latitude])
         .addTo(map);
 
@@ -1350,7 +1337,7 @@ export default function InteractiveCommandMap({
         hoverPopupRef.current.remove();
       });
 
-      const marker = new window.maplibregl.Marker({ element: el })
+      const marker = new maplibreglRef.current.Marker({ element: el })
         .setLngLat([hub.longitude, hub.latitude])
         .addTo(map);
 
