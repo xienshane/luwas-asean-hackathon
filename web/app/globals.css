@@ -1,26 +1,43 @@
 @import "tailwindcss";
 
+/* ─────────────────────────────────────────────────────────────────────────
+   LUWAS design tokens — calm, neutral, operational.
+   95% of the interface is neutral; semantic color (critical/warning/active)
+   stays under 5% of the screen. No glows, no gradients, no rainbow.
+   Exposed as Tailwind v4 theme tokens, so use them as utilities:
+     bg-bg  bg-surface  bg-raised  text-fg  text-muted  border-line
+     bg-critical  text-warning  border-active  rounded-card  rounded-control
+   ───────────────────────────────────────────────────────────────────────── */
+@theme {
+  /* Neutrals */
+  --color-bg: #0e1424;        /* app background */
+  --color-surface: #151e31;   /* panels, tables, rows */
+  --color-raised: #1a2438;    /* selected row, popover, detail panel */
+  --color-fg: #e8eef9;        /* primary text */
+  --color-muted: #92a0b8;     /* secondary text / metadata */
+  --color-line: rgba(255, 255, 255, 0.06); /* hairline dividers */
+
+  /* Semantic — use sparingly (dots, rails, single values) */
+  --color-critical: #e2524a;  /* critical / urgent */
+  --color-warning: #d9a23a;   /* pending / escalating */
+  --color-active: #3fa35b;    /* active / confirmed / healthy */
+  --color-reached: #c5d0e2;   /* reached / contacted (neutral light) */
+
+  /* Radius */
+  --radius-control: 8px;      /* inputs, buttons, small controls */
+  --radius-card: 12px;        /* panels, cards, popovers */
+
+  /* Typography */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
 }
