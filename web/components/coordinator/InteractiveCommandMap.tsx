@@ -7,6 +7,7 @@ import {
   Clock,
   Check,
   AlertOctagon,
+  X,
 } from 'lucide-react';
 import {
   Barangay,
@@ -17,7 +18,16 @@ import {
   mockLocationHubs,
   mockVolunteers,
 } from '@/lib/mockData';
+import { COLOR, silentAreaState, STATE_COLOR, STATE_LABEL } from './ui';
 import 'maplibre-gl/dist/maplibre-gl.css';
+
+// Neutral linework tones for the calm basemap (roads default off).
+const ROAD_OPEN = '#52607a';
+const ROUTE_ACTIVE = '#9fb0cc';
+const ROUTE_PLANNED = '#5d6a86';
+const ROUTE_DONE = '#46506a';
+const ROUTE_CASING = '#0b1120';
+const BARANGAY_OUTLINE = '#3a4660';
 
 interface InteractiveCommandMapProps {
   barangays: Barangay[];
@@ -51,32 +61,24 @@ const calculateDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: num
   return R * c;
 };
 
-// ─── Theme Helpers ────────────────────────────────────────────────────────────
+// ─── Theme Helpers (calm tokens: reached / escalating / critical) ─────────────
 
+// Silent Area pin state → color. White-ish = reached, amber = escalating,
+// red = critical (the three Phase 3.1 states).
 function scoreColor(score: number): string {
-  if (score >= 0.7) return '#7f1d1d';
-  if (score >= 0.4) return '#dc2626';
-  if (score >= 0.2) return '#d97706';
-  return '#0d5c56';
+  return STATE_COLOR[silentAreaState(score)];
 }
 
-function scoreBorderColor(score: number): string {
-  if (score >= 0.7) return '#ef4444';
-  if (score >= 0.4) return '#f97316';
-  if (score >= 0.2) return '#f59e0b';
-  return '#14b8a6';
-}
-
-function reportFillColor(source: string): string {
-  if (source === 'sms')    return '#06b6d4';
-  if (source === 'parsed') return '#a855f7';
-  return '#0d9488';
+function reportStatusColor(status: string): string {
+  if (status === 'confirmed') return COLOR.active;
+  if (status === 'flagged') return COLOR.critical;
+  return COLOR.warning; // pending
 }
 
 function volColor(availability: string): string {
-  if (availability === 'busy')    return '#eab308';
-  if (availability === 'offline') return '#64748b';
-  return '#22c55e';
+  if (availability === 'busy')    return COLOR.warning;
+  if (availability === 'offline') return COLOR.muted;
+  return COLOR.active;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -122,14 +124,16 @@ export default function InteractiveCommandMap({
   const [selectedRoutePath, setSelectedRoutePath] = useState<[number, number][] | null>(null); // Dynamic path for selected report
   const [teamRouteGeometries, setTeamRouteGeometries] = useState<Record<string, [number, number][]>>({}); // OSRM-snapped per-team route paths
 
+  // Minimal default: barangay risk + active routes + reports. Roads, teams,
+  // volunteers, and hubs are off until the operator opts in via the layers control.
   const [mapLayers, setMapLayers] = useState({
     barangays: true,
-    roads: true,
+    roads: false,
     reports: true,
     routes: true,
-    teams: true,
-    volunteers: true,
-    hubs: true,
+    teams: false,
+    volunteers: false,
+    hubs: false,
   });
 
   const [selectedEdge, setSelectedEdge] = useState<RoadEdge | null>(null);
@@ -411,19 +415,14 @@ export default function InteractiveCommandMap({
         type: 'fill',
         source: 'barangays-source',
         paint: {
-          'fill-color': [
-            'case',
-            ['==', ['get', 'id'], selectedBarangay?.id || ''],
-            scoreBorderColor(getScoreData(selectedBarangay?.id || '').score),
-            ['get', 'color']
-          ],
+          'fill-color': ['get', 'color'],
           'fill-opacity': [
             'case',
             ['==', ['get', 'id'], hoveredBarangay || ''],
-            0.6,
+            0.42,
             ['==', ['get', 'id'], selectedBarangay?.id || ''],
-            0.5,
-            0.32
+            0.4,
+            0.22
           ],
         },
       });
@@ -436,8 +435,8 @@ export default function InteractiveCommandMap({
           'line-color': [
             'case',
             ['==', ['get', 'id'], selectedBarangay?.id || ''],
-            '#2dd4bf',
-            '#475569'
+            COLOR.fg,
+            BARANGAY_OUTLINE
           ],
           'line-width': [
             'case',
@@ -445,7 +444,7 @@ export default function InteractiveCommandMap({
             2,
             1
           ],
-          'line-opacity': 0.6,
+          'line-opacity': 0.7,
         },
       });
 
@@ -481,17 +480,17 @@ export default function InteractiveCommandMap({
           'line-color': [
             'match',
             ['get', 'status'],
-            'slow', '#d97706',
-            'damaged', '#dc2626',
-            '#c3c4c5'
+            'slow', COLOR.warning,
+            'damaged', COLOR.critical,
+            ROAD_OPEN
           ],
           'line-width': [
             'match',
             ['get', 'status'],
-            'damaged', 4,
-            3
+            'damaged', 3.5,
+            2.5
           ],
-          'line-opacity': 0.85,
+          'line-opacity': 0.7,
         },
       });
 
@@ -505,22 +504,22 @@ export default function InteractiveCommandMap({
           'line-join': 'round',
         },
         paint: {
-          'line-color': '#ef4444',
-          'line-width': 3,
+          'line-color': COLOR.critical,
+          'line-width': 2.5,
           'line-dasharray': [4, 3],
-          'line-opacity': 0.85,
+          'line-opacity': 0.75,
         },
       });
 
-      // Dynamic Teal Route Layers [1]
+      // Dynamic incident line (nearest hub -> selected report)
       map.addLayer({
         id: 'routes-layer-casing',
         type: 'line',
         source: 'routes-source',
         paint: {
-          'line-color': '#083344', // Dark teal backing outline
-          'line-width': 9,
-          'line-opacity': 0.4,
+          'line-color': ROUTE_CASING,
+          'line-width': 8,
+          'line-opacity': 0.5,
         },
         layout: {
           'line-cap': 'round',
@@ -534,8 +533,8 @@ export default function InteractiveCommandMap({
         type: 'line',
         source: 'routes-source',
         paint: {
-          'line-color': '#0d9488', // Verified Teal
-          'line-width': 5,
+          'line-color': ROUTE_ACTIVE,
+          'line-width': 4,
           'line-opacity': 0.95,
         },
         layout: {
@@ -556,7 +555,7 @@ export default function InteractiveCommandMap({
         type: 'line',
         source: 'team-routes-source',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': '#020617', 'line-width': 7, 'line-opacity': 0.55 },
+        paint: { 'line-color': ROUTE_CASING, 'line-width': 6, 'line-opacity': 0.5 },
       });
 
       map.addLayer({
@@ -566,8 +565,8 @@ export default function InteractiveCommandMap({
         filter: ['!=', ['get', 'status'], 'planned'],
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-          'line-color': ['match', ['get', 'status'], 'completed', '#64748b', '#2dd4bf'],
-          'line-width': 4,
+          'line-color': ['match', ['get', 'status'], 'completed', ROUTE_DONE, ROUTE_ACTIVE],
+          'line-width': 3.5,
           'line-opacity': 0.9,
         },
       });
@@ -579,8 +578,8 @@ export default function InteractiveCommandMap({
         filter: ['==', ['get', 'status'], 'planned'],
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-          'line-color': '#38bdf8',
-          'line-width': 3.5,
+          'line-color': ROUTE_PLANNED,
+          'line-width': 3,
           'line-opacity': 0.85,
           'line-dasharray': [2, 1.6],
         },
@@ -591,26 +590,22 @@ export default function InteractiveCommandMap({
         map.getCanvas().style.cursor = 'pointer';
         const p = e.features?.[0]?.properties;
         if (!p) return;
-        const statusClass =
-          p.status === 'active' ? 'text-teal-400 bg-teal-950/40'
-          : p.status === 'completed' ? 'text-slate-400 bg-slate-800/50'
-          : 'text-sky-400 bg-sky-950/40';
         hoverPopupRef.current.remove();
         hoverPopupRef.current
           .setLngLat(e.lngLat)
           .setHTML(`
-            <div class="px-2 py-1 text-xs font-sans max-w-[240px]">
-              <div class="flex items-center justify-between gap-2 border-b border-slate-800 pb-0.5 mb-1">
-                <span class="font-bold text-teal-300">${p.teamName}</span>
-                <span class="text-[8px] font-extrabold uppercase px-1 rounded ${statusClass}">${p.status}</span>
+            <div class="px-2 py-1 text-[13px] font-sans max-w-[240px]">
+              <div class="flex items-center justify-between gap-2 border-b border-line pb-1 mb-1.5">
+                <span class="font-medium text-fg">${p.teamName}</span>
+                <span class="text-[12px] text-muted capitalize">${p.status}</span>
               </div>
-              <div class="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px] text-slate-400">
-                <div>ETA: <span class="text-slate-200 font-bold">${p.etaText}</span></div>
-                <div>Dist: <span class="text-slate-200 font-bold">${p.distanceText}</span></div>
-                <div class="col-span-2">Cargo: <span class="text-slate-200 font-semibold">${p.cargoText}</span></div>
+              <div class="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[12px] text-muted">
+                <div>ETA <span class="text-fg font-mono tabular-nums">${p.etaText}</span></div>
+                <div>Dist <span class="text-fg font-mono tabular-nums">${p.distanceText}</span></div>
+                <div class="col-span-2">Cargo <span class="text-fg">${p.cargoText}</span></div>
               </div>
-              <div class="mt-1 pt-1 border-t border-slate-800/70 text-[9.5px] text-slate-300">
-                <div class="text-[8px] uppercase font-bold text-slate-500 mb-0.5">Ordered Stops</div>
+              <div class="mt-1.5 pt-1.5 border-t border-line text-[12px] text-muted">
+                <div class="text-[11px] text-muted mb-0.5">Ordered stops</div>
                 ${p.stopsText}
               </div>
             </div>
@@ -651,39 +646,40 @@ export default function InteractiveCommandMap({
             p.hoursSinceContact === null || p.hoursSinceContact === undefined || p.hoursSinceContact === ''
               ? 'No contact'
               : `${Math.round(Number(p.hoursSinceContact))}h ago`;
-          const badgeClass =
-            p.score >= 0.7 ? 'bg-red-950 text-red-300'
-            : p.score >= 0.4 ? 'bg-red-900/50 text-red-300'
-            : p.score >= 0.2 ? 'bg-amber-950 text-amber-300'
-            : 'bg-teal-950 text-teal-300';
+          const state = silentAreaState(Number(p.score));
+          const stateLabel = STATE_LABEL[state];
+          const stateColor = STATE_COLOR[state];
 
           // Close active hover windows to prevent overlapping states
           hoverPopupRef.current.remove();
           hoverPopupRef.current
             .setLngLat(e.lngLat)
             .setHTML(`
-              <div class="px-2.5 py-1.5 text-xs font-sans w-[212px]">
-                <div class="flex items-center justify-between gap-2 border-b border-slate-800 pb-1 mb-1">
-                  <span class="font-bold text-teal-300">${p.name}</span>
-                  <span class="text-[9px] font-extrabold px-1.5 py-0.5 rounded ${badgeClass}">${scorePct}%</span>
+              <div class="px-3 py-2 text-[13px] font-sans w-[220px]">
+                <div class="flex items-center justify-between gap-2 border-b border-line pb-1.5 mb-1.5">
+                  <span class="font-medium text-fg">${p.name}</span>
+                  <span class="flex items-center gap-1.5 text-[12px] text-muted">
+                    <span style="width:6px;height:6px;border-radius:9999px;background:${stateColor}"></span>
+                    ${stateLabel}
+                  </span>
                 </div>
-                <div class="text-[8px] uppercase font-bold text-slate-500 mb-1 tracking-wider">Silent Area Score Breakdown</div>
-                <div class="space-y-1 text-[10px]">
+                <div class="text-[11px] text-muted mb-1.5">Silent Area score · ${scorePct}%</div>
+                <div class="space-y-1 text-[12px]">
                   <div class="flex items-center justify-between gap-2">
-                    <span class="text-slate-400">Pop density</span>
-                    <span><span class="text-slate-400">${density}/km²</span> · <span class="font-bold text-teal-300">${popN}</span></span>
+                    <span class="text-muted">Pop density</span>
+                    <span class="text-muted">${density}/km² · <span class="text-fg font-mono tabular-nums">${popN}</span></span>
                   </div>
                   <div class="flex items-center justify-between gap-2">
-                    <span class="text-slate-400">Hazard exposure</span>
-                    <span><span class="text-slate-400">${hazard}</span> · <span class="font-bold text-teal-300">${hazN}</span></span>
+                    <span class="text-muted">Hazard exposure</span>
+                    <span class="text-muted">${hazard} · <span class="text-fg font-mono tabular-nums">${hazN}</span></span>
                   </div>
                   <div class="flex items-center justify-between gap-2">
-                    <span class="text-slate-400">Since contact</span>
-                    <span><span class="text-slate-400">${contactStr}</span> · <span class="font-bold text-teal-300">${timeN}</span></span>
+                    <span class="text-muted">Since contact</span>
+                    <span class="text-muted">${contactStr} · <span class="text-fg font-mono tabular-nums">${timeN}</span></span>
                   </div>
                 </div>
-                <div class="mt-1.5 pt-1 border-t border-slate-800/70 text-[9px] text-slate-500 text-center font-mono">
-                  ${popN} × ${hazN} × ${timeN} = <span class="text-slate-300 font-bold">${Number(p.score).toFixed(2)}</span>
+                <div class="mt-1.5 pt-1.5 border-t border-line text-[12px] text-muted text-center font-mono tabular-nums">
+                  ${popN} × ${hazN} × ${timeN} = <span class="text-fg">${Number(p.score).toFixed(2)}</span>
                 </div>
               </div>
             `)
@@ -724,9 +720,9 @@ export default function InteractiveCommandMap({
           hoverPopupRef.current
             .setLngLat(e.lngLat)
             .setHTML(`
-              <div class="px-2 py-1 text-xs font-sans">
-                <div class="font-bold text-slate-100">${props.name}</div>
-                <div class="text-[10px] mt-0.5 capitalize">Status: <span class="font-bold text-slate-300">${props.status}</span></div>
+              <div class="px-2.5 py-1.5 text-[13px] font-sans">
+                <div class="font-medium text-fg">${props.name}</div>
+                <div class="text-[12px] text-muted mt-0.5 capitalize">Status · <span class="text-fg">${props.status}</span></div>
               </div>
             `)
             .addTo(map);
@@ -948,7 +944,7 @@ export default function InteractiveCommandMap({
       const stopsText = route.stops
         .map(
           (s) =>
-            `<div class="leading-snug"><span class="text-teal-400 font-bold">${s.sequence}.</span> ${s.barangayName} <span class="text-slate-500">— ${s.action}</span></div>`,
+            `<div class="leading-snug"><span class="text-fg font-mono">${s.sequence}.</span> ${s.barangayName} <span class="text-muted">— ${s.action}</span></div>`,
         )
         .join('');
 
@@ -984,86 +980,65 @@ export default function InteractiveCommandMap({
     if (!mapLayers.reports) return;
 
     reports.forEach((report) => {
-      const fill = reportFillColor(report.source);
       const isSelected = selectedReport?.id === report.id;
       const status = report.status;
+      const bg = reportStatusColor(status);
 
       const el = document.createElement('div');
-      el.className = 'flex items-center justify-center relative cursor-pointer group';
-      
-      const size = isSelected ? 32 : 25;
+      el.className = 'flex items-center justify-center relative cursor-pointer';
+
+      const size = isSelected ? 26 : 20;
       el.style.width = `${size}px`;
       el.style.height = `${size}px`;
 
-      let bg = fill;
-      let border = '2px solid #ffffff';
       let iconMarkup = '';
-      let pulseClass = '';
-
       if (status === 'pending') {
-        bg = '#d97706'; // Enforce solid warning yellow background [1]
-        border = '2px solid #fbbf24'; // Warning yellow borders [1]
-        pulseClass = 'marker-pulse'; // applied directly to inner div [1.1.7]
-        el.style.setProperty('--pulse-color', '#fbbf24'); // Yellow pulse glow [1]
-        
-        // Exclamation point (!) matching the legend exactly [1]
-        iconMarkup = `
-          <span style="color: #ffffff; font-size: 12px; font-weight: 900; font-family: sans-serif; line-height: 1; margin-top: -1px;">
-            !
-          </span>
-        `;
+        iconMarkup = `<span style="color:#0e1424;font-size:11px;font-weight:700;font-family:sans-serif;line-height:1;">!</span>`;
       } else if (status === 'confirmed') {
-        bg = '#16a34a'; // Verified Forest Green
-        border = '2px solid #22c55e';
         iconMarkup = `
-          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#0e1424" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="20 6 9 17 4 12"></polyline>
-          </svg>
-        `;
+          </svg>`;
       } else if (status === 'flagged') {
-        bg = '#dc2626'; // Alert Crimson
-        border = '2.5px solid #ef4444';
-        // Flag icon replacing previous close/X [1]
         iconMarkup = `
-          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
             <line x1="4" y1="22" x2="4" y2="15"></line>
-          </svg>
-        `;
+          </svg>`;
       }
 
       el.innerHTML = `
         <div style="
           background: ${bg};
-          border: ${border};
+          border: 1.5px solid rgba(14,20,36,0.85);
           border-radius: 50%;
           width: ${size}px;
           height: ${size}px;
           display: flex;
           align-items: center;
           justify-content: center;
-          box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
-          transition: transform 0.2s ease, width 0.2s ease, height 0.2s ease;
-        " class="hover:scale-125 ${pulseClass}">
+          box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+          transition: transform 0.1s ease;
+        " class="hover:scale-110">
           ${iconMarkup}
         </div>
       `;
 
       el.addEventListener('mouseenter', () => {
-        const statusLabelColor = status === 'confirmed' ? 'text-green-400 bg-green-950/40' :
-          status === 'flagged' ? 'text-red-400 bg-red-950/40' : 'text-amber-400 bg-amber-950/40';
-
+        const dot = reportStatusColor(status);
         hoverPopupRef.current.remove();
         hoverPopupRef.current
           .setLngLat([report.longitude, report.latitude])
           .setHTML(`
-            <div class="px-2 py-1 text-xs font-sans">
-              <div class="flex items-center gap-1.5 mb-0.5 border-b border-slate-800 pb-0.5 justify-between">
-                <span class="font-bold text-slate-100 uppercase text-[9px] tracking-wide">Report #${report.id}</span>
-                <span class="text-[9px] font-extrabold uppercase px-1 rounded-sm ${statusLabelColor}">${status}</span>
+            <div class="px-2.5 py-1.5 text-[13px] font-sans max-w-[220px]">
+              <div class="flex items-center gap-2 mb-1 border-b border-line pb-1 justify-between">
+                <span class="font-mono text-muted text-[12px]">#${report.id}</span>
+                <span class="flex items-center gap-1.5 text-[12px] text-muted capitalize">
+                  <span style="width:6px;height:6px;border-radius:9999px;background:${dot}"></span>${status}
+                </span>
               </div>
-              <div class="text-slate-300 font-medium mb-1 line-clamp-2 max-w-[200px]">"${report.rawText}"</div>
-              <div class="text-[9px] text-slate-500">Source: <span class="text-teal-400 uppercase font-bold">${report.source}</span></div>
+              <div class="text-fg mb-1 line-clamp-2">"${report.rawText}"</div>
+              <div class="text-[12px] text-muted capitalize">Source · ${report.source}</div>
             </div>
           `)
           .addTo(map);
@@ -1111,25 +1086,25 @@ export default function InteractiveCommandMap({
       const el = document.createElement('div');
       el.className = 'cursor-pointer flex flex-col items-center';
 
-      let iconColor = '#38bdf8'; 
+      let iconColor = COLOR.muted;
       let iconMarkup = '';
 
       if (team.type === 'boat') {
-        iconColor = '#34d399'; 
+        iconColor = COLOR.muted;
         iconMarkup = `
           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 3v17M2 10c0 4.4 3.6 8 10 8s10-3.6 10-8H2z"/>
           </svg>
         `;
       } else if (team.type === 'ambulance') {
-        iconColor = '#f43f5e'; 
+        iconColor = COLOR.muted;
         iconMarkup = `
           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M19 12h-4l-3 9L9 3l-3 9H2"/>
           </svg>
         `;
       } else if (team.type === '4x4') {
-        iconColor = '#fbbf24'; 
+        iconColor = COLOR.muted;
         iconMarkup = `
           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="18.5" cy="17.5" r="2.5"/>
@@ -1138,7 +1113,7 @@ export default function InteractiveCommandMap({
           </svg>
         `;
       } else {
-        iconColor = '#38bdf8'; 
+        iconColor = COLOR.muted;
         iconMarkup = `
           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <rect x="1" y="3" width="15" height="13" rx="2" ry="2"/>
@@ -1151,18 +1126,17 @@ export default function InteractiveCommandMap({
       
       el.innerHTML = `
         <div style="
-          background: #1e293b;
-          border: 1.5px solid #64748b;
-          border-radius: 6px;
+          background: #151e31;
+          border: 1px solid rgba(255,255,255,0.06);
+          border-radius: 8px;
           padding: 3px 5px;
           display: flex;
           align-items: center;
           gap: 4px;
-          box-shadow: 0 4px 8px rgba(0,0,0,0.5);
-          transition: border-color 0.15s;
-        " class="hover:border-teal-400">
+          box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+        ">
           ${iconMarkup}
-          <span style="color: #cbd5e1; font-size: 8.5px; font-weight: 700; font-family: monospace;">${label}</span>
+          <span style="color:#92a0b8;font-size:9px;font-weight:600;font-family:var(--font-jetbrains-mono),monospace;">${label}</span>
         </div>
       `;
 
@@ -1171,11 +1145,11 @@ export default function InteractiveCommandMap({
         hoverPopupRef.current
           .setLngLat([team.baseLocation.lng + 0.005, team.baseLocation.lat + 0.005])
           .setHTML(`
-            <div class="px-2 py-1 text-xs font-sans">
-              <div class="font-bold text-sky-400 mb-0.5">${team.name}</div>
-              <div class="text-[10px] text-slate-400">Type: <span class="text-slate-200 font-semibold uppercase">${team.type}</span></div>
-              <div class="text-[10px] text-slate-400">Status: <span class="text-slate-200 font-semibold capitalize">${team.status}</span></div>
-              <div class="text-[10px] text-slate-400">Capacity: <span class="text-slate-200 font-semibold">${team.capacityKg.toLocaleString()} kg</span></div>
+            <div class="px-2.5 py-1.5 text-[13px] font-sans">
+              <div class="font-medium text-fg mb-0.5">${team.name}</div>
+              <div class="text-[12px] text-muted capitalize">Type · ${team.type}</div>
+              <div class="text-[12px] text-muted capitalize">Status · ${team.status}</div>
+              <div class="text-[12px] text-muted">Capacity · <span class="font-mono tabular-nums">${team.capacityKg.toLocaleString()}</span> kg</div>
             </div>
           `)
           .addTo(map);
@@ -1210,7 +1184,7 @@ export default function InteractiveCommandMap({
       
       el.innerHTML = `
         <div style="
-          background: #0f172a;
+          background: #151e31;
           border: 1.5px solid ${fill};
           border-radius: 50%;
           width: 18px;
@@ -1218,9 +1192,9 @@ export default function InteractiveCommandMap({
           display: flex;
           align-items: center;
           justify-content: center;
-          box-shadow: 0 2px 6px rgba(0,0,0,0.6);
-          transition: transform 0.15s;
-        " class="hover:scale-125">
+          box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+          transition: transform 0.1s;
+        " class="hover:scale-110">
           <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="${fill}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
             <circle cx="12" cy="7" r="4"/>
@@ -1233,10 +1207,10 @@ export default function InteractiveCommandMap({
         hoverPopupRef.current
           .setLngLat([vol.longitude, vol.latitude])
           .setHTML(`
-            <div class="px-2 py-1 text-xs font-sans">
-              <div class="font-bold text-slate-100 mb-0.5">${vol.name}</div>
-              <div class="text-[10px] text-slate-400">Team: <span class="text-slate-200">${vol.teamName || 'Independent'}</span></div>
-              <div class="text-[10px] uppercase font-semibold tracking-wider flex items-center gap-1 mt-0.5" style="color: ${fill}">
+            <div class="px-2.5 py-1.5 text-[13px] font-sans">
+              <div class="font-medium text-fg mb-0.5">${vol.name}</div>
+              <div class="text-[12px] text-muted">Team · <span class="text-fg">${vol.teamName || 'Independent'}</span></div>
+              <div class="text-[12px] capitalize flex items-center gap-1.5 mt-0.5 text-muted">
                 <span class="w-1.5 h-1.5 rounded-full" style="background: ${fill}"></span>
                 ${vol.availability}
               </div>
@@ -1271,11 +1245,11 @@ export default function InteractiveCommandMap({
       const el = document.createElement('div');
       el.className = 'cursor-pointer';
       
-      let hubColor = '#0284c7'; 
+      let hubColor = '#46506a';
       let iconMarkup = '';
 
       if (hub.type === 'shelter') {
-        hubColor = '#f97316'; 
+        hubColor = '#46506a';
         iconMarkup = `
           <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
@@ -1283,7 +1257,7 @@ export default function InteractiveCommandMap({
           </svg>
         `;
       } else if (hub.type === 'supply_hub') {
-        hubColor = '#a855f7'; 
+        hubColor = '#46506a';
         iconMarkup = `
           <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
@@ -1293,7 +1267,7 @@ export default function InteractiveCommandMap({
         `;
       } else {
         // Warehouse (Large Depot)
-        hubColor = '#0284c7'; 
+        hubColor = '#46506a';
         iconMarkup = `
           <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M22 10v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V10l10-6 10 6Z"/>
@@ -1305,15 +1279,15 @@ export default function InteractiveCommandMap({
       el.innerHTML = `
         <div style="
           background: ${hubColor};
-          border: 1.5px solid #ffffff;
-          border-radius: 4px;
+          border: 1px solid rgba(232,238,249,0.35);
+          border-radius: 6px;
           width: 20px;
           height: 20px;
           display: flex;
           align-items: center;
           justify-content: center;
-          box-shadow: 0 4px 8px rgba(0,0,0,0.6);
-          transition: transform 0.15s;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+          transition: transform 0.1s;
         " class="hover:scale-110">
           ${iconMarkup}
         </div>
@@ -1324,10 +1298,10 @@ export default function InteractiveCommandMap({
         hoverPopupRef.current
           .setLngLat([hub.longitude, hub.latitude])
           .setHTML(`
-            <div class="px-2 py-1 text-xs font-sans">
-              <div class="font-bold text-sky-400 mb-0.5">${hub.name}</div>
-              <div class="text-[9px] text-slate-400 uppercase tracking-wider font-semibold capitalize">Type: ${hub.type.replace('_', ' ')}</div>
-              <div class="text-[10px] text-slate-400 mt-0.5">Capacity Used: <span class="font-bold text-slate-200">${hub.capacityPercent}%</span></div>
+            <div class="px-2.5 py-1.5 text-[13px] font-sans">
+              <div class="font-medium text-fg mb-0.5">${hub.name}</div>
+              <div class="text-[12px] text-muted capitalize">Type · ${hub.type.replace('_', ' ')}</div>
+              <div class="text-[12px] text-muted mt-0.5">Capacity · <span class="text-fg font-mono tabular-nums">${hub.capacityPercent}%</span></div>
             </div>
           `)
           .addTo(map);
@@ -1418,7 +1392,7 @@ export default function InteractiveCommandMap({
   return (
     <div
       ref={wrapperRef}
-      className={`relative flex-1 bg-slate-950 border border-slate-800 rounded-xl overflow-hidden flex flex-col shadow-lg${
+      className={`relative flex-1 bg-surface border border-line rounded-card overflow-hidden flex flex-col${
         isFullscreen && !document.fullscreenElement ? ' fixed inset-0 z-[9999] h-screen w-screen rounded-none border-0' : ' h-full'
       }`}
     >
@@ -1444,42 +1418,26 @@ export default function InteractiveCommandMap({
           will-change: transform !important;
           display: flex !important;
         }
-        /* Pulse Animation for urgent items */
-        @keyframes marker-glow-pulse {
-          0%, 100% {
-            transform: scale(1);
-            filter: drop-shadow(0 0 2px var(--pulse-color));
-          }
-          50% {
-            transform: scale(1.15);
-            filter: drop-shadow(0 0 8px var(--pulse-color));
-          }
-        }
-        .marker-pulse {
-          animation: marker-glow-pulse 2s infinite ease-in-out;
-        }
-        /* Custom Tooltip Styling */
+        /* Tooltip styling — calm surface; inner HTML controls padding */
         .command-map-tooltip .maplibregl-popup-content {
-          background-color: #020617 !important;
-          color: #f1f5f9 !important;
-          border: 1px solid #1e293b !important;
-          border-radius: 8px !important;
-          padding: 6px 10px !important;
-          box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.7) !important;
+          background-color: var(--color-raised) !important;
+          color: var(--color-fg) !important;
+          border: 1px solid var(--color-line) !important;
+          border-radius: 10px !important;
+          padding: 0 !important;
+          box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.5) !important;
         }
         .command-map-tooltip .maplibregl-popup-tip {
-          border-top-color: #020617 !important;
-          border-bottom-color: #020617 !important;
+          border-top-color: var(--color-raised) !important;
+          border-bottom-color: var(--color-raised) !important;
         }
       `}</style>
 
       {/* Header */}
-      <div className="bg-slate-900 border-b border-slate-800 px-4 py-2 flex items-center justify-between z-10 select-none">
-        <div className="flex items-center gap-2">
-          <Compass className="w-4 h-4 text-teal-400" />
-          <span className="font-bold text-[11px] uppercase tracking-wider text-slate-300">
-            Live Operations Map
-          </span>
+      <div className="bg-surface border-b border-line px-4 h-11 flex items-center justify-between z-10 select-none">
+        <div className="flex items-center gap-2.5">
+          <Compass className="w-4 h-4 text-muted" />
+          <span className="text-[14px] font-medium text-fg">Live Operations Map</span>
           {onResetReports && (
             <button
               onClick={() => {
@@ -1487,22 +1445,22 @@ export default function InteractiveCommandMap({
                 onSelectReport(null as any);
                 setSelectedEdge(null);
               }}
-              className="ml-2 px-2 py-0.5 bg-slate-850 hover:bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-200 text-[8px] font-bold rounded uppercase tracking-wider transition-colors cursor-pointer"
+              className="ml-2 px-2 py-1 text-[12px] text-muted hover:text-fg hover:bg-raised rounded-control transition-colors duration-100 cursor-pointer"
             >
-              Reset States
+              Reset
             </button>
           )}
         </div>
 
-        <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 p-0.5 rounded-lg text-[10px] text-slate-400">
+        <div className="flex items-center gap-0.5 text-[12px]">
           {LAYER_BUTTONS.map(({ key, label }) => (
             <button
               key={key}
               onClick={() => setMapLayers((p) => ({ ...p, [key]: !p[key] }))}
-              className={`px-2 py-1 rounded transition-colors ${
+              className={`px-2 py-1 rounded-control transition-colors duration-100 cursor-pointer ${
                 mapLayers[key]
-                  ? 'bg-slate-900 text-teal-400 font-semibold'
-                  : 'hover:text-slate-200'
+                  ? 'bg-raised text-fg'
+                  : 'text-muted hover:text-fg hover:bg-raised/40'
               }`}
             >
               {label}
@@ -1519,7 +1477,7 @@ export default function InteractiveCommandMap({
         <button
           onClick={toggleFullscreen}
           title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
-          className="absolute top-3 left-3 z-10 w-7 h-7 bg-slate-900/90 border border-slate-700 hover:border-teal-600 text-slate-300 hover:text-teal-300 rounded flex items-center justify-center cursor-pointer transition-colors select-none backdrop-blur-sm"
+          className="absolute top-3 left-3 z-10 w-7 h-7 bg-surface border border-line hover:bg-raised text-muted hover:text-fg rounded-control flex items-center justify-center cursor-pointer transition-colors duration-100 select-none"
         >
           {isFullscreen ? (
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1543,7 +1501,7 @@ export default function InteractiveCommandMap({
               key={title}
               onClick={action}
               title={title}
-              className="w-7 h-7 bg-slate-900/90 border border-slate-700 hover:border-teal-600 text-slate-300 hover:text-teal-300 rounded flex items-center justify-center font-bold text-sm cursor-pointer transition-colors select-none backdrop-blur-sm"
+              className="w-7 h-7 bg-surface border border-line hover:bg-raised text-muted hover:text-fg rounded-control flex items-center justify-center text-sm cursor-pointer transition-colors duration-100 select-none"
             >
               {label}
             </button>
@@ -1552,30 +1510,28 @@ export default function InteractiveCommandMap({
 
         {/* Road edge popup (Adjusted left position to sit right beside the top-left fullscreen icon) */}
         {selectedEdge && (
-          <div className="absolute top-3 left-12 w-[290px] bg-slate-950/95 border border-slate-800 p-3.5 rounded-lg text-xs flex flex-col gap-2 z-10 shadow-2xl backdrop-blur-sm">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
-              <span className="font-bold text-slate-300 truncate max-w-[200px]">
+          <div className="absolute top-3 left-12 w-[290px] bg-surface border border-line p-3.5 rounded-card text-[13px] flex flex-col gap-2.5 z-10">
+            <div className="flex items-center justify-between border-b border-line pb-2">
+              <span className="font-medium text-fg truncate max-w-[200px]">
                 {selectedEdge.name}
               </span>
               <button
                 onClick={() => setSelectedEdge(null)}
-                className="text-slate-500 hover:text-slate-300 font-semibold cursor-pointer"
+                className="text-muted hover:text-fg cursor-pointer"
               >
-                ✕
+                <X className="w-3.5 h-3.5" />
               </button>
             </div>
 
-            <div className="space-y-1">
-              <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block">
-                Accessibility Status
-              </span>
-              <div className="grid grid-cols-2 gap-1 text-[10px]">
+            <div className="space-y-1.5">
+              <span className="text-[12px] text-muted block">Accessibility</span>
+              <div className="grid grid-cols-2 gap-1.5 text-[12px]">
                 {(['open','slow','blocked','damaged'] as const).map((s) => {
-                  const styles: Record<string, string> = {
-                    open:    'bg-slate-900 border-slate-700 text-slate-200',
-                    slow:    'bg-amber-950/60 border-amber-800 text-amber-300',
-                    blocked: 'bg-red-950/60 border-red-800 text-red-300',
-                    damaged: 'bg-red-950 border-red-800 text-red-200',
+                  const activeStyles: Record<string, string> = {
+                    open:    'bg-raised border-line text-fg',
+                    slow:    'border-warning/40 bg-warning/10 text-warning',
+                    blocked: 'border-critical/40 bg-critical/10 text-critical',
+                    damaged: 'border-critical/40 bg-critical/10 text-critical',
                   };
                   const labels: Record<string, string> = {
                     open: 'Open', slow: 'Slow',
@@ -1586,8 +1542,8 @@ export default function InteractiveCommandMap({
                     <button
                       key={s}
                       onClick={() => handleRoadStatusChange(s)}
-                      className={`py-1 border rounded font-semibold cursor-pointer transition-colors ${
-                        active ? styles[s] : 'border-slate-800 hover:bg-slate-900 text-slate-500'
+                      className={`py-1.5 border rounded-control cursor-pointer transition-colors duration-100 ${
+                        active ? activeStyles[s] : 'border-line text-muted hover:bg-raised/40 hover:text-fg'
                       }`}
                     >
                       {labels[s]}
@@ -1597,15 +1553,13 @@ export default function InteractiveCommandMap({
               </div>
             </div>
 
-            <div className="space-y-1 mt-1">
-              <label className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block">
-                Notes
-              </label>
+            <div className="space-y-1">
+              <label className="text-[12px] text-muted block">Notes</label>
               <textarea
                 value={roadNotes}
                 onChange={(e) => setRoadNotes(e.target.value)}
-                placeholder="Additional details..."
-                className="w-full bg-slate-900 border border-slate-800 p-1.5 rounded text-[10.5px] text-slate-300 focus:outline-none focus:border-teal-500 resize-none h-12"
+                placeholder="Additional details…"
+                className="w-full bg-bg border border-line p-2 rounded-control text-[13px] text-fg placeholder:text-muted focus:outline-none focus:border-muted resize-none h-14"
               />
             </div>
 
@@ -1614,39 +1568,34 @@ export default function InteractiveCommandMap({
                 onUpdateRoadStatus(selectedEdge.id, selectedEdge.status, roadNotes);
                 setSelectedEdge(null);
               }}
-              className="w-full py-1.5 bg-teal-900 hover:bg-teal-800 border border-teal-800 text-teal-200 font-bold rounded transition-colors cursor-pointer"
+              className="w-full py-2 border border-line text-fg hover:bg-raised rounded-control transition-colors duration-100 cursor-pointer text-[13px] font-medium"
             >
-              Save Status
+              Save status
             </button>
           </div>
         )}
 
         {/* Report popup (Adjusted left position to sit right beside the top-left fullscreen icon) */}
         {selectedReport && (
-          <div className="absolute top-3 left-12 w-[300px] bg-slate-950/95 border border-slate-800 p-3.5 rounded-lg text-xs flex flex-col gap-2 z-10 shadow-2xl backdrop-blur-sm">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+          <div className="absolute top-3 left-12 w-[300px] bg-surface border border-line p-3.5 rounded-card text-[13px] flex flex-col gap-2.5 z-10">
+            <div className="flex items-center justify-between border-b border-line pb-2">
               <div className="flex items-center gap-1.5">
-                <FileText className="w-3.5 h-3.5 text-teal-400" />
-                <span className="font-bold text-slate-300 uppercase">
-                  Report #{selectedReport.id}
-                </span>
+                <FileText className="w-3.5 h-3.5 text-muted" />
+                <span className="font-mono text-muted text-[12px]">#{selectedReport.id}</span>
               </div>
               <button
                 onClick={() => onSelectReport(null as unknown as FieldReport)}
-                className="text-slate-500 hover:text-slate-300 font-semibold cursor-pointer"
+                className="text-muted hover:text-fg cursor-pointer"
               >
-                ✕
+                <X className="w-3.5 h-3.5" />
               </button>
             </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-[10px] text-slate-500">
-                <span>
-                  Reporter:{' '}
-                  <strong className="text-slate-400">{selectedReport.reporterName}</strong>
-                </span>
-                <span className="flex items-center gap-0.5">
-                  <Clock className="w-2.5 h-2.5" />
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between text-[12px] text-muted">
+                <span>Reporter · <span className="text-fg">{selectedReport.reporterName}</span></span>
+                <span className="flex items-center gap-1 font-mono tabular-nums">
+                  <Clock className="w-3 h-3" />
                   {new Date(selectedReport.createdAt).toLocaleTimeString([], {
                     hour: '2-digit',
                     minute: '2-digit',
@@ -1654,86 +1603,79 @@ export default function InteractiveCommandMap({
                 </span>
               </div>
 
-              <div className="bg-slate-900/60 border border-slate-800 p-2 rounded italic text-[11px] text-slate-300 leading-relaxed">
+              <div className="bg-bg border border-line p-2.5 rounded-control text-[13px] text-fg leading-relaxed">
                 &ldquo;{selectedReport.rawText}&rdquo;
               </div>
 
-              {/* Enhanced details panel matching our updated mock schema */}
-              <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-500 border-b border-slate-900 pb-2">
+              <div className="grid grid-cols-2 gap-2.5 text-[12px] border-b border-line pb-2.5">
                 <div>
-                  <span className="block text-[8px] uppercase font-bold text-slate-500">
-                    Barangay
-                  </span>
-                  <span className="text-slate-300 font-semibold">
-                    {selectedReport.barangayName ?? 'Unknown'}
-                  </span>
+                  <span className="block text-[11px] text-muted mb-0.5">Barangay</span>
+                  <span className="text-fg">{selectedReport.barangayName ?? 'Unknown'}</span>
                 </div>
                 <div>
-                  <span className="block text-[8px] uppercase font-bold text-slate-500">
-                    Severity / Need
-                  </span>
-                  <span className={`font-semibold uppercase tracking-wide text-[9px] ${
-                    selectedReport.needsSeverity === 'critical' ? 'text-red-400' :
-                    selectedReport.needsSeverity === 'high' ? 'text-amber-400' :
-                    selectedReport.needsSeverity === 'medium' ? 'text-sky-400' : 'text-slate-400'
-                  }`}>
+                  <span className="block text-[11px] text-muted mb-0.5">Severity</span>
+                  <span className="flex items-center gap-1.5 text-fg capitalize">
+                    <span
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{
+                        background:
+                          selectedReport.needsSeverity === 'critical' || selectedReport.needsSeverity === 'high'
+                            ? COLOR.critical
+                            : selectedReport.needsSeverity === 'medium'
+                            ? COLOR.warning
+                            : COLOR.muted,
+                      }}
+                    />
                     {selectedReport.needsSeverity}
                   </span>
                 </div>
                 <div>
-                  <span className="block text-[8px] uppercase font-bold text-slate-500">
-                    Est. Affected
-                  </span>
-                  <span className="text-slate-300 font-semibold">
-                    {selectedReport.populationEstimate > 0 ? `${selectedReport.populationEstimate} people` : 'None / Minor'}
+                  <span className="block text-[11px] text-muted mb-0.5">Est. affected</span>
+                  <span className="text-fg">
+                    {selectedReport.populationEstimate > 0 ? `${selectedReport.populationEstimate} people` : 'None / minor'}
                   </span>
                 </div>
                 <div>
-                  <span className="block text-[8px] uppercase font-bold text-slate-500">
-                    Impediment
-                  </span>
-                  <span className="text-slate-300 font-semibold">
-                    {selectedReport.roadImpassable ? 'Impassable St' : selectedReport.roadStatus || 'None'}
+                  <span className="block text-[11px] text-muted mb-0.5">Impediment</span>
+                  <span className="text-fg">
+                    {selectedReport.roadImpassable ? 'Impassable' : selectedReport.roadStatus || 'None'}
                   </span>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between text-[10px]">
-                <span className="text-slate-500">Confidence Score:</span>
-                <span className="text-slate-300 font-semibold">{Math.round(selectedReport.confidence * 100)}%</span>
+              <div className="flex items-center justify-between text-[12px] text-muted">
+                <span>Confidence</span>
+                <span className="text-fg font-mono tabular-nums">{Math.round(selectedReport.confidence * 100)}%</span>
               </div>
 
-              <div className="flex items-center justify-between text-[10px]">
-                <span className="text-slate-500">Verification Status:</span>
-                <span className={`font-bold uppercase text-[9px] px-1.5 py-0.5 rounded ${
-                  selectedReport.status === 'confirmed' ? 'bg-green-950 text-green-400 border border-green-800' :
-                  selectedReport.status === 'flagged' ? 'bg-red-950 text-red-400 border border-red-800' :
-                  'bg-yellow-950 text-yellow-400 border border-yellow-800'
-                }`}>
+              <div className="flex items-center justify-between text-[12px] text-muted">
+                <span>Status</span>
+                <span className="flex items-center gap-1.5 text-fg capitalize">
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: reportStatusColor(selectedReport.status) }} />
                   {selectedReport.status}
                 </span>
               </div>
             </div>
 
             {selectedReport.status === 'pending' && (
-              <div className="flex items-center gap-2 mt-1.5 pt-2 border-t border-slate-900">
+              <div className="flex items-center gap-2 pt-2 border-t border-line">
                 <button
                   onClick={() => {
                     onConfirmReport(selectedReport.id);
                     onSelectReport(null as unknown as FieldReport);
                   }}
-                  className="flex-1 py-1.5 bg-teal-900 hover:bg-teal-800 border border-teal-800 text-teal-200 font-bold rounded flex items-center justify-center gap-0.5 cursor-pointer transition-colors"
+                  className="flex-1 py-2 border border-active/40 bg-active/10 text-active hover:bg-active/20 rounded-control flex items-center justify-center gap-1.5 cursor-pointer transition-colors duration-100 text-[13px] font-medium"
                 >
-                  <Check className="w-3 h-3" /> Confirm
+                  <Check className="w-3.5 h-3.5" /> Confirm
                 </button>
                 <button
                   onClick={() => {
                     onFlagReport(selectedReport.id);
                     onSelectReport(null as unknown as FieldReport);
                   }}
-                  className="px-2 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-red-400 font-bold rounded flex items-center justify-center gap-0.5 cursor-pointer transition-colors"
+                  className="px-3 py-2 border border-line text-muted hover:text-critical hover:border-critical/40 rounded-control flex items-center justify-center gap-1.5 cursor-pointer transition-colors duration-100 text-[13px]"
                 >
-                  <AlertOctagon className="w-3 h-3" /> Flag
+                  <AlertOctagon className="w-3.5 h-3.5" /> Flag
                 </button>
               </div>
             )}
@@ -1743,107 +1685,91 @@ export default function InteractiveCommandMap({
         {/* Updated Legend Panel (Hub colors explicit to display the 3 distinct types) */}
         <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-1.5 select-none">
           {legendOpen && (
-            <div className="bg-slate-950/95 border border-slate-800 p-3 rounded-lg text-[9.5px] text-slate-400 flex flex-col gap-2.5 w-[140px] shadow-2xl backdrop-blur-sm">
+            <div className="bg-surface border border-line p-3 rounded-card text-[12px] text-muted flex flex-col gap-3 w-[168px]">
               <div>
-                <div className="font-bold text-[8px] text-slate-500 uppercase tracking-wider mb-1">Barangay Risk</div>
-                <div className="grid grid-cols-2 gap-1.5">
+                <div className="text-[11px] text-muted mb-1.5">Barangay state</div>
+                <div className="space-y-1">
                   {[
-                    { color: '#0d5c56', label: 'Normal' },
-                    { color: '#d97706', label: 'Watch' },
-                    { color: '#dc2626', label: 'High' },
-                    { color: '#7f1d1d', label: 'Critical' },
+                    { color: COLOR.reached, label: 'Reached' },
+                    { color: COLOR.warning, label: 'Escalating' },
+                    { color: COLOR.critical, label: 'Critical' },
                   ].map(({ color, label }) => (
-                    <div key={label} className="flex items-center gap-1">
+                    <div key={label} className="flex items-center gap-2">
                       <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
-                      <span className="text-[8.5px]">{label}</span>
+                      <span className="text-fg">{label}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div className="border-t border-slate-850 pt-1.5">
-                <div className="font-bold text-[8px] text-slate-500 uppercase tracking-wider mb-1">Road Network</div>
+              <div className="border-t border-line pt-2">
+                <div className="text-[11px] text-muted mb-1.5">Roads</div>
                 <div className="space-y-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-4 h-0.5 bg-[#475569] inline-block shrink-0" />
-                    <span>Open Access</span>
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-0.5 inline-block shrink-0" style={{ background: ROAD_OPEN }} />
+                    <span className="text-fg">Open</span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-4 h-0.5 bg-[#d97706] inline-block shrink-0" />
-                    <span>Slow Route</span>
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-0.5 inline-block shrink-0" style={{ background: COLOR.warning }} />
+                    <span className="text-fg">Slow</span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-4 h-0 border-t-2 border-dashed border-[#ef4444] inline-block shrink-0" />
-                    <span>Blocked Way</span>
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 border-t-2 border-dashed inline-block shrink-0" style={{ borderColor: COLOR.critical }} />
+                    <span className="text-fg">Blocked</span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-4 h-0.5 bg-[#dc2626] inline-block shrink-0" />
-                    <span>Damaged Path</span>
-                  </div>
-                  <div className="text-[7.5px] text-slate-500 italic mt-1 leading-normal">
-                    *Incident line generates dynamically between nearest hub and the selected report.
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-0.5 inline-block shrink-0" style={{ background: COLOR.critical }} />
+                    <span className="text-fg">Damaged</span>
                   </div>
                 </div>
               </div>
 
-              <div className="border-t border-slate-850 pt-1.5">
-                <div className="font-bold text-[8px] text-slate-500 uppercase tracking-wider mb-1">Mission Routes (OR-Tools)</div>
+              <div className="border-t border-line pt-2">
+                <div className="text-[11px] text-muted mb-1.5">Routes</div>
                 <div className="space-y-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-4 h-0.5 bg-[#2dd4bf] inline-block shrink-0" />
-                    <span>Active dispatch</span>
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-0.5 inline-block shrink-0" style={{ background: ROUTE_ACTIVE }} />
+                    <span className="text-fg">Active</span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-4 h-0 border-t-2 border-dashed border-[#38bdf8] inline-block shrink-0" />
-                    <span>Planned route</span>
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 border-t-2 border-dashed inline-block shrink-0" style={{ borderColor: ROUTE_PLANNED }} />
+                    <span className="text-fg">Planned</span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-4 h-0.5 bg-[#64748b] inline-block shrink-0" />
-                    <span>Completed</span>
-                  </div>
-                  <div className="text-[7.5px] text-slate-500 italic mt-1 leading-normal">
-                    *Hover a route for ETA, cargo &amp; ordered stops.
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-0.5 inline-block shrink-0" style={{ background: ROUTE_DONE }} />
+                    <span className="text-fg">Completed</span>
                   </div>
                 </div>
               </div>
 
-              <div className="border-t border-slate-850 pt-1.5">
-                <div className="font-bold text-[8px] text-slate-500 uppercase tracking-wider mb-1">Report States</div>
+              <div className="border-t border-line pt-2">
+                <div className="text-[11px] text-muted mb-1.5">Reports</div>
                 <div className="space-y-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-3.5 h-3.5 rounded-full bg-amber-500/20 border border-amber-500 flex items-center justify-center text-[7px] text-amber-500 shrink-0 font-bold">!</span>
-                    <span>Pending Action</span>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: COLOR.warning }} />
+                    <span className="text-fg">Pending</span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-3.5 h-3.5 rounded-full bg-green-600 border border-green-400 flex items-center justify-center text-[7px] text-white shrink-0 font-bold">✓</span>
-                    <span>Verified</span>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: COLOR.active }} />
+                    <span className="text-fg">Verified</span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-3.5 h-3.5 rounded-full bg-red-600 border border-red-400 flex items-center justify-center text-[7px] text-white shrink-0 font-bold">✕</span>
-                    <span>Flagged</span>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: COLOR.critical }} />
+                    <span className="text-fg">Flagged</span>
                   </div>
                 </div>
               </div>
 
-              {/* Asset Types split cleanly into specific operational categories */}
-              <div className="border-t border-slate-850 pt-1.5">
-                <div className="font-bold text-[8px] text-slate-500 uppercase tracking-wider mb-1">Asset Types</div>
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5 text-[8.5px]">
-                    <span className="w-2.5 h-2 bg-[#0284c7] border border-sky-400 rounded-sm inline-block shrink-0" />
-                    <span>Warehouse / Depot</span>
+              <div className="border-t border-line pt-2">
+                <div className="text-[11px] text-muted mb-1.5">Assets</div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2 rounded-sm inline-block shrink-0" style={{ background: '#46506a', border: '1px solid rgba(232,238,249,0.35)' }} />
+                    <span className="text-fg">Logistics hub</span>
                   </div>
-                  <div className="flex items-center gap-1.5 text-[8.5px]">
-                    <span className="w-2.5 h-2 bg-[#a855f7] border border-purple-400 rounded-sm inline-block shrink-0" />
-                    <span>Supply Hub</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[8.5px]">
-                    <span className="w-2.5 h-2 bg-[#f97316] border border-orange-400 rounded-sm inline-block shrink-0" />
-                    <span>Emergency Shelter</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[8.5px] border-t border-slate-900 pt-1 mt-1">
-                    <span className="w-2.5 h-1.5 bg-slate-850 border border-slate-500 inline-block shrink-0" />
-                    <span>Rescue Team</span>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2 rounded-sm inline-block shrink-0 bg-raised border border-line" />
+                    <span className="text-fg">Response team</span>
                   </div>
                 </div>
               </div>
@@ -1852,13 +1778,10 @@ export default function InteractiveCommandMap({
 
           <button
             onClick={() => setLegendOpen((o) => !o)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900/95 border border-slate-700 hover:border-teal-600 text-slate-400 hover:text-teal-300 rounded-lg text-[10px] font-semibold cursor-pointer transition-colors backdrop-blur-sm shadow-lg"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-surface border border-line text-muted hover:text-fg hover:bg-raised rounded-control text-[12px] cursor-pointer transition-colors duration-100"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="3"/><path d="M3 12h1m16 0h1M12 3v1m0 16v1m-6.4-3.6.7-.7m11.4-11.4.7-.7M5.6 5.6l.7.7m11.4 11.4.7.7"/>
-            </svg>
-            Legend Panel
-            <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ transform: legendOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>
+            Legend
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: legendOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.1s' }}>
               <path d="M6 9l6 6 6-6"/>
             </svg>
           </button>

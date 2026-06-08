@@ -1,28 +1,17 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-  Activity, 
-  Check, 
-  AlertTriangle, 
-  MessageSquare, 
-  Clock, 
-  ShieldAlert, 
-  Send,
-  Building,
-  User,
-  AlertOctagon,
-  Maximize2,
-  Minimize2
-} from 'lucide-react';
+import { Check, AlertOctagon, Send, Maximize2, Minimize2 } from 'lucide-react';
 import { FieldReport } from '@/lib/mockData';
+import { Timeline, StatusDot, SEVERITY_TONE } from './ui';
+import type { TimelineItem, Tone } from './ui';
 
 interface BottomOperationsConsoleProps {
   reports: FieldReport[];
   activityLogs: { id: string; time: string; event: string; type: 'info' | 'warn' | 'success' | 'alert' }[];
   onConfirmReport: (id: string) => void;
   onFlagReport: (id: string) => void;
-  initialHeight?: number; // Initial height in pixels
+  initialHeight?: number;
   minHeight?: number;
   maxHeight?: number;
 }
@@ -35,51 +24,56 @@ interface CommsMessage {
   time: string;
 }
 
+const LOG_TONE: Record<string, Tone> = {
+  info: 'neutral',
+  warn: 'warning',
+  success: 'active',
+  alert: 'critical',
+};
+
 export default function BottomOperationsConsole({
   reports,
   activityLogs,
   onConfirmReport,
   onFlagReport,
-  initialHeight = 280,
-  minHeight = 200,
-  maxHeight = 600
+  initialHeight = 240,
+  minHeight = 160,
+  maxHeight = 560,
 }: BottomOperationsConsoleProps) {
-  const [activeTab, setActiveTab] = useState<'feed' | 'queue' | 'comms'>('queue');
+  const [activeTab, setActiveTab] = useState<'feed' | 'queue' | 'comms'>('feed');
   const [height, setHeight] = useState(initialHeight);
   const [isDragging, setIsDragging] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const dragStartY = useRef(0);
   const startHeight = useRef(0);
-  const containerRef = useRef<HTMLDivElement>(null);
-  
-  // Compact Communications state
+
   const [comms, setComms] = useState<CommsMessage[]>([
-    { id: 'c-1', sender: 'Officer Mendoza', agency: 'OPS', text: 'Central Depot reporting 85% capacity reached on standard hygiene packs.', time: '10m ago' },
-    { id: 'c-2', sender: 'Cebu CDRRMO', agency: 'LGU', text: 'LGU road clearing crews moving to Banilad area now. Road obstructions reported.', time: '18m ago' },
-    { id: 'c-3', sender: 'Red Cross Cebu', agency: 'NGO', text: 'Dispatching 3 volunteer first-aid responders to Ermita evacuation center.', time: '35m ago' },
-    { id: 'c-4', sender: 'PDRRMO Center', agency: 'LGU', text: 'Coastal high-tide alert issued for south Cebu coastline. Watch for tide surge.', time: '1h ago' }
+    { id: 'c-1', sender: 'Officer Mendoza', agency: 'OPS', text: 'Central Depot reporting 85% capacity on standard hygiene packs.', time: '10m ago' },
+    { id: 'c-2', sender: 'Cebu CDRRMO', agency: 'LGU', text: 'Road clearing crews moving to Banilad area now.', time: '18m ago' },
+    { id: 'c-3', sender: 'Red Cross Cebu', agency: 'NGO', text: 'Dispatching 3 first-aid responders to Ermita evacuation center.', time: '35m ago' },
+    { id: 'c-4', sender: 'PDRRMO Center', agency: 'LGU', text: 'Coastal high-tide alert issued for south Cebu coastline.', time: '1h ago' },
   ]);
   const [newMsgText, setNewMsgText] = useState('');
 
-  const pendingReports = reports.filter(r => r.status === 'pending');
+  const pendingReports = reports.filter((r) => r.status === 'pending');
+
+  const feedItems: TimelineItem[] = activityLogs.map((log) => ({
+    id: log.id,
+    time: log.time,
+    tone: LOG_TONE[log.type] ?? 'neutral',
+    text: log.event,
+  }));
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMsgText.trim()) return;
-
-    const newMsg: CommsMessage = {
-      id: `c-${Date.now()}`,
-      sender: 'Coordinator (You)',
-      agency: 'OPS',
-      text: newMsgText,
-      time: 'Just now'
-    };
-
-    setComms(prev => [newMsg, ...prev]);
+    setComms((prev) => [
+      { id: `c-${Date.now()}`, sender: 'Coordinator (You)', agency: 'OPS', text: newMsgText, time: 'Just now' },
+      ...prev,
+    ]);
     setNewMsgText('');
   };
 
-  // Handle drag to resize
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     setIsDragging(true);
@@ -87,243 +81,132 @@ export default function BottomOperationsConsole({
     startHeight.current = height;
   };
 
-  const handleMouseMove = (e: MouseEvent) => {
+  useEffect(() => {
     if (!isDragging) return;
-    
-    const deltaY = dragStartY.current - e.clientY;
-    let newHeight = startHeight.current + deltaY;
-    
-    // Clamp height between min and max
-    newHeight = Math.min(maxHeight, Math.max(minHeight, newHeight));
-    setHeight(newHeight);
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
+    const onMove = (e: MouseEvent) => {
+      const next = startHeight.current + (dragStartY.current - e.clientY);
+      setHeight(Math.min(maxHeight, Math.max(minHeight, next)));
+    };
+    const onUp = () => setIsDragging(false);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [isDragging, maxHeight, minHeight]);
 
   const toggleExpand = () => {
-    if (isExpanded) {
-      setHeight(initialHeight);
-    } else {
-      setHeight(maxHeight);
-    }
+    setHeight(isExpanded ? initialHeight : maxHeight);
     setIsExpanded(!isExpanded);
   };
 
-  useEffect(() => {
-    if (isDragging) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-    } else {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    }
-
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isDragging]);
+  const tabs: { id: 'feed' | 'queue' | 'comms'; label: string; count?: number }[] = [
+    { id: 'feed', label: 'Activity' },
+    { id: 'queue', label: 'Verification', count: pendingReports.length },
+    { id: 'comms', label: 'Comms' },
+  ];
 
   return (
-    <div
-      ref={containerRef}
-      className="bg-slate-950 border-t border-slate-800 flex flex-col overflow-hidden text-xs shadow-lg"
-      style={{ height: `${height}px` }}
-    >
-      {/* Draggable Resize Handle */}
-      <div 
-        className="h-1.5 bg-slate-800 hover:bg-teal-500 cursor-row-resize transition-colors group relative"
-        onMouseDown={handleMouseDown}
-      >
-        <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2">
-          <div className="w-8 h-1 bg-slate-600 rounded-full group-hover:bg-teal-400 transition-colors"></div>
+    <div className="bg-surface border-t border-line flex flex-col overflow-hidden" style={{ height: `${height}px` }}>
+      {/* Resize handle */}
+      <div className="h-1.5 bg-line hover:bg-muted/40 cursor-row-resize transition-colors duration-100" onMouseDown={handleMouseDown} />
+
+      {/* Tab bar */}
+      <div className="flex items-center justify-between border-b border-line pr-2">
+        <div className="flex text-[13px]">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setActiveTab(t.id)}
+              className={`px-4 py-2 border-b-2 transition-colors duration-100 cursor-pointer flex items-center gap-1.5 ${
+                activeTab === t.id ? 'border-fg/50 text-fg' : 'border-transparent text-muted hover:text-fg'
+              }`}
+            >
+              {t.label}
+              {t.count ? (
+                <span className="flex items-center gap-1 text-[12px] text-muted">
+                  <StatusDot tone="warning" />
+                  {t.count}
+                </span>
+              ) : null}
+            </button>
+          ))}
         </div>
-      </div>
-
-      {/* Console Tab Bar */}
-      <div className="flex items-center justify-between bg-slate-900 border-b border-slate-800 px-4">
-        <div className="flex">
-          {/* Active Feed */}
-          <button
-            onClick={() => setActiveTab('feed')}
-            className={`px-4 py-2 font-bold tracking-wider uppercase border-b-2 transition-all cursor-pointer ${
-              activeTab === 'feed' 
-                ? 'border-teal-500 text-teal-400 bg-slate-950/40' 
-                : 'border-transparent text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            Live Activity Feed
-          </button>
-
-          {/* Verification Queue */}
-          <button
-            onClick={() => setActiveTab('queue')}
-            className={`px-4 py-2 font-bold tracking-wider uppercase border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'queue' 
-                ? 'border-teal-500 text-teal-400 bg-slate-950/40' 
-                : 'border-transparent text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            Verification Queue
-            {pendingReports.length > 0 && (
-              <span className="bg-amber-950 border border-amber-800 text-amber-300 text-[10px] font-bold px-1.5 rounded-full">
-                {pendingReports.length}
-              </span>
-            )}
-          </button>
-
-          {/* Communications Tab */}
-          <button
-            onClick={() => setActiveTab('comms')}
-            className={`px-4 py-2 font-bold tracking-wider uppercase border-b-2 transition-all cursor-pointer ${
-              activeTab === 'comms' 
-                ? 'border-teal-500 text-teal-400 bg-slate-950/40' 
-                : 'border-transparent text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            Communications
-          </button>
-        </div>
-
-        {/* Expand/Collapse Button */}
         <button
           onClick={toggleExpand}
-          className="p-1.5 hover:bg-slate-800 rounded-md transition-colors cursor-pointer"
-          title={isExpanded ? "Collapse" : "Expand"}
+          title={isExpanded ? 'Collapse' : 'Expand'}
+          className="p-1.5 text-muted hover:text-fg hover:bg-raised rounded-control transition-colors duration-100 cursor-pointer"
         >
-          {isExpanded ? (
-            <Minimize2 className="w-4 h-4 text-slate-400" />
-          ) : (
-            <Maximize2 className="w-4 h-4 text-slate-400" />
-          )}
+          {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
         </button>
       </div>
 
-      {/* Tab Panel Content */}
-      <div className="flex-1 overflow-y-auto bg-slate-900/10 p-3">
-        {/* 1. LIVE ACTIVITY FEED */}
-        {activeTab === 'feed' && (
-          <div className="space-y-1.5 font-mono text-[11px]">
-            {activityLogs.map((log) => {
-              let textClass = 'text-slate-400';
-              if (log.type === 'warn') textClass = 'text-amber-400';
-              if (log.type === 'success') textClass = 'text-teal-400';
-              if (log.type === 'alert') textClass = 'text-red-400';
+      {/* Panel */}
+      <div className="flex-1 overflow-y-auto">
+        {activeTab === 'feed' && <div className="py-1.5">{feedItems.length > 0 ? <Timeline items={feedItems} /> : <Empty>No activity yet.</Empty>}</div>}
 
-              return (
-                <div key={log.id} className="flex items-start gap-3 py-0.5 border-b border-slate-950/20">
-                  <span className="text-slate-600 shrink-0 select-none">[{log.time}]</span>
-                  <span className={textClass}>{log.event}</span>
+        {activeTab === 'queue' &&
+          (pendingReports.length === 0 ? (
+            <Empty>No reports awaiting verification.</Empty>
+          ) : (
+            <div>
+              {pendingReports.map((report) => (
+                <div
+                  key={report.id}
+                  className="relative flex items-center gap-3 px-4 py-2 border-b border-line hover:bg-raised/40 transition-colors duration-100"
+                >
+                  <StatusDot tone={SEVERITY_TONE[report.needsSeverity] ?? 'neutral'} />
+                  <span className="font-mono tabular-nums text-[12px] text-muted shrink-0 w-12">#{report.id}</span>
+                  <span className="text-[13px] text-fg shrink-0 w-28 truncate">{report.barangayName}</span>
+                  <span className="text-[13px] text-muted truncate flex-1">{report.rawText}</span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => onConfirmReport(report.id)}
+                      className="px-2 py-1 border border-active/40 bg-active/10 text-active hover:bg-active/20 rounded-control text-[12px] flex items-center gap-1 transition-colors duration-100 cursor-pointer"
+                    >
+                      <Check className="w-3 h-3" /> Confirm
+                    </button>
+                    <button
+                      onClick={() => onFlagReport(report.id)}
+                      className="px-2 py-1 border border-line text-muted hover:text-critical hover:border-critical/40 rounded-control text-[12px] flex items-center gap-1 transition-colors duration-100 cursor-pointer"
+                    >
+                      <AlertOctagon className="w-3 h-3" /> Flag
+                    </button>
+                  </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* 2. VERIFICATION QUEUE */}
-        {activeTab === 'queue' && (
-          <div className="h-full flex flex-col">
-            {pendingReports.length === 0 ? (
-              <div className="flex-1 flex items-center justify-center text-slate-500 font-medium italic border border-dashed border-slate-800 rounded-lg">
-                No reports awaiting verification in triage queue.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {pendingReports.map((report) => (
-                  <div 
-                    key={report.id}
-                    className="bg-slate-950 border border-slate-800/80 p-2.5 rounded-lg flex flex-col justify-between hover:border-slate-700 transition-colors"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
-                          Report #{report.id}
-                        </span>
-                        <span className={`text-[9px] font-semibold px-1 rounded uppercase ${
-                          report.needsSeverity === 'critical' ? 'bg-red-950 text-red-400 border border-red-800/50' :
-                          'bg-amber-950 text-amber-400 border border-amber-800/40'
-                        }`}>
-                          {report.needsSeverity}
-                        </span>
-                      </div>
-                      <p className="text-[10.5px] text-slate-300 line-clamp-2 italic mb-2 leading-relaxed">
-                        "{report.rawText}"
-                      </p>
-                    </div>
-
-                    <div className="flex items-center justify-between border-t border-slate-900 pt-2 text-[10px] text-slate-500">
-                      <span>Source: <strong className="text-slate-400 uppercase">{report.source}</strong></span>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => onConfirmReport(report.id)}
-                          className="px-2 py-0.5 bg-teal-900/60 hover:bg-teal-800 text-teal-300 border border-teal-700/60 font-bold rounded cursor-pointer flex items-center gap-0.5 transition-colors"
-                        >
-                          <Check className="w-3 h-3" /> Confirm
-                        </button>
-                        <button
-                          onClick={() => onFlagReport(report.id)}
-                          className="px-2 py-0.5 bg-red-950/60 hover:bg-red-900 text-red-300 border border-red-800/60 font-bold rounded cursor-pointer flex items-center gap-0.5 transition-colors"
-                        >
-                          <AlertOctagon className="w-3 h-3" /> Flag
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* 3. COMMUNICATIONS */}
-        {activeTab === 'comms' && (
-          <div className="h-full flex gap-4">
-            {/* Message timelines */}
-            <div className="flex-1 overflow-y-auto space-y-2 pr-2">
-              {comms.map((msg) => {
-                let badgeStyle = 'bg-slate-800 text-slate-300';
-                if (msg.agency === 'LGU') badgeStyle = 'bg-amber-900/40 text-amber-300 border border-amber-800/30';
-                if (msg.agency === 'NGO') badgeStyle = 'bg-blue-900/40 text-blue-300 border border-blue-800/30';
-                if (msg.agency === 'OPS') badgeStyle = 'bg-teal-950/40 text-teal-300 border border-teal-800/30';
-
-                return (
-                  <div key={msg.id} className="bg-slate-950/80 border border-slate-800/40 p-2 rounded-lg flex items-start gap-2.5">
-                    <div className={`text-[8.5px] font-bold px-1.5 py-0.5 rounded tracking-wider uppercase shrink-0 mt-0.5 ${badgeStyle}`}>
-                      {msg.agency}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-0.5">
-                        <span className="font-bold text-slate-300">{msg.sender}</span>
-                        <span className="text-[9px] text-slate-500 font-mono flex items-center gap-0.5">
-                          <Clock className="w-2.5 h-2.5" /> {msg.time}
-                        </span>
-                      </div>
-                      <p className="text-[10.5px] text-slate-400 leading-normal">{msg.text}</p>
-                    </div>
-                  </div>
-                );
-              })}
+              ))}
             </div>
+          ))}
 
-            {/* Quick send form */}
-            <form onSubmit={handleSendMessage} className="w-[260px] border-l border-slate-800 pl-4 flex flex-col justify-between">
-              <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1">
-                LGU / NGO Direct Broadcast
-              </span>
-              <textarea
+        {activeTab === 'comms' && (
+          <div className="flex flex-col h-full">
+            <div className="flex-1 overflow-y-auto">
+              {comms.map((msg) => (
+                <div key={msg.id} className="flex items-start gap-3 px-4 py-2 border-b border-line">
+                  <span className="text-[11px] text-muted font-mono shrink-0 w-9 pt-0.5">{msg.agency}</span>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[13px] text-fg">{msg.sender}</span>
+                      <span className="text-[12px] text-muted font-mono tabular-nums">{msg.time}</span>
+                    </div>
+                    <p className="text-[13px] text-muted leading-snug">{msg.text}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <form onSubmit={handleSendMessage} className="shrink-0 flex items-center gap-2 border-t border-line p-2">
+              <input
                 value={newMsgText}
                 onChange={(e) => setNewMsgText(e.target.value)}
-                placeholder="Type operational notice..."
-                className="w-full flex-1 bg-slate-950 border border-slate-800 p-2 rounded-lg text-slate-200 placeholder-slate-600 focus:outline-none focus:border-teal-500 text-[10.5px] resize-none mb-2"
-                rows={3}
+                placeholder="Send an operational notice…"
+                className="flex-1 bg-bg border border-line rounded-control px-3 py-1.5 text-[13px] text-fg placeholder:text-muted focus:outline-none focus:border-muted"
               />
               <button
                 type="submit"
-                className="w-full py-1.5 bg-teal-900 hover:bg-teal-800 border border-teal-700 text-teal-100 font-bold rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                className="px-3 py-1.5 border border-line text-fg hover:bg-raised rounded-control text-[13px] flex items-center gap-1.5 transition-colors duration-100 cursor-pointer"
               >
-                <Send className="w-3.5 h-3.5" /> Send Notice
+                <Send className="w-3.5 h-3.5" /> Send
               </button>
             </form>
           </div>
@@ -331,4 +214,8 @@ export default function BottomOperationsConsole({
       </div>
     </div>
   );
+}
+
+function Empty({ children }: { children: React.ReactNode }) {
+  return <div className="flex items-center justify-center h-full text-[13px] text-muted">{children}</div>;
 }

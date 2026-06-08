@@ -1,37 +1,17 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { 
-  Cpu, 
-  Package, 
-  Navigation, 
-  Sliders, 
-  TrendingUp, 
-  Check, 
-  X, 
-  Layers, 
-  AlertTriangle, 
-  Clock, 
-  Truck, 
-  Archive, 
-  Info,
-  ChevronRight,
-  Database,
-  Building,
-  UserCheck
-} from 'lucide-react';
-import { 
-  Barangay, 
-  ImpactPrediction, 
-  SupplyManifest, 
-  Team, 
-  Route, 
-  LocationHub,
-  HistoricalIncident,
+import {
+  Barangay,
+  ImpactPrediction,
+  SupplyManifest,
+  Team,
+  Route,
   mockLocationHubs,
   mockHistoricalIncidents,
-  getSphereManifest
+  getSphereManifest,
 } from '@/lib/mockData';
+import { DetailPanel, silentAreaState, STATE_LABEL, STATE_COLOR } from './ui';
 
 interface RightIntelligencePanelProps {
   selectedBarangay: Barangay | null;
@@ -43,8 +23,8 @@ interface RightIntelligencePanelProps {
   teams: Team[];
   routes: Route[];
   onSaveOverrides: (
-    barangayId: string, 
-    affectedOverride: number | null, 
+    barangayId: string,
+    affectedOverride: number | null,
     suppliesOverride: { waterL?: number; foodPacks?: number; shelterKits?: number; blankets?: number } | null
   ) => void;
   onUpdateManifestStatus: (barangayId: string, status: 'approved' | 'modified' | 'rejected') => void;
@@ -52,24 +32,20 @@ interface RightIntelligencePanelProps {
   onClearBarangaySelection: () => void;
 }
 
+type Tab = 'overview' | 'supplies' | 'dispatch';
+
 export default function RightIntelligencePanel({
   selectedBarangay,
-  barangays,
-  reportsCount,
   scores,
   prediction,
   manifest,
   teams,
-  routes,
   onSaveOverrides,
   onUpdateManifestStatus,
   onDispatchTeam,
-  onClearBarangaySelection
+  onClearBarangaySelection,
 }: RightIntelligencePanelProps) {
-  // Drawer Tab State inside Silent Area Action drawer
-  const [drawerTab, setDrawerTab] = useState<'overview' | 'supplies' | 'dispatch'>('overview');
-  
-  // Custom manual override form states
+  const [drawerTab, setDrawerTab] = useState<Tab>('overview');
   const [isEditing, setIsEditing] = useState(false);
   const [affectedInput, setAffectedInput] = useState('');
   const [waterInput, setWaterInput] = useState('');
@@ -78,7 +54,6 @@ export default function RightIntelligencePanel({
   const [medicalInput, setMedicalInput] = useState('');
   const [shelterInput, setShelterInput] = useState('');
 
-  // Sync state with selected barangay
   useEffect(() => {
     if (selectedBarangay) {
       setAffectedInput(prediction?.overrideValue?.toString() || '');
@@ -91,441 +66,265 @@ export default function RightIntelligencePanel({
     }
   }, [selectedBarangay, prediction]);
 
-  // Priority response areas ranking (Standard View)
-  const getPriorityRankings = () => {
-    return barangays
-      .map(b => {
-        const s = scores.find(score => score.barangayId === b.id) || { score: 0 };
-        const pred = prediction; // just to reference
-        return {
-          ...b,
-          score: s.score
-        };
-      })
-      .sort((a, b) => b.score - a.score);
-  };
+  // Parent only mounts this panel with a selection; guard keeps types honest.
+  if (!selectedBarangay) return null;
 
-  const getRiskLevel = (score: number) => {
-    if (score >= 0.7) return 'Critical Silence';
-    if (score >= 0.4) return 'High Risk';
-    if (score >= 0.2) return 'Watch';
-    return 'Normal';
-  };
+  const selectedScore = scores.find((s) => s.barangayId === selectedBarangay.id) ?? { score: 0, hoursSinceContact: null };
+  const state = silentAreaState(selectedScore.score);
 
-  const handleSaveOverrides = () => {
-    const overrideVal = affectedInput.trim() === '' ? null : parseInt(affectedInput, 10);
-    
-    // Package custom overrides
-    const overrides = {
-      waterL: waterInput ? parseInt(waterInput, 10) : undefined,
-      foodPacks: foodInput ? parseInt(foodInput, 10) : undefined,
-      hygieneKits: hygieneInput ? parseInt(hygieneInput, 10) : undefined,
-      medicalSupplies: medicalInput ? parseInt(medicalInput, 10) : undefined,
-      shelterMaterials: shelterInput ? parseInt(shelterInput, 10) : undefined
-    };
+  const isAffectedOverridden = prediction?.overrideValue !== null && prediction?.overrideValue !== undefined;
+  const effectiveAffected = isAffectedOverridden ? prediction!.overrideValue! : prediction?.predictedAffected || 0;
 
-    onSaveOverrides(
-      selectedBarangay!.id, 
-      overrideVal, 
-      (overrides.waterL || overrides.foodPacks || overrides.hygieneKits || overrides.medicalSupplies || overrides.shelterMaterials) ? overrides : null
-    );
-    setIsEditing(false);
-  };
-
-  // 1. STANDARD VIEW (when no barangay is selected)
-  if (!selectedBarangay) {
-    const priorityAreas = getPriorityRankings();
-
-    return (
-      <div className="w-[320px] h-full bg-slate-950 border-l border-slate-800 flex flex-col overflow-hidden text-xs select-none">
-        <div className="p-4 border-b border-slate-800 bg-slate-900/40 flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <TrendingUp className="text-teal-400 w-4 h-4" />
-            <h3 className="font-bold text-[11px] uppercase tracking-wider text-slate-300">Decision Workspace</h3>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* Priority Response Areas list */}
-          <div className="space-y-2">
-            <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block">Priority Response Areas</span>
-            <div className="space-y-1.5">
-              {priorityAreas.slice(0, 3).map((area, index) => (
-                <div key={area.id} className="bg-slate-900 border border-slate-800/80 p-2.5 rounded-lg flex items-center justify-between">
-                  <div>
-                    <h4 className="font-bold text-slate-200">{area.name}</h4>
-                    <span className="text-[9px] text-slate-500">{area.cityMunicipality}</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[9px] bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800 font-mono text-slate-400">
-                      Rank {index + 1}
-                    </span>
-                    <span className="block text-[8px] text-teal-500 font-semibold mt-1">Score: {area.score.toFixed(2)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Quick Info message */}
-          <div className="bg-slate-900/40 border border-slate-850 p-3 rounded-lg flex gap-2 text-slate-500 leading-relaxed text-[11px]">
-            <Info className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
-            <span>Select a highlighted barangay node from the Live Operations Map to audit Sphere relief requirements, trigger OR-Tools dispatches, or manage manual overrides.</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // 2. ACTIVE SILENT AREA ACTION DRAWER
-  const selectedScore = scores.find((item) => item.barangayId === selectedBarangay.id) || { score: 0, hoursSinceContact: null };
-  const activePredictions = prediction;
-  const activeManifest = manifest;
-  const activeManifestOverrides = activeManifest?.overridden;
   const manifestOverrides =
-    activeManifestOverrides && typeof activeManifestOverrides === 'object'
-      ? activeManifestOverrides as {
+    manifest?.overridden && typeof manifest.overridden === 'object'
+      ? (manifest.overridden as {
           waterL?: number;
           foodPacks?: number;
           hygieneKits?: number;
           medicalSupplies?: number;
           shelterMaterials?: number;
-        }
+        })
       : undefined;
 
-  const isAffectedOverridden = activePredictions?.overrideValue !== null && activePredictions?.overrideValue !== undefined;
-  const effectiveAffected = isAffectedOverridden ? activePredictions!.overrideValue! : (activePredictions?.predictedAffected || 0);
-
   const sphereBaseline = getSphereManifest(selectedBarangay.id, effectiveAffected);
-
-  const finalWater = manifestOverrides?.waterL !== undefined ? manifestOverrides.waterL : sphereBaseline.waterL.recommended;
-  const finalFood = manifestOverrides?.foodPacks !== undefined ? manifestOverrides.foodPacks : sphereBaseline.foodPacks.recommended;
-  const finalHygiene = manifestOverrides?.hygieneKits !== undefined ? manifestOverrides.hygieneKits : sphereBaseline.hygieneKits.recommended;
-  const finalMedical = manifestOverrides?.medicalSupplies !== undefined ? manifestOverrides.medicalSupplies : sphereBaseline.medicalSupplies.recommended;
-  const finalShelter = manifestOverrides?.shelterMaterials !== undefined ? manifestOverrides.shelterMaterials : sphereBaseline.shelterMaterials.recommended;
+  const finalWater = manifestOverrides?.waterL ?? sphereBaseline.waterL.recommended;
+  const finalFood = manifestOverrides?.foodPacks ?? sphereBaseline.foodPacks.recommended;
+  const finalHygiene = manifestOverrides?.hygieneKits ?? sphereBaseline.hygieneKits.recommended;
+  const finalMedical = manifestOverrides?.medicalSupplies ?? sphereBaseline.medicalSupplies.recommended;
+  const finalShelter = manifestOverrides?.shelterMaterials ?? sphereBaseline.shelterMaterials.recommended;
 
   const historicalIncidents = mockHistoricalIncidents[selectedBarangay.id] || [];
 
+  const handleSaveOverrides = () => {
+    const overrideVal = affectedInput.trim() === '' ? null : parseInt(affectedInput, 10);
+    const overrides = {
+      waterL: waterInput ? parseInt(waterInput, 10) : undefined,
+      foodPacks: foodInput ? parseInt(foodInput, 10) : undefined,
+      hygieneKits: hygieneInput ? parseInt(hygieneInput, 10) : undefined,
+      medicalSupplies: medicalInput ? parseInt(medicalInput, 10) : undefined,
+      shelterMaterials: shelterInput ? parseInt(shelterInput, 10) : undefined,
+    };
+    onSaveOverrides(
+      selectedBarangay.id,
+      overrideVal,
+      overrides.waterL || overrides.foodPacks || overrides.hygieneKits || overrides.medicalSupplies || overrides.shelterMaterials
+        ? overrides
+        : null
+    );
+    setIsEditing(false);
+  };
+
+  const tabs: { id: Tab; label: string }[] = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'supplies', label: 'Supplies' },
+    { id: 'dispatch', label: 'Dispatch' },
+  ];
+
+  const supplyRows = [
+    { label: 'Clean water', value: finalWater, unit: 'L', inv: sphereBaseline.waterL.inventory },
+    { label: 'Food packs', value: finalFood, unit: 'packs', inv: sphereBaseline.foodPacks.inventory },
+    { label: 'Hygiene kits', value: finalHygiene, unit: 'kits', inv: sphereBaseline.hygieneKits.inventory },
+    { label: 'Medical', value: finalMedical, unit: 'packs', inv: sphereBaseline.medicalSupplies.inventory },
+    { label: 'Shelter', value: finalShelter, unit: 'units', inv: sphereBaseline.shelterMaterials.inventory },
+  ];
+
+  const dispatchableTeams = teams.filter((t) => t.status === 'active' || t.status === 'idle');
+
   return (
-    <div className="w-[320px] h-full bg-slate-950 border-l border-slate-800 flex flex-col overflow-hidden text-xs select-none">
-      {/* Drawer Header */}
-      <div className="p-4 border-b border-slate-800 bg-slate-900/60 flex items-center justify-between">
-        <div className="flex flex-col">
-          <span className="text-[9px] text-teal-400 font-bold uppercase tracking-wider">Silent Area Action Drawer</span>
-          <h3 className="font-bold text-slate-200 text-sm mt-0.5">{selectedBarangay.name} Region</h3>
-        </div>
-        <button 
-          onClick={onClearBarangaySelection}
-          className="text-slate-500 hover:text-slate-300 p-1 border border-slate-800 hover:border-slate-700 bg-slate-900 rounded cursor-pointer"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
+    <DetailPanel
+      className="w-[340px]"
+      eyebrow="Silent Area"
+      title={selectedBarangay.name}
+      subtitle={
+        <span className="flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: STATE_COLOR[state] }} />
+          {STATE_LABEL[state]} · {selectedBarangay.cityMunicipality}
+        </span>
+      }
+      onClose={onClearBarangaySelection}
+    >
+      {/* Tabs */}
+      <div className="flex border-b border-line text-[13px]">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setDrawerTab(t.id)}
+            className={`flex-1 py-2 border-b-2 transition-colors duration-100 cursor-pointer ${
+              drawerTab === t.id ? 'border-fg/50 text-fg' : 'border-transparent text-muted hover:text-fg'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
-      {/* Drawer Sub Navigation Tabs */}
-      <div className="flex bg-slate-900 border-b border-slate-800 text-[10px] text-slate-400 font-bold">
-        <button
-          onClick={() => setDrawerTab('overview')}
-          className={`flex-1 py-2 text-center border-b-2 cursor-pointer transition-colors ${
-            drawerTab === 'overview' ? 'border-teal-500 text-teal-400 bg-slate-950/20' : 'border-transparent hover:text-slate-200'
-          }`}
-        >
-          Overview
-        </button>
-        <button
-          onClick={() => setDrawerTab('supplies')}
-          className={`flex-1 py-2 text-center border-b-2 cursor-pointer transition-colors ${
-            drawerTab === 'supplies' ? 'border-teal-500 text-teal-400 bg-slate-950/20' : 'border-transparent hover:text-slate-200'
-          }`}
-        >
-          Supplies
-        </button>
-        <button
-          onClick={() => setDrawerTab('dispatch')}
-          className={`flex-1 py-2 text-center border-b-2 cursor-pointer transition-colors ${
-            drawerTab === 'dispatch' ? 'border-teal-500 text-teal-400 bg-slate-950/20' : 'border-transparent hover:text-slate-200'
-          }`}
-        >
-          Route & Dispatch
-        </button>
-      </div>
-
-      {/* Drawer Content Body */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* ================= TAB 1: OVERVIEW ================= */}
+      <div className="p-4 space-y-4 text-[13px]">
+        {/* ── Overview ── */}
         {drawerTab === 'overview' && (
-          <div className="space-y-4">
-            {/* Barangay Telemetry */}
-            <div className="space-y-2 bg-slate-900/40 border border-slate-850 p-3 rounded-lg">
-              <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block">Region Telemetry</span>
-              
-              <div className="grid grid-cols-2 gap-2.5 font-mono text-[11px] text-slate-400">
-                <div>
-                  <span className="block text-[8px] uppercase font-bold text-slate-500">Municipality</span>
-                  <span className="text-slate-200 font-semibold">{selectedBarangay.cityMunicipality}</span>
+          <>
+            <div className="grid grid-cols-2 gap-y-3 gap-x-4">
+              {[
+                { l: 'Municipality', v: selectedBarangay.cityMunicipality },
+                { l: 'Population', v: selectedBarangay.population.toLocaleString(), mono: true },
+                { l: 'Silent Area score', v: selectedScore.score.toFixed(2), mono: true, color: STATE_COLOR[state] },
+                { l: 'State', v: STATE_LABEL[state], color: STATE_COLOR[state] },
+              ].map(({ l, v, mono, color }) => (
+                <div key={l}>
+                  <div className="text-[12px] text-muted mb-0.5">{l}</div>
+                  <div className={mono ? 'font-mono tabular-nums' : ''} style={color ? { color } : undefined}>
+                    {v}
+                  </div>
                 </div>
-                <div>
-                  <span className="block text-[8px] uppercase font-bold text-slate-500">Population</span>
-                  <span className="text-slate-200 font-semibold">{selectedBarangay.population.toLocaleString()}</span>
-                </div>
-                <div>
-                  <span className="block text-[8px] uppercase font-bold text-slate-500">Silent Area Score</span>
-                  <span className="text-red-400 font-semibold">{selectedScore.score.toFixed(2)}</span>
-                </div>
-                <div>
-                  <span className="block text-[8px] uppercase font-bold text-slate-500">Risk Level</span>
-                  <span className="text-red-400 font-semibold">{getRiskLevel(selectedScore.score)}</span>
-                </div>
-              </div>
+              ))}
             </div>
 
-            {/* Impact predictions panel */}
-            <div className="space-y-2 bg-slate-900/40 border border-slate-850 p-3 rounded-lg">
+            <div className="border-t border-line pt-3">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">TabPFN Impact predictions</span>
-                <span className="text-[9px] bg-slate-900 px-1.5 py-0.2 rounded border border-slate-800 text-slate-400">
-                  Conf: {activePredictions?.confidence || 'moderate'}
-                </span>
+                <span className="text-[12px] text-muted">TabPFN impact prediction</span>
+                <span className="text-[12px] text-muted capitalize">Conf · {prediction?.confidence || 'moderate'}</span>
               </div>
-
-              <div className="flex items-baseline gap-1.5">
-                <span className={`text-xl font-bold tracking-tight ${isAffectedOverridden ? 'text-slate-500 line-through' : 'text-slate-200'}`}>
-                  {activePredictions?.predictedAffected.toLocaleString() || '0'}
+              <div className="flex items-baseline gap-2">
+                <span className={`text-2xl font-mono tabular-nums ${isAffectedOverridden ? 'text-muted line-through' : 'text-fg'}`}>
+                  {prediction?.predictedAffected.toLocaleString() || '0'}
                 </span>
-                <span className="text-[9px] text-slate-500">EST. POPULATION AFFECTED</span>
+                <span className="text-[12px] text-muted">est. affected</span>
               </div>
-
               {isAffectedOverridden && (
-                <div className="flex items-center justify-between bg-teal-950/20 border border-teal-900/40 p-2 rounded text-[10.5px] text-teal-300">
-                  <span className="flex items-center gap-1"><UserCheck className="w-3.5 h-3.5" /> Overridden:</span>
-                  <span className="font-bold">{activePredictions?.overrideValue?.toLocaleString()} People</span>
+                <div className="mt-1.5 text-[13px] text-active">
+                  Overridden · <span className="font-mono tabular-nums">{prediction?.overrideValue?.toLocaleString()}</span> people
                 </div>
               )}
-
-              {/* Contributors list */}
-              {activePredictions?.contributors && (
-                <div className="mt-2 pt-2 border-t border-slate-800">
-                  <span className="block text-[8px] uppercase font-bold text-slate-500 mb-1">Risk Contributors</span>
-                  <ul className="list-disc pl-3 text-[10px] text-slate-400 space-y-0.5">
-                    {activePredictions.contributors.map((c, i) => (
-                      <li key={i}>{c}</li>
-                    ))}
-                  </ul>
-                </div>
+              {prediction?.contributors && prediction.contributors.length > 0 && (
+                <ul className="mt-2 space-y-1 text-[12px] text-muted">
+                  {prediction.contributors.map((c, i) => (
+                    <li key={i} className="flex gap-2">
+                      <span className="text-muted">—</span>
+                      {c}
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
 
-            {/* Historical Incident History */}
             {historicalIncidents.length > 0 && (
-              <div className="space-y-2">
-                <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block">Historical incident logs</span>
-                <div className="space-y-1.5">
+              <div className="border-t border-line pt-3">
+                <div className="text-[12px] text-muted mb-2">Historical incidents</div>
+                <div className="space-y-2">
                   {historicalIncidents.map((inc) => (
-                    <div key={inc.id} className="bg-slate-950 border border-slate-850 p-2 rounded flex items-center justify-between text-[10.5px]">
+                    <div key={inc.id} className="flex items-start justify-between gap-2">
                       <div>
-                        <span className="font-bold text-slate-400">{inc.year} - {inc.event}</span>
-                        <span className="block text-[9px] text-slate-500 mt-0.5">Affected: {inc.affectedCount} persons</span>
+                        <div className="text-fg">
+                          <span className="font-mono tabular-nums text-muted mr-1.5">{inc.year}</span>
+                          {inc.event}
+                        </div>
+                        <div className="text-[12px] text-muted">{inc.affectedCount.toLocaleString()} affected</div>
                       </div>
-                      <span className="text-[8px] bg-slate-900 border border-slate-850 px-1 py-0.2 rounded font-semibold capitalize text-slate-400">
-                        {inc.damageSeverity}
-                      </span>
+                      <span className="text-[12px] text-muted capitalize shrink-0">{inc.damageSeverity}</span>
                     </div>
                   ))}
                 </div>
               </div>
             )}
-          </div>
+          </>
         )}
 
-        {/* ================= TAB 2: SUPPLIES ================= */}
+        {/* ── Supplies ── */}
         {drawerTab === 'supplies' && (
-          <div className="space-y-4">
-            {/* Sphere Relief supplies details */}
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold uppercase tracking-wider">
-                <span>Sphere relief manifests</span>
-                <span>3-Day Ration target</span>
-              </div>
-
-              {/* Supplies Grid */}
-              <div className="space-y-1.5 text-[10.5px]">
-                {/* Water */}
-                <div className="bg-slate-900/60 border border-slate-850 p-2.5 rounded-lg flex items-center justify-between">
+          <>
+            <div className="flex items-center justify-between text-[12px] text-muted">
+              <span>Sphere manifest</span>
+              <span>3-day ration</span>
+            </div>
+            <div className="space-y-2">
+              {supplyRows.map((r) => (
+                <div key={r.label} className="flex items-center justify-between">
                   <div>
-                    <span className="font-bold text-slate-300">Clean Drinking Water</span>
-                    <span className="block text-[8px] text-slate-500 mt-0.5">Inv: {sphereBaseline.waterL.inventory.toLocaleString()} L</span>
+                    <div className="text-fg">{r.label}</div>
+                    <div className="text-[12px] text-muted">
+                      Inv <span className="font-mono tabular-nums">{r.inv.toLocaleString()}</span>
+                    </div>
                   </div>
-                  <span className="font-bold text-teal-400">{finalWater.toLocaleString()} Liters</span>
+                  <span className="font-mono tabular-nums text-fg">
+                    {r.value.toLocaleString()} <span className="text-muted">{r.unit}</span>
+                  </span>
                 </div>
-
-                {/* Food */}
-                <div className="bg-slate-900/60 border border-slate-850 p-2.5 rounded-lg flex items-center justify-between">
-                  <div>
-                    <span className="font-bold text-slate-300">Emergency Food Packs</span>
-                    <span className="block text-[8px] text-slate-500 mt-0.5">Inv: {sphereBaseline.foodPacks.inventory.toLocaleString()} packs</span>
-                  </div>
-                  <span className="font-bold text-teal-400">{finalFood.toLocaleString()} Packs</span>
-                </div>
-
-                {/* Hygiene Kits */}
-                <div className="bg-slate-900/60 border border-slate-850 p-2.5 rounded-lg flex items-center justify-between">
-                  <div>
-                    <span className="font-bold text-slate-300">Standard Hygiene Kits</span>
-                    <span className="block text-[8px] text-slate-500 mt-0.5">Inv: {sphereBaseline.hygieneKits.inventory.toLocaleString()} kits</span>
-                  </div>
-                  <span className="font-bold text-teal-400">{finalHygiene.toLocaleString()} Kits</span>
-                </div>
-
-                {/* Medical */}
-                <div className="bg-slate-900/60 border border-slate-850 p-2.5 rounded-lg flex items-center justify-between">
-                  <div>
-                    <span className="font-bold text-slate-300">Medical Supplies</span>
-                    <span className="block text-[8px] text-slate-500 mt-0.5">Inv: {sphereBaseline.medicalSupplies.inventory.toLocaleString()} packs</span>
-                  </div>
-                  <span className="font-bold text-teal-400">{finalMedical.toLocaleString()} Packs</span>
-                </div>
-
-                {/* Shelter */}
-                <div className="bg-slate-900/60 border border-slate-850 p-2.5 rounded-lg flex items-center justify-between">
-                  <div>
-                    <span className="font-bold text-slate-300">Shelter / Tarps Materials</span>
-                    <span className="block text-[8px] text-slate-500 mt-0.5">Inv: {sphereBaseline.shelterMaterials.inventory.toLocaleString()} units</span>
-                  </div>
-                  <span className="font-bold text-teal-400">{finalShelter.toLocaleString()} Units</span>
-                </div>
-              </div>
+              ))}
             </div>
 
-            {/* Overrides / Approve actions */}
-            <div className="space-y-2.5 bg-slate-900/40 border border-slate-850 p-3 rounded-lg">
+            <div className="border-t border-line pt-3 space-y-3">
               <button
-                onClick={() => setIsEditing(!isEditing)}
-                className="w-full py-1.5 bg-slate-950 border border-slate-800 hover:bg-slate-900 font-bold rounded flex items-center justify-between px-2.5 cursor-pointer text-[10px]"
+                onClick={() => setIsEditing((e) => !e)}
+                className="w-full flex items-center justify-between py-2 px-3 border border-line rounded-control text-muted hover:text-fg hover:bg-raised/40 transition-colors duration-100 cursor-pointer"
               >
-                <span>COORDINATOR OVERRIDES</span>
-                <span className="text-[9px] text-slate-500">{isEditing ? 'Collapse' : 'Configure Override'}</span>
+                <span>Coordinator override</span>
+                <span className="text-[12px] text-muted">{isEditing ? 'Collapse' : 'Configure'}</span>
               </button>
 
               {isEditing && (
-                <div className="space-y-2 mt-2 pt-2 border-t border-slate-800 text-[10.5px]">
-                  <div>
-                    <label className="block text-[8.5px] uppercase font-bold text-slate-500 mb-1">Override Affected Pop</label>
-                    <input
-                      type="number"
-                      value={affectedInput}
-                      onChange={(e) => setAffectedInput(e.target.value)}
-                      placeholder={activePredictions?.predictedAffected.toString()}
-                      className="w-full bg-slate-950 border border-slate-800 p-1 rounded text-slate-300 text-xs focus:outline-none"
-                    />
+                <div className="space-y-2.5">
+                  <Field label="Affected population" value={affectedInput} onChange={setAffectedInput} placeholder={prediction?.predictedAffected.toString()} />
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <Field label="Water (L)" value={waterInput} onChange={setWaterInput} placeholder={sphereBaseline.waterL.recommended.toString()} />
+                    <Field label="Food (packs)" value={foodInput} onChange={setFoodInput} placeholder={sphereBaseline.foodPacks.recommended.toString()} />
+                    <Field label="Hygiene (kits)" value={hygieneInput} onChange={setHygieneInput} placeholder={sphereBaseline.hygieneKits.recommended.toString()} />
+                    <Field label="Shelter (units)" value={shelterInput} onChange={setShelterInput} placeholder={sphereBaseline.shelterMaterials.recommended.toString()} />
                   </div>
-
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <div>
-                      <label className="block text-[8px] uppercase font-bold text-slate-500 mb-0.5">Water (L)</label>
-                      <input
-                        type="number"
-                        value={waterInput}
-                        onChange={(e) => setWaterInput(e.target.value)}
-                        placeholder={sphereBaseline.waterL.recommended.toString()}
-                        className="w-full bg-slate-950 border border-slate-800 p-1 rounded text-slate-300 text-xs focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[8px] uppercase font-bold text-slate-500 mb-0.5">Food (Packs)</label>
-                      <input
-                        type="number"
-                        value={foodInput}
-                        onChange={(e) => setFoodInput(e.target.value)}
-                        placeholder={sphereBaseline.foodPacks.recommended.toString()}
-                        className="w-full bg-slate-950 border border-slate-800 p-1 rounded text-slate-300 text-xs focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[8px] uppercase font-bold text-slate-500 mb-0.5">Hygiene (Kits)</label>
-                      <input
-                        type="number"
-                        value={hygieneInput}
-                        onChange={(e) => setHygieneInput(e.target.value)}
-                        placeholder={sphereBaseline.hygieneKits.recommended.toString()}
-                        className="w-full bg-slate-950 border border-slate-800 p-1 rounded text-slate-300 text-xs focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[8px] uppercase font-bold text-slate-500 mb-0.5">Shelter (Units)</label>
-                      <input
-                        type="number"
-                        value={shelterInput}
-                        onChange={(e) => setShelterInput(e.target.value)}
-                        placeholder={sphereBaseline.shelterMaterials.recommended.toString()}
-                        className="w-full bg-slate-950 border border-slate-800 p-1 rounded text-slate-300 text-xs focus:outline-none"
-                      />
-                    </div>
-                  </div>
-
                   <button
                     onClick={handleSaveOverrides}
-                    className="w-full py-1.5 bg-teal-900 hover:bg-teal-850 border border-teal-800 text-teal-200 font-bold rounded cursor-pointer"
+                    className="w-full py-2 border border-line text-fg hover:bg-raised rounded-control transition-colors duration-100 cursor-pointer font-medium"
                   >
-                    Apply Custom Overrides
+                    Apply overrides
                   </button>
                 </div>
               )}
 
-              {/* Sphere manifest gate: HUMAN OVERSIGHT */}
-              <div className="flex items-center gap-1.5 border-t border-slate-850 pt-3 text-[10px] text-slate-500 select-none">
+              <div className="flex items-center gap-2 border-t border-line pt-3">
                 <button
                   onClick={() => onUpdateManifestStatus(selectedBarangay.id, 'approved')}
-                  className="flex-1 py-1.5 bg-teal-900/80 hover:bg-teal-850 border border-teal-850 text-teal-200 hover:text-white font-bold rounded cursor-pointer transition-colors"
+                  className="flex-1 py-2 border border-active/40 bg-active/10 text-active hover:bg-active/20 rounded-control font-medium transition-colors duration-100 cursor-pointer"
                 >
                   Approve
                 </button>
                 <button
                   onClick={() => onUpdateManifestStatus(selectedBarangay.id, 'rejected')}
-                  className="px-2.5 py-1.5 bg-red-950/80 hover:bg-red-900 border border-red-800 text-red-300 hover:text-white font-bold rounded cursor-pointer transition-colors"
+                  className="px-3 py-2 border border-line text-muted hover:text-critical hover:border-critical/40 rounded-control transition-colors duration-100 cursor-pointer"
                 >
                   Reject
                 </button>
               </div>
             </div>
-          </div>
+          </>
         )}
 
-        {/* ================= TAB 3: DISPATCH ================= */}
+        {/* ── Dispatch ── */}
         {drawerTab === 'dispatch' && (
-          <div className="space-y-4">
-            {/* Route planning stats */}
-            <div className="space-y-2 bg-slate-900/40 border border-slate-850 p-3 rounded-lg">
-              <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block">Nearest Logistics Hubs</span>
+          <>
+            <div>
+              <div className="text-[12px] text-muted mb-2">Nearest logistics hubs</div>
               <div className="space-y-1.5">
-                {mockLocationHubs.slice(0, 3).map((hub) => (
-                  <div key={hub.id} className="flex items-center justify-between text-[10px] text-slate-400 border-b border-slate-950 pb-1">
-                    <span className="font-semibold text-slate-300">{hub.name}</span>
-                    <span className="text-[9px] bg-slate-950 border border-slate-850 px-1 py-0.2 rounded font-mono text-slate-500">
-                      Cap: {hub.capacityPercent}%
-                    </span>
+                {mockLocationHubs.slice(0, 2).map((hub) => (
+                  <div key={hub.id} className="flex items-center justify-between">
+                    <span className="text-fg truncate">{hub.name}</span>
+                    <span className="text-[12px] text-muted font-mono tabular-nums shrink-0">{hub.capacityPercent}%</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Team Dispatch Options */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold uppercase tracking-wider">
-                <span>Available response teams</span>
-                <span>Decision gate required</span>
-              </div>
-
-              <div className="space-y-1.5 text-[10.5px]">
-                {teams.filter(t => t.status === 'active' || t.status === 'idle').map((team) => (
-                  <div key={team.id} className="bg-slate-900 border border-slate-850 p-2 rounded-lg flex items-center justify-between">
-                    <div>
-                      <h5 className="font-bold text-slate-300">{team.name}</h5>
-                      <span className="block text-[8px] text-slate-500 mt-0.5">Cargo: {team.capacityKg} kg</span>
+            <div className="border-t border-line pt-3">
+              <div className="text-[12px] text-muted mb-2">Available teams</div>
+              <div className="space-y-2">
+                {dispatchableTeams.map((team) => (
+                  <div key={team.id} className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-fg truncate">{team.name}</div>
+                      <div className="text-[12px] text-muted">
+                        <span className="font-mono tabular-nums">{team.capacityKg.toLocaleString()}</span> kg
+                      </div>
                     </div>
-
                     <button
                       onClick={() => onDispatchTeam(team.id, selectedBarangay.id)}
-                      className="px-2.5 py-1 bg-teal-900/80 hover:bg-teal-850 border border-teal-850 text-teal-200 hover:text-white font-bold rounded cursor-pointer transition-colors text-[9px]"
+                      className="px-3 py-1.5 border border-line text-fg hover:bg-raised rounded-control text-[12px] transition-colors duration-100 cursor-pointer shrink-0"
                     >
                       Dispatch
                     </button>
@@ -534,14 +333,38 @@ export default function RightIntelligencePanel({
               </div>
             </div>
 
-            {/* AI Optimizer disclaimer */}
-            <div className="bg-slate-950 border border-slate-850 p-2.5 rounded flex gap-1.5 text-slate-500 text-[10px] items-start select-none">
-              <Cpu className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
-              <span>OR-Tools route optimizer generates ETA based on current road blocks and pgRouting matrices. Human dispatch triggers are required. No automatic dispatches are executed.</span>
-            </div>
-          </div>
+            <p className="border-t border-line pt-3 text-[12px] text-muted leading-relaxed">
+              OR-Tools generates ETAs from current road blocks and the pgRouting matrix. Dispatch requires
+              human confirmation — no automatic dispatches are executed.
+            </p>
+          </>
         )}
       </div>
+    </DetailPanel>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <div>
+      <label className="block text-[12px] text-muted mb-1">{label}</label>
+      <input
+        type="number"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full bg-bg border border-line rounded-control px-2 py-1.5 text-[13px] text-fg font-mono tabular-nums placeholder:text-muted focus:outline-none focus:border-muted"
+      />
     </div>
   );
 }

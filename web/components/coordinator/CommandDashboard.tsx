@@ -285,11 +285,11 @@ React.useEffect(() => {
 }, [isResizing]);
 
 const ResizeHandle = () => (
-  <div className="h-2 cursor-ns-resize bg-slate-800" onMouseDown={handleMouseDown} />
+  <div className="h-2 cursor-ns-resize bg-line" onMouseDown={handleMouseDown} />
 );
 
   return (
-    <div className="flex h-screen w-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
+    <div className="flex h-screen w-screen bg-bg text-fg font-sans overflow-hidden">
       {/* Left Sidebar */}
       <LeftSidebar
         currentView={currentView}
@@ -332,20 +332,22 @@ const ResizeHandle = () => (
                 onFlagReport={handleFlagReport}
               />
             </div>
-            <RightIntelligencePanel
-              selectedBarangay={selectedBarangay}
-              barangays={barangays}
-              reportsCount={reportsCount}
-              scores={scores}
-              prediction={selectedBarangay ? predictions[selectedBarangay.id] : undefined}
-              manifest={selectedBarangay ? manifests[selectedBarangay.id] : undefined}
-              teams={teams}
-              routes={routes}
-              onSaveOverrides={handleSaveOverrides}
-              onUpdateManifestStatus={handleUpdateManifestStatus}
-              onDispatchTeam={handleDispatchTeam}
-              onClearBarangaySelection={handleClearBarangaySelection}
-            />
+            {selectedBarangay && (
+              <RightIntelligencePanel
+                selectedBarangay={selectedBarangay}
+                barangays={barangays}
+                reportsCount={reportsCount}
+                scores={scores}
+                prediction={predictions[selectedBarangay.id]}
+                manifest={manifests[selectedBarangay.id]}
+                teams={teams}
+                routes={routes}
+                onSaveOverrides={handleSaveOverrides}
+                onUpdateManifestStatus={handleUpdateManifestStatus}
+                onDispatchTeam={handleDispatchTeam}
+                onClearBarangaySelection={handleClearBarangaySelection}
+              />
+            )}
           </>
         )}
 
