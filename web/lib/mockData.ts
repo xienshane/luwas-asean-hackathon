@@ -1309,7 +1309,7 @@ export function getSphereManifest(barangayId: string, affectedPeople: number): S
 export function computeSilentAreaScores(
   barangays: Barangay[],
   tauHours: number = 24
-): { barangayId: string; score: number; hoursSinceContact: number | null; timeFactor: number }[] {
+): { barangayId: string; score: number; hoursSinceContact: number | null; timeFactor: number; popDensityNorm: number; hazardNorm: number }[] {
   const densities = barangays.map(b => b.popDensity).filter(d => d > 0);
   const lnMin = Math.log(Math.min(...densities));
   const lnMax = Math.log(Math.max(...densities));
@@ -1339,7 +1339,9 @@ export function computeSilentAreaScores(
       barangayId: b.id,
       score: Math.min(Math.max(score, 0), 1),
       hoursSinceContact,
-      timeFactor
+      timeFactor,
+      popDensityNorm,
+      hazardNorm
     };
   });
 }

@@ -36,7 +36,7 @@ interface InteractiveCommandMapProps {
   onSelectBarangay: (b: Barangay) => void;
   selectedReport: FieldReport | null;
   onSelectReport: (r: FieldReport) => void;
-  scores: { barangayId: string; score: number; hoursSinceContact: number | null }[];
+  scores: { barangayId: string; score: number; hoursSinceContact: number | null; timeFactor?: number; popDensityNorm?: number; hazardNorm?: number }[];
   onUpdateRoadStatus: (edgeId: string, status: 'open' | 'slow' | 'blocked' | 'damaged', notes?: string) => void;
   onConfirmReport: (reportId: string) => void;
   onFlagReport: (reportId: string) => void;
@@ -150,7 +150,8 @@ export default function InteractiveCommandMap({
 
   const getScoreData = useCallback(
     (barangayId: string) =>
-      scores.find((s) => s.barangayId === barangayId) ?? { score: 0, hoursSinceContact: null },
+      scores.find((s) => s.barangayId === barangayId) ??
+      { barangayId, score: 0, hoursSinceContact: null, timeFactor: 1, popDensityNorm: 0, hazardNorm: 0 },
     [scores],
   );
 
@@ -652,20 +653,51 @@ export default function InteractiveCommandMap({
           setHoveredBarangay(feat.properties.id);
           map.getCanvas().style.cursor = 'pointer';
 
-          const score = Math.round(feat.properties.score * 100);
-          const contactStr = feat.properties.hoursSinceContact 
-            ? `${feat.properties.hoursSinceContact}h ago` 
-            : 'No contact';
+          const p = feat.properties;
+          const scorePct = Math.round(p.score * 100);
+          const density = Number(p.popDensity).toLocaleString();
+          const hazard = Number(p.hazardComposite).toFixed(2);
+          const popN = Number(p.popDensityNorm).toFixed(2);
+          const hazN = Number(p.hazardNorm).toFixed(2);
+          const timeN = Number(p.timeFactor).toFixed(2);
+          const contactStr =
+            p.hoursSinceContact === null || p.hoursSinceContact === undefined || p.hoursSinceContact === ''
+              ? 'No contact'
+              : `${Math.round(Number(p.hoursSinceContact))}h ago`;
+          const badgeClass =
+            p.score >= 0.7 ? 'bg-red-950 text-red-300'
+            : p.score >= 0.4 ? 'bg-red-900/50 text-red-300'
+            : p.score >= 0.2 ? 'bg-amber-950 text-amber-300'
+            : 'bg-teal-950 text-teal-300';
 
           // Close active hover windows to prevent overlapping states
-          hoverPopupRef.current.remove(); 
+          hoverPopupRef.current.remove();
           hoverPopupRef.current
             .setLngLat(e.lngLat)
             .setHTML(`
-              <div class="px-2 py-1 text-xs font-sans">
-                <div class="font-bold text-teal-400 mb-0.5">${feat.properties.name}</div>
-                <div class="text-slate-400">Risk Score: <span class="font-bold text-slate-200">${score}%</span></div>
-                <div class="text-slate-400">Last Contact: <span class="text-slate-200">${contactStr}</span></div>
+              <div class="px-2.5 py-1.5 text-xs font-sans w-[212px]">
+                <div class="flex items-center justify-between gap-2 border-b border-slate-800 pb-1 mb-1">
+                  <span class="font-bold text-teal-300">${p.name}</span>
+                  <span class="text-[9px] font-extrabold px-1.5 py-0.5 rounded ${badgeClass}">${scorePct}%</span>
+                </div>
+                <div class="text-[8px] uppercase font-bold text-slate-500 mb-1 tracking-wider">Silent Area Score Breakdown</div>
+                <div class="space-y-1 text-[10px]">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-slate-400">Pop density</span>
+                    <span><span class="text-slate-400">${density}/km²</span> · <span class="font-bold text-teal-300">${popN}</span></span>
+                  </div>
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-slate-400">Hazard exposure</span>
+                    <span><span class="text-slate-400">${hazard}</span> · <span class="font-bold text-teal-300">${hazN}</span></span>
+                  </div>
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-slate-400">Since contact</span>
+                    <span><span class="text-slate-400">${contactStr}</span> · <span class="font-bold text-teal-300">${timeN}</span></span>
+                  </div>
+                </div>
+                <div class="mt-1.5 pt-1 border-t border-slate-800/70 text-[9px] text-slate-500 text-center font-mono">
+                  ${popN} × ${hazN} × ${timeN} = <span class="text-slate-300 font-bold">${Number(p.score).toFixed(2)}</span>
+                </div>
               </div>
             `)
             .addTo(map);
@@ -746,17 +778,23 @@ export default function InteractiveCommandMap({
     const barangaysSource = map.getSource('barangays-source');
     if (barangaysSource && mapLayers.barangays) {
       const features = barangays.map(barangay => {
-        const { score, hoursSinceContact } = getScoreData(barangay.id);
-        const color = scoreColor(score);
-        
+        const sd = getScoreData(barangay.id);
+        const color = scoreColor(sd.score);
+
         return {
           type: 'Feature',
           properties: {
             id: barangay.id,
             name: barangay.name,
-            score: score,
-            hoursSinceContact: hoursSinceContact,
+            score: sd.score,
+            hoursSinceContact: sd.hoursSinceContact,
             color: color,
+            // Silent Area score components (for the hover breakdown tooltip)
+            popDensity: barangay.popDensity,
+            hazardComposite: barangay.hazardComposite,
+            popDensityNorm: sd.popDensityNorm ?? 0,
+            hazardNorm: sd.hazardNorm ?? 0,
+            timeFactor: sd.timeFactor ?? 1,
           },
           geometry: {
             type: 'Polygon',

@@ -46,7 +46,7 @@ export default function CommandDashboard() {
 
   // Scoring configurations
   const [tauHours, setTauHours] = useState(24);
-  const [scores, setScores] = useState<{ barangayId: string; score: number; hoursSinceContact: number | null }[]>([]);
+  const [scores, setScores] = useState<{ barangayId: string; score: number; hoursSinceContact: number | null; timeFactor: number; popDensityNorm: number; hazardNorm: number }[]>([]);
 
   // Chronological EOC Log state
   const [activityLogs, setActivityLogs] = useState<{ id: string; time: string; event: string; type: 'info' | 'warn' | 'success' | 'alert' }[]>([
