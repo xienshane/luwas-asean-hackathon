@@ -125,6 +125,7 @@ export default function InteractiveCommandMap({
   const [routeGeometries, setRouteGeometries] = useState<Record<string, [number, number][]>>({});
   const [roadGeometries, setRoadGeometries] = useState<Record<string, [number, number][]>>({}); // Store actual road paths
   const [selectedRoutePath, setSelectedRoutePath] = useState<[number, number][] | null>(null); // Dynamic path for selected report
+  const [teamRouteGeometries, setTeamRouteGeometries] = useState<Record<string, [number, number][]>>({}); // OSRM-snapped per-team route paths
 
   const [mapLayers, setMapLayers] = useState({
     barangays: true,
@@ -426,15 +427,15 @@ export default function InteractiveCommandMap({
             'case',
             ['==', ['get', 'id'], selectedBarangay?.id || ''],
             scoreBorderColor(getScoreData(selectedBarangay?.id || '').score),
-            'rgba(15, 23, 42, 0.4)'
+            ['get', 'color']
           ],
           'fill-opacity': [
             'case',
             ['==', ['get', 'id'], hoveredBarangay || ''],
-            0.45,
+            0.6,
             ['==', ['get', 'id'], selectedBarangay?.id || ''],
-            0.35,
-            0.15
+            0.5,
+            0.32
           ],
         },
       });
@@ -554,6 +555,88 @@ export default function InteractiveCommandMap({
           'line-join': 'round',
           'visibility': 'none'
         }
+      });
+
+      // ── Per-team OR-Tools route layers (always-on; distinct from the dynamic incident line) ──
+      map.addSource('team-routes-source', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+
+      map.addLayer({
+        id: 'team-routes-casing',
+        type: 'line',
+        source: 'team-routes-source',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#020617', 'line-width': 7, 'line-opacity': 0.55 },
+      });
+
+      map.addLayer({
+        id: 'team-routes-line',
+        type: 'line',
+        source: 'team-routes-source',
+        filter: ['!=', ['get', 'status'], 'planned'],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': ['match', ['get', 'status'], 'completed', '#64748b', '#2dd4bf'],
+          'line-width': 4,
+          'line-opacity': 0.9,
+        },
+      });
+
+      map.addLayer({
+        id: 'team-routes-line-planned',
+        type: 'line',
+        source: 'team-routes-source',
+        filter: ['==', ['get', 'status'], 'planned'],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': '#38bdf8',
+          'line-width': 3.5,
+          'line-opacity': 0.85,
+          'line-dasharray': [2, 1.6],
+        },
+      });
+
+      // Per-team route hover: ETA + cargo summary + ordered stops popover
+      const onTeamRouteHover = (e: any) => {
+        map.getCanvas().style.cursor = 'pointer';
+        const p = e.features?.[0]?.properties;
+        if (!p) return;
+        const statusClass =
+          p.status === 'active' ? 'text-teal-400 bg-teal-950/40'
+          : p.status === 'completed' ? 'text-slate-400 bg-slate-800/50'
+          : 'text-sky-400 bg-sky-950/40';
+        hoverPopupRef.current.remove();
+        hoverPopupRef.current
+          .setLngLat(e.lngLat)
+          .setHTML(`
+            <div class="px-2 py-1 text-xs font-sans max-w-[240px]">
+              <div class="flex items-center justify-between gap-2 border-b border-slate-800 pb-0.5 mb-1">
+                <span class="font-bold text-teal-300">${p.teamName}</span>
+                <span class="text-[8px] font-extrabold uppercase px-1 rounded ${statusClass}">${p.status}</span>
+              </div>
+              <div class="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px] text-slate-400">
+                <div>ETA: <span class="text-slate-200 font-bold">${p.etaText}</span></div>
+                <div>Dist: <span class="text-slate-200 font-bold">${p.distanceText}</span></div>
+                <div class="col-span-2">Cargo: <span class="text-slate-200 font-semibold">${p.cargoText}</span></div>
+              </div>
+              <div class="mt-1 pt-1 border-t border-slate-800/70 text-[9.5px] text-slate-300">
+                <div class="text-[8px] uppercase font-bold text-slate-500 mb-0.5">Ordered Stops</div>
+                ${p.stopsText}
+              </div>
+            </div>
+          `)
+          .addTo(map);
+      };
+      const onTeamRouteLeave = () => {
+        map.getCanvas().style.cursor = '';
+        hoverPopupRef.current.remove();
+      };
+      ['team-routes-line', 'team-routes-line-planned'].forEach((lid) => {
+        map.on('mouseenter', lid, onTeamRouteHover);
+        map.on('mousemove', lid, (e: any) => hoverPopupRef.current.setLngLat(e.lngLat));
+        map.on('mouseleave', lid, onTeamRouteLeave);
       });
 
       // Event handlers
@@ -697,9 +780,14 @@ export default function InteractiveCommandMap({
     const roadsSource = map.getSource('roads-source');
     if (roadsSource && mapLayers.roads) {
       const features = edges.map((edge) => {
-        const geometry = roadGeometries[edge.id];
-        if (!geometry) return null;
-        
+        // Always render: use OSRM-snapped geometry when available, else a straight
+        // line between endpoints. Guards against in-flight fetches, OSRM 429
+        // rate-limits, and the demo server being offline (no edge ever disappears).
+        const geometry = roadGeometries[edge.id] ?? [
+          [edge.sourceCoords.lng, edge.sourceCoords.lat],
+          [edge.targetCoords.lng, edge.targetCoords.lat],
+        ];
+
         return {
           type: 'Feature',
           properties: {
@@ -756,6 +844,109 @@ export default function InteractiveCommandMap({
       }
     }
   }, [isMapLoaded, mapLayers.routes, selectedRoutePath]);
+
+  // ── OSRM-snap per-team OR-Tools routes onto real roads (waypoints: team base -> ordered stops) ──
+  useEffect(() => {
+    let active = true;
+
+    const fetchTeamRoutes = async () => {
+      for (const route of routes) {
+        const team = teams.find((t) => t.id === route.teamId);
+        const stopCoords = route.stops
+          .map((s) => barangays.find((b) => b.id === s.barangayId))
+          .filter(Boolean)
+          .map((b) => ({ lat: (b as Barangay).latitude, lng: (b as Barangay).longitude }));
+
+        const waypoints = [
+          team ? { lat: team.baseLocation.lat, lng: team.baseLocation.lng } : stopCoords[0],
+          ...stopCoords,
+        ].filter(Boolean) as { lat: number; lng: number }[];
+
+        if (waypoints.length < 2) continue;
+
+        await new Promise((resolve) => setTimeout(resolve, 200));
+
+        let geometry: [number, number][] | null = null;
+        try {
+          const coordStr = waypoints.map((w) => `${w.lng},${w.lat}`).join(';');
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 8000);
+          const res = await fetch(
+            `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`,
+            { signal: controller.signal },
+          );
+          clearTimeout(timeoutId);
+          if (res.ok) {
+            const data = await res.json();
+            const geom = data.routes?.[0]?.geometry?.coordinates;
+            if (geom?.length) geometry = geom;
+          }
+        } catch (e) {
+          console.warn(`Failed to OSRM-snap team route ${route.id}:`, e);
+        }
+
+        // Fallback to the precomputed curved path so a polyline always renders
+        if (!geometry) geometry = route.path.map((p) => [p.lng, p.lat] as [number, number]);
+
+        if (!active) return;
+        setTeamRouteGeometries((prev) => ({ ...prev, [route.id]: geometry! }));
+      }
+    };
+
+    fetchTeamRoutes();
+    return () => {
+      active = false;
+    };
+  }, [routes, teams, barangays]);
+
+  // ── Per-team route rendering (polylines + ETA + cargo summary popover) ──
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded) return;
+
+    const src = map.getSource('team-routes-source');
+    if (!src) return;
+
+    if (!mapLayers.routes) {
+      src.setData({ type: 'FeatureCollection', features: [] });
+      return;
+    }
+
+    const AVG_SPEED_KMH = 25; // disaster-response convoy avg over degraded roads
+
+    const features = routes.map((route) => {
+      const team = teams.find((t) => t.id === route.teamId);
+      const distanceKm = route.totalDistanceM / 1000;
+      const etaMin = Math.round((distanceKm / AVG_SPEED_KMH) * 60);
+      const etaText = etaMin >= 60 ? `${Math.floor(etaMin / 60)}h ${etaMin % 60}m` : `${etaMin} min`;
+      const cargoText = team ? `${team.capacityKg.toLocaleString()} kg · ${team.type}` : 'Unassigned';
+      const stopsText = route.stops
+        .map(
+          (s) =>
+            `<div class="leading-snug"><span class="text-teal-400 font-bold">${s.sequence}.</span> ${s.barangayName} <span class="text-slate-500">— ${s.action}</span></div>`,
+        )
+        .join('');
+
+      const coordinates =
+        teamRouteGeometries[route.id] ?? route.path.map((p) => [p.lng, p.lat] as [number, number]);
+
+      return {
+        type: 'Feature',
+        properties: {
+          id: route.id,
+          teamName: route.teamName,
+          status: route.status,
+          etaText,
+          distanceText: `${distanceKm.toFixed(1)} km`,
+          cargoText,
+          stopsText,
+        },
+        geometry: { type: 'LineString', coordinates },
+      };
+    });
+
+    src.setData({ type: 'FeatureCollection', features });
+  }, [isMapLoaded, mapLayers.routes, routes, teams, teamRouteGeometries]);
 
   // ── Interactive Report Markers (Custom SVG styling for Pending/Confirmed/Flagged) ──
   useEffect(() => {
@@ -1145,8 +1336,9 @@ export default function InteractiveCommandMap({
     toggleLayer('barangays-labels', mapLayers.barangays);
     toggleLayer('roads-layer-solid', mapLayers.roads);
     toggleLayer('roads-layer-blocked', mapLayers.roads);
-    toggleLayer('routes-layer-active', mapLayers.routes);
-    toggleLayer('routes-layer-other', mapLayers.routes);
+    toggleLayer('team-routes-casing', mapLayers.routes);
+    toggleLayer('team-routes-line', mapLayers.routes);
+    toggleLayer('team-routes-line-planned', mapLayers.routes);
   }, [mapLayers, isMapLoaded]);
 
   // ── Fullscreen Setup ──
@@ -1564,7 +1756,28 @@ export default function InteractiveCommandMap({
                     <span>Damaged Path</span>
                   </div>
                   <div className="text-[7.5px] text-slate-500 italic mt-1 leading-normal">
-                    *Road networks generate dynamically between nearest hub and selected reports.
+                    *Incident line generates dynamically between nearest hub and the selected report.
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-850 pt-1.5">
+                <div className="font-bold text-[8px] text-slate-500 uppercase tracking-wider mb-1">Mission Routes (OR-Tools)</div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-4 h-0.5 bg-[#2dd4bf] inline-block shrink-0" />
+                    <span>Active dispatch</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-4 h-0 border-t-2 border-dashed border-[#38bdf8] inline-block shrink-0" />
+                    <span>Planned route</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-4 h-0.5 bg-[#64748b] inline-block shrink-0" />
+                    <span>Completed</span>
+                  </div>
+                  <div className="text-[7.5px] text-slate-500 italic mt-1 leading-normal">
+                    *Hover a route for ETA, cargo &amp; ordered stops.
                   </div>
                 </div>
               </div>
