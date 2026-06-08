@@ -1,22 +1,19 @@
 'use client';
 
 import React, { useState } from 'react';
+import { Team, Route, Barangay, mockVolunteers } from '@/lib/mockData';
 import {
-  Truck,
-  Anchor,
-  Ambulance,
-  Car,
-  CheckCircle2,
-  Clock,
-  Wrench,
-  Navigation,
-  MapPin,
-  ChevronRight,
-  Radio,
-  Zap,
-  Route as RouteIcon,
-} from 'lucide-react';
-import { Team, Route, Barangay } from '@/lib/mockData';
+  DetailPanel,
+  StatusDot,
+  Toolbar,
+  Table,
+  THead,
+  TBody,
+  TR,
+  TH,
+  TD,
+} from './ui';
+import type { Tone } from './ui';
 
 interface TeamsViewProps {
   teams: Team[];
@@ -25,279 +22,252 @@ interface TeamsViewProps {
   onDispatchTeam: (teamId: string, barangayId: string) => void;
 }
 
-const STATUS_CONFIG: Record<string, {
-  badge: string; dot: string; label: string; cardRing: string; iconBg: string;
-}> = {
-  active:      { badge: 'bg-teal-950 border-teal-800 text-teal-300',    dot: 'bg-teal-400 shadow-[0_0_6px_#2dd4bf]', label: 'Active',      cardRing: 'border-teal-800/40 ring-1 ring-teal-800/20', iconBg: 'bg-teal-950 border-teal-800' },
-  dispatched:  { badge: 'bg-blue-950 border-blue-800 text-blue-300',    dot: 'bg-blue-400 shadow-[0_0_6px_#60a5fa]',  label: 'Dispatched',  cardRing: 'border-blue-800/40 ring-1 ring-blue-800/20',  iconBg: 'bg-blue-950 border-blue-800' },
-  idle:        { badge: 'bg-slate-800 border-slate-700 text-slate-400', dot: 'bg-slate-500',                           label: 'Idle',        cardRing: 'border-slate-800',                            iconBg: 'bg-slate-800 border-slate-700' },
-  maintenance: { badge: 'bg-amber-950 border-amber-800 text-amber-300', dot: 'bg-amber-400',                           label: 'Maint.',      cardRing: 'border-amber-900/40',                         iconBg: 'bg-amber-950 border-amber-800' },
+const TEAM_STATUS: Record<string, { tone: Tone; label: string }> = {
+  active: { tone: 'active', label: 'Active' },
+  dispatched: { tone: 'active', label: 'Dispatched' },
+  idle: { tone: 'neutral', label: 'Idle' },
+  maintenance: { tone: 'warning', label: 'Maintenance' },
 };
 
-const TYPE_ICON: Record<string, (cls: string) => React.ReactNode> = {
-  truck:     cls => <Truck     className={cls} />,
-  '4x4':    cls => <Car       className={cls} />,
-  boat:      cls => <Anchor    className={cls} />,
-  ambulance: cls => <Ambulance className={cls} />,
+const ROUTE_STATUS: Record<string, { tone: Tone; label: string }> = {
+  active: { tone: 'active', label: 'Active' },
+  planned: { tone: 'neutral', label: 'Planned' },
+  completed: { tone: 'neutral', label: 'Completed' },
 };
 
-const ROUTE_STATUS_STYLE: Record<string, string> = {
-  active:    'bg-teal-950 border-teal-800 text-teal-300',
-  completed: 'bg-slate-800 border-slate-700 text-slate-500',
-  planned:   'bg-slate-900 border-slate-700 text-slate-400',
+const AVG_SPEED_KMH = 25;
+const eta = (m: number) => {
+  const min = Math.round((m / 1000 / AVG_SPEED_KMH) * 60);
+  return min >= 60 ? `${Math.floor(min / 60)}h ${min % 60}m` : `${min}m`;
 };
 
 export default function TeamsView({ teams, routes, barangays, onDispatchTeam }: TeamsViewProps) {
-  // Per-team selected destination
-  const [destinations, setDestinations] = useState<Record<string, string>>({});
-  const [dispatchedTeam, setDispatchedTeam] = useState<string | null>(null);
-  const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [dest, setDest] = useState('');
 
-  const setDest = (teamId: string, barangayId: string) =>
-    setDestinations(d => ({ ...d, [teamId]: barangayId }));
+  const selected = selectedId ? teams.find((t) => t.id === selectedId) ?? null : null;
+  const routeFor = (teamId: string) => routes.find((r) => r.teamId === teamId);
+  const selectedRoute = selected ? routeFor(selected.id) : undefined;
+  const crew = selected ? mockVolunteers.filter((v) => v.teamId === selected.id) : [];
 
-  const handleDispatch = (teamId: string) => {
-    const dest = destinations[teamId];
-    if (!dest) return;
-    onDispatchTeam(teamId, dest);
-    setDispatchedTeam(teamId);
-    setDestinations(d => { const n = { ...d }; delete n[teamId]; return n; });
-    setTimeout(() => setDispatchedTeam(null), 2000);
-  };
-
-  // Fleet summary
-  const active      = teams.filter(t => t.status === 'active').length;
-  const dispatched  = teams.filter(t => t.status === 'dispatched').length;
-  const idle        = teams.filter(t => t.status === 'idle').length;
-  const maintenance = teams.filter(t => t.status === 'maintenance').length;
-
-  const activeRoutes    = routes.filter(r => r.status === 'active');
-  const completedRoutes = routes.filter(r => r.status === 'completed');
+  const summary = (['active', 'dispatched', 'idle', 'maintenance'] as const)
+    .map((s) => ({ s, n: teams.filter((t) => t.status === s).length }))
+    .filter((x) => x.n > 0);
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-slate-950 overflow-hidden">
-
-      {/* ── Top bar ── */}
-      <div className="shrink-0 bg-slate-900 border-b border-slate-800 px-5 py-3 flex items-center gap-4">
-        <div className="flex items-center gap-2.5">
-          <div className="bg-teal-900/50 p-1.5 rounded-lg">
-            <Radio className="w-4 h-4 text-teal-400" />
+    <div className="flex-1 flex h-full bg-bg overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0">
+        <Toolbar>
+          <span className="text-[15px] font-medium text-fg">Teams &amp; Dispatch</span>
+          <div className="ml-auto flex items-center gap-3 text-[13px] text-muted">
+            {summary.map(({ s, n }) => (
+              <span key={s} className="flex items-center gap-1.5 capitalize">
+                <StatusDot tone={TEAM_STATUS[s].tone} />
+                {n} {s}
+              </span>
+            ))}
           </div>
-          <div>
-            <h2 className="font-mono font-bold text-[13px] uppercase tracking-[0.12em] text-slate-200">Teams & Dispatch</h2>
-            <p className="text-[9px] text-slate-600 font-mono">Field response coordination</p>
-          </div>
-        </div>
+        </Toolbar>
 
-        {/* Fleet pills */}
-        <div className="flex items-center gap-2 ml-4">
-          {[
-            { count: active,      label: 'Active',     color: 'bg-teal-950/60 border-teal-900/60 text-teal-400',   dot: 'bg-teal-400' },
-            { count: dispatched,  label: 'Dispatched', color: 'bg-blue-950/60 border-blue-900/60 text-blue-400',   dot: 'bg-blue-400' },
-            { count: idle,        label: 'Idle',       color: 'bg-slate-800/60 border-slate-700/60 text-slate-400', dot: 'bg-slate-500' },
-            { count: maintenance, label: 'Maint.',     color: 'bg-amber-950/60 border-amber-900/60 text-amber-400', dot: 'bg-amber-400' },
-          ].filter(p => p.count > 0).map(p => (
-            <div key={p.label} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border ${p.color}`}>
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${p.dot}`} />
-              <span className="font-mono text-[11px] font-bold">{p.count} {p.label}</span>
+        <div className="flex-1 overflow-y-auto">
+          {/* Fleet table */}
+          <section>
+            <div className="px-4 py-2 border-b border-line">
+              <h3 className="text-[13px] font-medium text-fg">Response fleet</h3>
             </div>
-          ))}
-        </div>
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Unit</TH>
+                  <TH>Type</TH>
+                  <TH>Current assignment</TH>
+                  <TH align="right">ETA</TH>
+                  <TH align="right">Capacity</TH>
+                  <TH>Status</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {teams.map((team) => {
+                  const r = routeFor(team.id);
+                  const st = TEAM_STATUS[team.status];
+                  return (
+                    <TR key={team.id} onClick={() => setSelectedId(team.id)} selected={selectedId === team.id}>
+                      <TD>{team.name}</TD>
+                      <TD muted className="capitalize">{team.type}</TD>
+                      <TD muted>{team.currentAssignment ?? '—'}</TD>
+                      <TD align="right" mono>{r && team.status !== 'idle' ? eta(r.totalDistanceM) : '—'}</TD>
+                      <TD align="right" mono>{team.capacityKg.toLocaleString()} kg</TD>
+                      <TD>
+                        <span className="flex items-center gap-1.5">
+                          <StatusDot tone={st.tone} />
+                          {st.label}
+                        </span>
+                      </TD>
+                    </TR>
+                  );
+                })}
+              </TBody>
+            </Table>
+          </section>
 
-        <div className="ml-auto flex items-center gap-3 text-[10px] font-mono text-slate-600">
-          <span><span className="text-slate-400 font-bold">{activeRoutes.length}</span> active routes</span>
-          <span><span className="text-slate-400 font-bold">{completedRoutes.length}</span> completed</span>
+          {/* Routes table */}
+          <section className="mt-2">
+            <div className="px-4 py-2 border-b border-line">
+              <h3 className="text-[13px] font-medium text-fg">Routes</h3>
+            </div>
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Unit</TH>
+                  <TH>Origin</TH>
+                  <TH>Destination</TH>
+                  <TH align="right">Distance</TH>
+                  <TH align="right">ETA</TH>
+                  <TH>Status</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {routes.map((route) => {
+                  const st = ROUTE_STATUS[route.status];
+                  const origin = route.stops[0]?.barangayName ?? '—';
+                  const destination = route.stops[route.stops.length - 1]?.barangayName ?? '—';
+                  return (
+                    <TR key={route.id} onClick={() => setSelectedId(route.teamId)} selected={selectedId === route.teamId}>
+                      <TD>{route.teamName}</TD>
+                      <TD muted>{origin}</TD>
+                      <TD muted>{destination}</TD>
+                      <TD align="right" mono>{(route.totalDistanceM / 1000).toFixed(1)} km</TD>
+                      <TD align="right" mono>{eta(route.totalDistanceM)}</TD>
+                      <TD>
+                        <span className="flex items-center gap-1.5">
+                          <StatusDot tone={st.tone} />
+                          {st.label}
+                        </span>
+                      </TD>
+                    </TR>
+                  );
+                })}
+              </TBody>
+            </Table>
+          </section>
         </div>
       </div>
 
-      {/* ── Body: split pane ── */}
-      <div className="flex-1 flex overflow-hidden min-h-0">
+      {/* Detail panel */}
+      {selected && (
+        <DetailPanel
+          className="w-[340px]"
+          eyebrow={`${selected.type.toUpperCase()} · ${selected.capacityKg.toLocaleString()} kg`}
+          title={selected.name}
+          subtitle={
+            <span className="flex items-center gap-1.5">
+              <StatusDot tone={TEAM_STATUS[selected.status].tone} />
+              {TEAM_STATUS[selected.status].label}
+            </span>
+          }
+          onClose={() => setSelectedId(null)}
+        >
+          <div className="p-4 space-y-4 text-[13px]">
+            {/* Cargo */}
+            <div>
+              <div className="text-[12px] text-muted mb-1">Cargo capacity</div>
+              <div className="text-fg">
+                <span className="font-mono tabular-nums">{selected.capacityKg.toLocaleString()}</span> kg ·{' '}
+                <span className="capitalize">{selected.type}</span>
+              </div>
+            </div>
 
-        {/* ── Left: Team cards ── */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 border-r border-slate-800 min-w-0">
-          <p className="text-[9px] font-mono uppercase tracking-[0.18em] text-slate-600 px-1 mb-2">
-            Response Fleet — {teams.length} units
-          </p>
-
-          {teams.map(team => {
-            const cfg = STATUS_CONFIG[team.status] ?? STATUS_CONFIG.idle;
-            const activeRoute = routes.find(r => r.teamId === team.id && r.status === 'active');
-            const isDispatchable = team.status === 'idle' || team.status === 'active';
-            const selectedDest = destinations[team.id];
-            const justDispatched = dispatchedTeam === team.id;
-            const IconFn = TYPE_ICON[team.type] ?? TYPE_ICON.truck;
-
-            return (
-              <div
-                key={team.id}
-                className={`bg-slate-900 border rounded-xl overflow-hidden transition-all ${cfg.cardRing}`}
-              >
-                {/* Card header */}
-                <div className="px-4 py-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg border ${cfg.iconBg}`}>
-                      {IconFn('w-4 h-4 text-slate-300')}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-bold text-[13px] text-slate-100">{team.name}</h3>
-                        {justDispatched && (
-                          <span className="text-[9px] font-mono font-bold bg-teal-950 border border-teal-700 text-teal-400 px-1.5 py-0.5 rounded-full animate-pulse">
-                            Dispatched!
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[10px] font-mono text-slate-500">
-                        {team.type.toUpperCase()} · {team.capacityKg.toLocaleString()} kg capacity
-                      </p>
-                    </div>
-                  </div>
-                  <span className={`flex items-center gap-1.5 text-[10px] font-mono font-bold px-2.5 py-1 rounded-full border ${cfg.badge}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-                    {cfg.label}
-                  </span>
-                </div>
-
-                {/* Current assignment */}
-                {team.currentAssignment && (
-                  <div className="mx-4 mb-3 bg-slate-950/60 border border-slate-800 rounded-lg px-3 py-2 flex items-center gap-2">
-                    <Navigation className="w-3 h-3 text-teal-500 shrink-0" />
-                    <span className="text-[11px] text-slate-400 truncate font-mono">{team.currentAssignment}</span>
-                  </div>
-                )}
-
-                {/* Active route stops */}
-                {activeRoute && activeRoute.stops.length > 0 && (
-                  <div className="mx-4 mb-3 bg-slate-950/40 border border-slate-800/60 rounded-lg p-3">
-                    <p className="text-[9px] font-mono uppercase tracking-widest text-slate-600 mb-2">Route Stops</p>
-                    <div className="flex items-center gap-1 flex-wrap">
-                      {activeRoute.stops.map((stop, idx) => (
-                        <React.Fragment key={stop.sequence}>
-                          <div className="flex items-center gap-1">
-                            <span className="w-4 h-4 rounded-full bg-teal-900 border border-teal-700 text-teal-300 text-[8px] font-bold flex items-center justify-center shrink-0">
-                              {stop.sequence}
-                            </span>
-                            <span className="text-[10px] font-mono text-slate-300">{stop.barangayName}</span>
-                          </div>
-                          {idx < activeRoute.stops.length - 1 && (
-                            <ChevronRight className="w-3 h-3 text-slate-700 shrink-0" />
-                          )}
-                        </React.Fragment>
-                      ))}
-                      <span className="ml-auto text-[9px] font-mono text-slate-600">
-                        {(activeRoute.totalDistanceM / 1000).toFixed(1)} km
+            {/* Crew */}
+            <div className="border-t border-line pt-3">
+              <div className="text-[12px] text-muted mb-2">Crew ({crew.length})</div>
+              {crew.length === 0 ? (
+                <div className="text-muted">No crew assigned.</div>
+              ) : (
+                <div className="space-y-1.5">
+                  {crew.map((v) => (
+                    <div key={v.id} className="flex items-center justify-between">
+                      <span className="text-fg">{v.name}</span>
+                      <span className="flex items-center gap-1.5 text-[12px] text-muted capitalize">
+                        <StatusDot tone={v.availability === 'available' ? 'active' : v.availability === 'busy' ? 'warning' : 'neutral'} />
+                        {v.availability}
                       </span>
                     </div>
-                  </div>
-                )}
-
-                {/* Dispatch control */}
-                {isDispatchable && (
-                  <div className="border-t border-slate-800/60 px-4 py-3 flex items-center gap-2 bg-slate-950/20">
-                    <MapPin className="w-3.5 h-3.5 text-slate-600 shrink-0" />
-                    <select
-                      value={selectedDest ?? ''}
-                      onChange={e => setDest(team.id, e.target.value)}
-                      className="flex-1 bg-slate-900 border border-slate-700 hover:border-slate-600 text-slate-300 rounded-lg px-2.5 py-1.5 text-[11px] font-mono focus:outline-none focus:border-teal-600 cursor-pointer transition-colors"
-                    >
-                      <option value="" disabled>Select destination…</option>
-                      {barangays.map(b => (
-                        <option key={b.id} value={b.id}>{b.name} — {b.cityMunicipality}</option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={() => handleDispatch(team.id)}
-                      disabled={!selectedDest}
-                      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[11px] font-mono font-bold uppercase tracking-wider border transition-colors whitespace-nowrap ${
-                        selectedDest
-                          ? 'bg-teal-700 hover:bg-teal-600 border-teal-600 text-teal-50 cursor-pointer'
-                          : 'bg-slate-800 border-slate-700 text-slate-600 cursor-not-allowed'
-                      }`}
-                    >
-                      <Zap className="w-3 h-3" />
-                      Dispatch
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* ── Right: Routes ── */}
-        <div className="w-80 shrink-0 flex flex-col overflow-hidden bg-slate-950">
-          <div className="shrink-0 px-4 py-3 border-b border-slate-800 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <RouteIcon className="w-3.5 h-3.5 text-teal-500" />
-              <p className="text-[11px] font-mono font-bold uppercase tracking-wider text-slate-400">Routes</p>
+                  ))}
+                </div>
+              )}
             </div>
-            <span className="text-[9px] font-mono text-slate-600">{routes.length} total</span>
-          </div>
 
-          <div className="flex-1 overflow-y-auto divide-y divide-slate-800/60">
-            {routes.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-slate-700">
-                <RouteIcon className="w-8 h-8 mb-2 opacity-40" />
-                <p className="text-[11px] font-mono">No routes planned</p>
-              </div>
-            ) : routes.map(route => {
-              const isSelected = selectedRoute === route.id;
-              return (
-                <button
-                  key={route.id}
-                  onClick={() => setSelectedRoute(isSelected ? null : route.id)}
-                  className={`w-full text-left px-4 py-3 transition-colors ${
-                    isSelected ? 'bg-slate-800/60' : 'hover:bg-slate-900/60'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <span className="text-[12px] font-bold text-slate-200 leading-tight">{route.teamName}</span>
-                    <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded border uppercase shrink-0 ${
-                      ROUTE_STATUS_STYLE[route.status] ?? ROUTE_STATUS_STYLE.planned
-                    }`}>
-                      {route.status}
+            {/* Route + stops */}
+            <div className="border-t border-line pt-3">
+              <div className="text-[12px] text-muted mb-2">Route</div>
+              {selectedRoute ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-[12px] text-muted">
+                    <span className="flex items-center gap-1.5">
+                      <StatusDot tone={ROUTE_STATUS[selectedRoute.status].tone} />
+                      {ROUTE_STATUS[selectedRoute.status].label}
+                    </span>
+                    <span className="font-mono tabular-nums">
+                      {(selectedRoute.totalDistanceM / 1000).toFixed(1)} km · {eta(selectedRoute.totalDistanceM)}
                     </span>
                   </div>
-
-                  {/* Stop chain */}
-                  <div className="flex items-center gap-1 flex-wrap mb-2">
-                    {route.stops.map((stop, idx) => (
-                      <React.Fragment key={stop.sequence}>
-                        <span className="text-[10px] font-mono text-slate-400">{stop.barangayName}</span>
-                        {idx < route.stops.length - 1 && (
-                          <ChevronRight className="w-2.5 h-2.5 text-slate-700 shrink-0" />
-                        )}
-                      </React.Fragment>
+                  <ol className="space-y-1.5">
+                    {selectedRoute.stops.map((stop) => (
+                      <li key={stop.sequence} className="flex gap-2.5">
+                        <span className="font-mono tabular-nums text-muted shrink-0">{stop.sequence}.</span>
+                        <span>
+                          <span className="text-fg">{stop.barangayName}</span>
+                          <span className="block text-[12px] text-muted">{stop.action}</span>
+                        </span>
+                      </li>
                     ))}
-                  </div>
+                  </ol>
+                </div>
+              ) : (
+                <div className="text-muted">No active route.</div>
+              )}
+            </div>
 
-                  <div className="flex items-center gap-3 text-[10px] font-mono text-slate-600">
-                    <span>{(route.totalDistanceM / 1000).toFixed(1)} km</span>
-                    <span>{route.stops.length} stop{route.stops.length !== 1 ? 's' : ''}</span>
-                  </div>
-
-                  {/* Expanded stop detail */}
-                  {isSelected && route.stops.length > 0 && (
-                    <div className="mt-3 space-y-1.5 border-t border-slate-700/50 pt-3">
-                      {route.stops.map(stop => (
-                        <div key={stop.sequence} className="flex items-start gap-2 text-[10px]">
-                          <span className="w-4 h-4 rounded-full bg-teal-950 border border-teal-800 text-teal-400 text-[8px] font-bold flex items-center justify-center shrink-0 mt-0.5">
-                            {stop.sequence}
-                          </span>
-                          <div>
-                            <p className="font-bold text-slate-300">{stop.barangayName}</p>
-                            <p className="text-slate-600 font-mono">{stop.action}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </button>
-              );
-            })}
+            {/* Dispatch */}
+            {(selected.status === 'idle' || selected.status === 'active') && (
+              <div className="border-t border-line pt-3 space-y-2">
+                <div className="text-[12px] text-muted">Dispatch to</div>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={dest}
+                    onChange={(e) => setDest(e.target.value)}
+                    className="flex-1 bg-bg border border-line rounded-control px-2.5 py-1.5 text-[13px] text-fg focus:outline-none focus:border-muted cursor-pointer"
+                  >
+                    <option value="" disabled>
+                      Select destination…
+                    </option>
+                    {barangays.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} — {b.cityMunicipality}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => {
+                      if (!dest) return;
+                      onDispatchTeam(selected.id, dest);
+                      setDest('');
+                    }}
+                    disabled={!dest}
+                    className={`px-3 py-1.5 rounded-control text-[13px] font-medium border transition-colors duration-100 ${
+                      dest
+                        ? 'border-line text-fg hover:bg-raised cursor-pointer'
+                        : 'border-line text-muted cursor-not-allowed'
+                    }`}
+                  >
+                    Dispatch
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      </div>
+        </DetailPanel>
+      )}
     </div>
   );
 }
