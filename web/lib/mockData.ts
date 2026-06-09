@@ -1,5 +1,13 @@
 // lib/mockData.ts
 
+// Fixed reference "now" for the demo dataset. Every relative timestamp below is
+// anchored to this constant instead of DEMO_NOW, so the values are identical
+// whether the module is evaluated on the server or later in the browser. DEMO_NOW
+// drifts between those two moments, which made SSR and client render different
+// report times (e.g. 06:36 server / 06:51 client) and triggered React hydration
+// mismatches. Silent-area scoring uses the same anchor for consistent contact ages.
+export const DEMO_NOW = new Date('2026-06-09T14:00:00+08:00').getTime();
+
 export interface Barangay {
   id: string;
   name: string;
@@ -236,7 +244,7 @@ export const mockBarangays: Barangay[] = [
     popDensity: 9395,
     hazardComposite: 0.85,
     hazardDetails: { flood: 0.3, landslide: 0.85, stormSurge: 0.0 },
-    lastConfirmedContact: new Date(Date.now() - 48 * 3600 * 1000).toISOString(),
+    lastConfirmedContact: new Date(DEMO_NOW - 48 * 3600 * 1000).toISOString(),
     latitude: 10.3382,
     longitude: 123.9016,
     riskRanking: 3
@@ -250,7 +258,7 @@ export const mockBarangays: Barangay[] = [
     popDensity: 29071,
     hazardComposite: 0.90,
     hazardDetails: { flood: 0.9, landslide: 0.0, stormSurge: 0.7 },
-    lastConfirmedContact: new Date(Date.now() - 72 * 3600 * 1000).toISOString(),
+    lastConfirmedContact: new Date(DEMO_NOW - 72 * 3600 * 1000).toISOString(),
     latitude: 10.2928,
     longitude: 123.8829,
     riskRanking: 2
@@ -278,7 +286,7 @@ export const mockBarangays: Barangay[] = [
     popDensity: 4719,
     hazardComposite: 0.65,
     hazardDetails: { flood: 0.5, landslide: 0.65, stormSurge: 0.0 },
-    lastConfirmedContact: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+    lastConfirmedContact: new Date(DEMO_NOW - 2 * 3600 * 1000).toISOString(),
     latitude: 10.3705,
     longitude: 123.9181,
     riskRanking: 7
@@ -292,7 +300,7 @@ export const mockBarangays: Barangay[] = [
     popDensity: 7810,
     hazardComposite: 0.70,
     hazardDetails: { flood: 0.4, landslide: 0.7, stormSurge: 0.0 },
-    lastConfirmedContact: new Date(Date.now() - 36 * 3600 * 1000).toISOString(),
+    lastConfirmedContact: new Date(DEMO_NOW - 36 * 3600 * 1000).toISOString(),
     latitude: 10.3225,
     longitude: 123.8845,
     riskRanking: 5
@@ -306,7 +314,7 @@ export const mockBarangays: Barangay[] = [
     popDensity: 40227,
     hazardComposite: 0.88,
     hazardDetails: { flood: 0.75, landslide: 0.0, stormSurge: 0.88 },
-    lastConfirmedContact: new Date(Date.now() - 1 * 3600 * 1000).toISOString(),
+    lastConfirmedContact: new Date(DEMO_NOW - 1 * 3600 * 1000).toISOString(),
     latitude: 10.2961,
     longitude: 123.8998,
     riskRanking: 4
@@ -320,7 +328,7 @@ export const mockBarangays: Barangay[] = [
     popDensity: 10790,
     hazardComposite: 0.75,
     hazardDetails: { flood: 0.75, landslide: 0.1, stormSurge: 0.3 },
-    lastConfirmedContact: new Date(Date.now() - 14 * 3600 * 1000).toISOString(),
+    lastConfirmedContact: new Date(DEMO_NOW - 14 * 3600 * 1000).toISOString(),
     latitude: 10.3243,
     longitude: 123.9167,
     riskRanking: 6
@@ -334,7 +342,7 @@ export const mockBarangays: Barangay[] = [
     popDensity: 10476,
     hazardComposite: 0.80,
     hazardDetails: { flood: 0.8, landslide: 0.0, stormSurge: 0.4 },
-    lastConfirmedContact: new Date(Date.now() - 60 * 3600 * 1000).toISOString(),
+    lastConfirmedContact: new Date(DEMO_NOW - 60 * 3600 * 1000).toISOString(),
     latitude: 10.3289,
     longitude: 123.9298,
     riskRanking: 8
@@ -348,7 +356,7 @@ export const mockBarangays: Barangay[] = [
     popDensity: 9348,
     hazardComposite: 0.55,
     hazardDetails: { flood: 0.4, landslide: 0.2, stormSurge: 0.0 },
-    lastConfirmedContact: new Date(Date.now() - 5 * 3600 * 1000).toISOString(),
+    lastConfirmedContact: new Date(DEMO_NOW - 5 * 3600 * 1000).toISOString(),
     latitude: 10.3421,
     longitude: 123.9142,
     riskRanking: 12
@@ -362,7 +370,7 @@ export const mockBarangays: Barangay[] = [
     popDensity: 23034,
     hazardComposite: 0.78,
     hazardDetails: { flood: 0.75, landslide: 0.2, stormSurge: 0.0 },
-    lastConfirmedContact: new Date(Date.now() - 12 * 3600 * 1000).toISOString(),
+    lastConfirmedContact: new Date(DEMO_NOW - 12 * 3600 * 1000).toISOString(),
     latitude: 10.3015,
     longitude: 123.8741,
     riskRanking: 9
@@ -376,7 +384,7 @@ export const mockBarangays: Barangay[] = [
     popDensity: 18809,
     hazardComposite: 0.82,
     hazardDetails: { flood: 0.6, landslide: 0.82, stormSurge: 0.0 },
-    lastConfirmedContact: new Date(Date.now() - 18 * 3600 * 1000).toISOString(),
+    lastConfirmedContact: new Date(DEMO_NOW - 18 * 3600 * 1000).toISOString(),
     latitude: 10.2985,
     longitude: 123.8680,
     riskRanking: 10
@@ -404,7 +412,7 @@ export const mockBarangays: Barangay[] = [
     popDensity: 11461,
     hazardComposite: 0.85,
     hazardDetails: { flood: 0.85, landslide: 0.0, stormSurge: 0.6 },
-    lastConfirmedContact: new Date(Date.now() - 96 * 3600 * 1000).toISOString(),
+    lastConfirmedContact: new Date(DEMO_NOW - 96 * 3600 * 1000).toISOString(),
     latitude: 10.2642,
     longitude: 123.8569,
     riskRanking: 13
@@ -418,7 +426,7 @@ export const mockBarangays: Barangay[] = [
     popDensity: 9403,
     hazardComposite: 0.72,
     hazardDetails: { flood: 0.6, landslide: 0.4, stormSurge: 0.0 },
-    lastConfirmedContact: new Date(Date.now() - 4 * 3600 * 1000).toISOString(),
+    lastConfirmedContact: new Date(DEMO_NOW - 4 * 3600 * 1000).toISOString(),
     latitude: 10.2778,
     longitude: 123.8488,
     riskRanking: 14
@@ -432,7 +440,7 @@ export const mockBarangays: Barangay[] = [
     popDensity: 12947,
     hazardComposite: 0.81,
     hazardDetails: { flood: 0.81, landslide: 0.0, stormSurge: 0.4 },
-    lastConfirmedContact: new Date(Date.now() - 15 * 3600 * 1000).toISOString(),
+    lastConfirmedContact: new Date(DEMO_NOW - 15 * 3600 * 1000).toISOString(),
     latitude: 10.3129,
     longitude: 123.9125,
     riskRanking: 15
@@ -446,7 +454,7 @@ export const mockBarangays: Barangay[] = [
     popDensity: 18780,
     hazardComposite: 0.86,
     hazardDetails: { flood: 0.8, landslide: 0.0, stormSurge: 0.86 },
-    lastConfirmedContact: new Date(Date.now() - 22 * 3600 * 1000).toISOString(),
+    lastConfirmedContact: new Date(DEMO_NOW - 22 * 3600 * 1000).toISOString(),
     latitude: 10.3061,
     longitude: 123.9082,
     riskRanking: 16
@@ -469,7 +477,7 @@ export const mockFieldReports: FieldReport[] = [
     impassableEdgeId: 'edge-mambaling-access',
     confidence: 0.95,
     status: 'pending',
-    createdAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
+    createdAt: new Date(DEMO_NOW - 45 * 60 * 1000).toISOString(),
     latitude: 10.2915,
     longitude: 123.8812
   },
@@ -487,7 +495,7 @@ export const mockFieldReports: FieldReport[] = [
     impassableEdgeId: null,
     confidence: 0.88,
     status: 'pending',
-    createdAt: new Date(Date.now() - 1.5 * 3600 * 1000).toISOString(),
+    createdAt: new Date(DEMO_NOW - 1.5 * 3600 * 1000).toISOString(),
     latitude: 10.2902,
     longitude: 123.8925
   },
@@ -505,7 +513,7 @@ export const mockFieldReports: FieldReport[] = [
     impassableEdgeId: 'edge-lahug-talamban',
     confidence: 0.92,
     status: 'confirmed',
-    createdAt: new Date(Date.now() - 6 * 3600 * 1000).toISOString(),
+    createdAt: new Date(DEMO_NOW - 6 * 3600 * 1000).toISOString(),
     latitude: 10.3452,
     longitude: 123.8995
   },
@@ -523,7 +531,7 @@ export const mockFieldReports: FieldReport[] = [
     impassableEdgeId: null,
     confidence: 0.81,
     status: 'confirmed',
-    createdAt: new Date(Date.now() - 8 * 3600 * 1000).toISOString(),
+    createdAt: new Date(DEMO_NOW - 8 * 3600 * 1000).toISOString(),
     latitude: 10.3210,
     longitude: 123.8820
   },
@@ -541,7 +549,7 @@ export const mockFieldReports: FieldReport[] = [
     impassableEdgeId: 'edge-highway-subangdaku',
     confidence: 0.90,
     status: 'pending',
-    createdAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+    createdAt: new Date(DEMO_NOW - 2 * 3600 * 1000).toISOString(),
     latitude: 10.3312,
     longitude: 123.9315
   },
@@ -559,7 +567,7 @@ export const mockFieldReports: FieldReport[] = [
     impassableEdgeId: null,
     confidence: 0.87,
     status: 'pending',
-    createdAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
+    createdAt: new Date(DEMO_NOW - 3 * 3600 * 1000).toISOString(),
     latitude: 10.2970,
     longitude: 123.8650
   },
@@ -577,7 +585,7 @@ export const mockFieldReports: FieldReport[] = [
     impassableEdgeId: null,
     confidence: 0.89,
     status: 'pending',
-    createdAt: new Date(Date.now() - 4 * 3600 * 1000).toISOString(),
+    createdAt: new Date(DEMO_NOW - 4 * 3600 * 1000).toISOString(),
     latitude: 10.2688,
     longitude: 123.8412
   },
@@ -595,7 +603,7 @@ export const mockFieldReports: FieldReport[] = [
     impassableEdgeId: 'edge-pardo-inayawan',
     confidence: 0.84,
     status: 'pending',
-    createdAt: new Date(Date.now() - 5 * 3600 * 1000).toISOString(),
+    createdAt: new Date(DEMO_NOW - 5 * 3600 * 1000).toISOString(),
     latitude: 10.2612,
     longitude: 123.8590
   },
@@ -613,7 +621,7 @@ export const mockFieldReports: FieldReport[] = [
     impassableEdgeId: null,
     confidence: 0.94,
     status: 'confirmed',
-    createdAt: new Date(Date.now() - 10 * 3600 * 1000).toISOString(),
+    createdAt: new Date(DEMO_NOW - 10 * 3600 * 1000).toISOString(),
     latitude: 10.3440,
     longitude: 123.9160
   },
@@ -631,7 +639,7 @@ export const mockFieldReports: FieldReport[] = [
     impassableEdgeId: null,
     confidence: 0.12,
     status: 'flagged',
-    createdAt: new Date(Date.now() - 12 * 3600 * 1000).toISOString(),
+    createdAt: new Date(DEMO_NOW - 12 * 3600 * 1000).toISOString(),
     latitude: 10.3000,
     longitude: 123.9000
   },
@@ -649,7 +657,7 @@ export const mockFieldReports: FieldReport[] = [
     impassableEdgeId: null,
     confidence: 0.87,
     status: 'pending',
-    createdAt: new Date(Date.now() - 1 * 3600 * 1000).toISOString(),
+    createdAt: new Date(DEMO_NOW - 1 * 3600 * 1000).toISOString(),
     latitude: 10.3050,
     longitude: 123.9090
   },
@@ -667,7 +675,7 @@ export const mockFieldReports: FieldReport[] = [
     impassableEdgeId: null,
     confidence: 0.91,
     status: 'confirmed',
-    createdAt: new Date(Date.now() - 7 * 3600 * 1000).toISOString(),
+    createdAt: new Date(DEMO_NOW - 7 * 3600 * 1000).toISOString(),
     latitude: 10.3032,
     longitude: 123.8760
   },
@@ -685,7 +693,7 @@ export const mockFieldReports: FieldReport[] = [
     impassableEdgeId: null,
     confidence: 0.85,
     status: 'confirmed',
-    createdAt: new Date(Date.now() - 5 * 3600 * 1000).toISOString(),
+    createdAt: new Date(DEMO_NOW - 5 * 3600 * 1000).toISOString(),
     latitude: 10.3142,
     longitude: 123.9110
   },
@@ -703,7 +711,7 @@ export const mockFieldReports: FieldReport[] = [
     impassableEdgeId: null,
     confidence: 0.93,
     status: 'confirmed',
-    createdAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+    createdAt: new Date(DEMO_NOW - 2 * 3600 * 1000).toISOString(),
     latitude: 10.3685,
     longitude: 123.9190
   }
@@ -1328,7 +1336,7 @@ export function computeSilentAreaScores(
     let timeFactor = 1.0;
 
     if (b.lastConfirmedContact) {
-      const msSince = Date.now() - new Date(b.lastConfirmedContact).getTime();
+      const msSince = DEMO_NOW - new Date(b.lastConfirmedContact).getTime();
       hoursSinceContact = Math.max(msSince / (3600 * 1000), 0);
       timeFactor = 1 - Math.exp(-hoursSinceContact / tauHours);
     }

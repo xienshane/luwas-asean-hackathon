@@ -20,8 +20,16 @@ const SOURCE_LABEL: Record<string, string> = { app: 'Mobile App', sms: 'SMS', pa
 const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 const SHORT_KEYS = ['waterL', 'foodPacks', 'hygieneKits', 'medicalSupplies', 'shelterMaterials'] as const;
 
+// Pinned locale + timezone so the formatted instant is identical on the server
+// (typically UTC) and the client browser — otherwise it re-introduces the
+// hydration mismatch independently of the timestamp itself. Cebu = Asia/Manila.
 const hhmm = (iso: string) =>
-  new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  new Date(iso).toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Manila',
+  });
 
 // Persistent right rail — Operations (triage) mode. Selection swaps this out for
 // the entity detail panel (handled in CommandDashboard).

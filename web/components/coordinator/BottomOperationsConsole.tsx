@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Maximize2, Minimize2 } from 'lucide-react';
+import { Send, ChevronDown } from 'lucide-react';
 import { Timeline } from './ui';
 import type { TimelineItem, Tone } from './ui';
 
@@ -36,7 +36,7 @@ export default function BottomOperationsConsole({
   const [activeTab, setActiveTab] = useState<'feed' | 'comms'>('feed');
   const [height, setHeight] = useState(initialHeight);
   const [isDragging, setIsDragging] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const dragStartY = useRef(0);
   const startHeight = useRef(0);
 
@@ -87,10 +87,7 @@ export default function BottomOperationsConsole({
     };
   }, [isDragging, maxHeight, minHeight]);
 
-  const toggleExpand = () => {
-    setHeight(isExpanded ? initialHeight : maxHeight);
-    setIsExpanded(!isExpanded);
-  };
+  const toggleCollapse = () => setIsCollapsed((c) => !c);
 
   const tabs: { id: 'feed' | 'comms'; label: string }[] = [
     { id: 'feed', label: 'Activity' },
@@ -98,9 +95,14 @@ export default function BottomOperationsConsole({
   ];
 
   return (
-    <div className="bg-surface border-t border-line flex flex-col overflow-hidden" style={{ height: `${height}px` }}>
-      {/* Resize handle */}
-      <div className="h-1.5 bg-line hover:bg-muted/40 cursor-row-resize transition-colors duration-100" onMouseDown={handleMouseDown} />
+    <div
+      className="bg-surface border-t border-line flex flex-col overflow-hidden"
+      style={isCollapsed ? undefined : { height: `${height}px` }}
+    >
+      {/* Resize handle — only meaningful while expanded */}
+      {!isCollapsed && (
+        <div className="h-1.5 bg-line hover:bg-muted/40 cursor-row-resize transition-colors duration-100" onMouseDown={handleMouseDown} />
+      )}
 
       {/* Tab bar */}
       <div className="flex items-center justify-between border-b border-line pr-2">
@@ -108,7 +110,10 @@ export default function BottomOperationsConsole({
           {tabs.map((t) => (
             <button
               key={t.id}
-              onClick={() => setActiveTab(t.id)}
+              onClick={() => {
+                setActiveTab(t.id);
+                if (isCollapsed) setIsCollapsed(false);
+              }}
               className={`px-4 py-2 border-b-2 transition-colors duration-100 cursor-pointer ${
                 activeTab === t.id ? 'border-fg/50 text-fg' : 'border-transparent text-muted hover:text-fg'
               }`}
@@ -118,15 +123,19 @@ export default function BottomOperationsConsole({
           ))}
         </div>
         <button
-          onClick={toggleExpand}
-          title={isExpanded ? 'Collapse' : 'Expand'}
+          onClick={toggleCollapse}
+          title={isCollapsed ? 'Expand panel' : 'Collapse panel'}
           className="p-1.5 text-muted hover:text-fg hover:bg-raised rounded-control transition-colors duration-100 cursor-pointer"
         >
-          {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          <ChevronDown
+            className="w-4 h-4 transition-transform duration-100"
+            style={{ transform: isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)' }}
+          />
         </button>
       </div>
 
-      {/* Panel */}
+      {/* Panel body — hidden when collapsed so only the tab-bar strip remains */}
+      {!isCollapsed && (
       <div className="flex-1 overflow-y-auto">
         {activeTab === 'feed' && <div className="py-1.5">{feedItems.length > 0 ? <Timeline items={feedItems} /> : <Empty>No activity yet.</Empty>}</div>}
 
@@ -163,6 +172,7 @@ export default function BottomOperationsConsole({
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

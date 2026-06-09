@@ -117,7 +117,6 @@ export default function InteractiveCommandMap({
   // Tooltip popup reference
   const hoverPopupRef = useRef<any>(null);
 
-  const maplibreLoadedRef = useRef(false);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -301,10 +300,14 @@ export default function InteractiveCommandMap({
   }, [selectedReport, getNearestHubToCoords]);
 
   // ── Load MapLibre from npm (client-only dynamic import) once ─────────────
+  // No persisted "already loaded" ref guard: under React StrictMode (on by
+  // default in dev) this effect runs mount → cleanup → mount. A persisted guard
+  // set on the first mount would make the second mount bail before initMap()
+  // ever runs — and the first mount's import resolves *after* cleanup has set
+  // cancelled = true, so it skips initMap() too. The map then never appears
+  // until a full reload. Instead, each mount gets its own `cancelled` flag and
+  // initMap() is idempotent (it bails when mapRef.current is already set).
   useEffect(() => {
-    if (maplibreLoadedRef.current) return;
-    maplibreLoadedRef.current = true;
-
     let cancelled = false;
     import('maplibre-gl').then((mod) => {
       if (cancelled) return;
@@ -319,6 +322,7 @@ export default function InteractiveCommandMap({
         mapRef.current.remove();
         mapRef.current = null;
       }
+      setIsMapLoaded(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -408,6 +412,10 @@ export default function InteractiveCommandMap({
       maxBounds: WHOLE_CEBU_BOUNDS,
       attributionControl: false,
     });
+
+    // Claim the ref synchronously so a re-entrant initMap() (StrictMode remount)
+    // bails on the mapRef.current guard before the async 'load' fires.
+    mapRef.current = map;
 
     hoverPopupRef.current = new maplibregl.Popup({
       closeButton: false,
@@ -770,7 +778,6 @@ export default function InteractiveCommandMap({
       map.on('mousemove', 'roads-layer-blocked', (e: { lngLat: any; }) => hoverPopupRef.current.setLngLat(e.lngLat));
       map.on('mouseleave', 'roads-layer-blocked', onRoadLeave);
 
-      mapRef.current = map;
       setIsMapLoaded(true);
 
       setTimeout(() => map.resize(), 100);
@@ -1620,9 +1627,10 @@ export default function InteractiveCommandMap({
                 <span>Reporter · <span className="text-fg">{selectedReport.reporterName}</span></span>
                 <span className="flex items-center gap-1 font-mono tabular-nums">
                   <Clock className="w-3 h-3" />
-                  {new Date(selectedReport.createdAt).toLocaleTimeString([], {
+                  {new Date(selectedReport.createdAt).toLocaleTimeString('en-GB', {
                     hour: '2-digit',
                     minute: '2-digit',
+                    timeZone: 'Asia/Manila',
                   })}
                 </span>
               </div>
