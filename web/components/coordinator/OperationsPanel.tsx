@@ -65,7 +65,7 @@ export default function OperationsPanel({
   ];
 
   return (
-    <aside className="w-[360px] h-full bg-surface border-l border-line flex flex-col overflow-hidden shrink-0">
+    <aside className="w-[25%] min-w-[340px] max-w-[360px] h-full bg-surface border-l border-line flex flex-col overflow-hidden shrink-0">
       <header className="shrink-0 px-4 py-3 border-b border-line">
         <h2 className="text-[20px] font-medium text-fg">Operations</h2>
       </header>
@@ -114,7 +114,10 @@ export default function OperationsPanel({
                 <span className="text-[12px] text-muted truncate">
                   {SOURCE_LABEL[r.source]} · {r.reporterName}
                 </span>
-                <div className="flex items-center gap-1.5 shrink-0">
+                {/* Actions stay hidden until the row is hovered/focused so the
+                    queue reads lightly; the green Confirm and red Flag reveal
+                    together. focus-within keeps them keyboard-reachable. */}
+                <div className="flex items-center gap-1.5 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-100">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -129,7 +132,7 @@ export default function OperationsPanel({
                       e.stopPropagation();
                       onFlagReport(r.id);
                     }}
-                    className="flex items-center gap-1 px-2 py-1 border border-line text-muted hover:text-critical hover:border-critical/40 rounded-control text-[12px] transition-colors duration-100 cursor-pointer"
+                    className="flex items-center gap-1 px-2 py-1 border border-critical/40 bg-critical/10 text-critical hover:bg-critical/20 rounded-control text-[12px] transition-colors duration-100 cursor-pointer"
                   >
                     <Flag className="w-3 h-3" /> Flag
                   </button>
