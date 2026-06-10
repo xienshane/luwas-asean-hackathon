@@ -144,6 +144,14 @@ export default function InteractiveCommandMap({
     edgesRef.current = edges;
   }, [edges]);
 
+  // Same pattern for barangays: the click listener is bound once at map load (before the
+  // async Supabase fetch resolves), so handleBarangayClick must read the *current* list via
+  // a ref — otherwise it closes over the initial empty array and never finds the clicked one.
+  const barangaysRef = useRef(barangays);
+  useEffect(() => {
+    barangaysRef.current = barangays;
+  }, [barangays]);
+
   const getScoreData = useCallback(
     (barangayId: string) =>
       scores.find((s) => s.barangayId === barangayId) ??
@@ -377,7 +385,7 @@ export default function InteractiveCommandMap({
     if (!e.features?.length) return;
     const feat = e.features[0];
     const barangayId = feat.properties.id;
-    const barangay = barangays.find(b => b.id === barangayId);
+    const barangay = barangaysRef.current.find(b => b.id === barangayId);
     if (barangay) {
       onSelectBarangay(barangay);
       setSelectedEdge(null);
@@ -387,7 +395,7 @@ export default function InteractiveCommandMap({
         essential: true
       });
     }
-  }, [barangays, onSelectBarangay]);
+  }, [onSelectBarangay]);
 
   // ── Initialize MapLibre ──
   const initMap = () => {

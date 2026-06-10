@@ -119,14 +119,26 @@ export default function CommandDashboard() {
 
   const handleSelectReport = (r: FieldReport) => {
     setSelectedReport(r);
-    
-    // Auto-select matching barangay
-    if (r && r.barangayId) {
-      const matchingB = barangays.find(b => b.id === r.barangayId);
-      if (matchingB) {
-        setSelectedBarangay(matchingB);
+    if (!r) return;
+
+    // Demo reports still carry the old mock barangay ids ('b-*'), which no longer match the
+    // real barangay UUIDs. Resolve to a real barangay so the context panel opens: prefer an
+    // exact name match, else fall back to the barangay whose centroid is nearest the report.
+    const byName = barangays.find(
+      (b) => b.name.toLowerCase() === r.barangayName.trim().toLowerCase()
+    );
+    let resolved: Barangay | null = byName ?? null;
+    if (!resolved && barangays.length > 0) {
+      let best = Infinity;
+      for (const b of barangays) {
+        const d = (b.latitude - r.latitude) ** 2 + (b.longitude - r.longitude) ** 2;
+        if (d < best) {
+          best = d;
+          resolved = b;
+        }
       }
     }
+    if (resolved) setSelectedBarangay(resolved);
   };
 
   // Update AI predictions and Sphere supply manifest overrides
