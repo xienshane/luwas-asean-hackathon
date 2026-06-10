@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Search, X, Check, Flag } from 'lucide-react';
-import { FieldReport } from '@/lib/mockData';
+import type { FieldReport } from '@/lib/types/coordinator';
 import { DetailPanel, SeverityRail, StatusDot, Toolbar, SEVERITY_TONE } from './ui';
 
 interface ReportsViewProps {

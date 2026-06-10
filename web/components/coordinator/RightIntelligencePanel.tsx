@@ -1,16 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import {
-  Barangay,
-  ImpactPrediction,
-  SupplyManifest,
-  Team,
-  Route,
-  mockLocationHubs,
-  mockHistoricalIncidents,
-  getSphereManifest,
-} from '@/lib/mockData';
+import type { Barangay, ImpactPrediction, SupplyManifest, Team, Route } from '@/lib/types/coordinator';
+import { mockLocationHubs, mockHistoricalIncidents, getSphereManifest } from '@/lib/mockData';
 import { DetailPanel, silentAreaState, STATE_LABEL, STATE_COLOR } from './ui';
 
 interface RightIntelligencePanelProps {
@@ -181,28 +173,39 @@ export default function RightIntelligencePanel({
             <div className="border-t border-line pt-3">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[12px] text-muted">TabPFN impact prediction</span>
-                <span className="text-[12px] text-muted capitalize">Conf · {prediction?.confidence || 'moderate'}</span>
+                {prediction && (
+                  <span className="text-[12px] text-muted capitalize">Conf · {prediction.confidence}</span>
+                )}
               </div>
-              <div className="flex items-baseline gap-2">
-                <span className={`text-2xl font-mono tabular-nums ${isAffectedOverridden ? 'text-muted line-through' : 'text-fg'}`}>
-                  {prediction?.predictedAffected.toLocaleString() || '0'}
-                </span>
-                <span className="text-[12px] text-muted">est. affected</span>
-              </div>
-              {isAffectedOverridden && (
-                <div className="mt-1.5 text-[13px] text-active">
-                  Overridden · <span className="font-mono tabular-nums">{prediction?.overrideValue?.toLocaleString()}</span> people
-                </div>
-              )}
-              {prediction?.contributors && prediction.contributors.length > 0 && (
-                <ul className="mt-2 space-y-1 text-[12px] text-muted">
-                  {prediction.contributors.map((c, i) => (
-                    <li key={i} className="flex gap-2">
-                      <span className="text-muted">—</span>
-                      {c}
-                    </li>
-                  ))}
-                </ul>
+              {prediction ? (
+                <>
+                  <div className="flex items-baseline gap-2">
+                    <span className={`text-2xl font-mono tabular-nums ${isAffectedOverridden ? 'text-muted line-through' : 'text-fg'}`}>
+                      {prediction.predictedAffected.toLocaleString()}
+                    </span>
+                    <span className="text-[12px] text-muted">est. affected</span>
+                  </div>
+                  {isAffectedOverridden && (
+                    <div className="mt-1.5 text-[13px] text-active">
+                      Overridden · <span className="font-mono tabular-nums">{prediction.overrideValue?.toLocaleString()}</span> people
+                    </div>
+                  )}
+                  {prediction.contributors && prediction.contributors.length > 0 && (
+                    <ul className="mt-2 space-y-1 text-[12px] text-muted">
+                      {prediction.contributors.map((c, i) => (
+                        <li key={i} className="flex gap-2">
+                          <span className="text-muted">—</span>
+                          {c}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              ) : (
+                <p className="text-[13px] text-muted leading-relaxed">
+                  Not generated yet — TabPFN runs in the Phase 4 pipeline and isn’t wired to
+                  live reports. The Silent Area score above is live.
+                </p>
               )}
             </div>
 
@@ -231,6 +234,12 @@ export default function RightIntelligencePanel({
         {/* ── Supplies ── */}
         {drawerTab === 'supplies' && (
           <>
+            {!prediction && (
+              <div className="rounded-control border border-line bg-raised/30 px-3 py-2 text-[12px] text-muted leading-relaxed">
+                No impact prediction yet — these Sphere figures populate once TabPFN estimates
+                affected population (Phase 4). Coordinator overrides below still apply.
+              </div>
+            )}
             <div className="flex items-center justify-between text-[12px] text-muted">
               <span>Sphere manifest</span>
               <span>3-day ration</span>

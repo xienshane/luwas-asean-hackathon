@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Team, Route, Barangay, mockVolunteers } from '@/lib/mockData';
+import type { Team, Route, Barangay } from '@/lib/types/coordinator';
+import { mockVolunteers } from '@/lib/mockData';
 import {
   DetailPanel,
   StatusDot,

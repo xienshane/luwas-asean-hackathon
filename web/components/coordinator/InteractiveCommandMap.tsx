@@ -9,15 +9,8 @@ import {
   AlertOctagon,
   X,
 } from 'lucide-react';
-import {
-  Barangay,
-  FieldReport,
-  Team,
-  RoadEdge,
-  Route,
-  mockLocationHubs,
-  mockVolunteers,
-} from '@/lib/mockData';
+import type { Barangay, FieldReport, Team, RoadEdge, Route } from '@/lib/types/coordinator';
+import { mockLocationHubs, mockVolunteers } from '@/lib/mockData';
 import { COLOR, silentAreaState, STATE_COLOR, STATE_LABEL } from './ui';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -810,7 +803,9 @@ export default function InteractiveCommandMap({
             hazardNorm: sd.hazardNorm ?? 0,
             timeFactor: sd.timeFactor ?? 1,
           },
-          geometry: {
+          // Real PostGIS boundary (from the coordinator_barangay_scores view) when present;
+          // fall back to a centroid hexagon for any barangay missing geometry.
+          geometry: barangay.boundary ?? {
             type: 'Polygon',
             coordinates: [generateBarangayPolygon(barangay)]
           }

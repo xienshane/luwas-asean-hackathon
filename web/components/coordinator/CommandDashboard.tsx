@@ -1,23 +1,23 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { 
-  Barangay, 
-  FieldReport, 
-  Team, 
-  RoadEdge, 
-  Route, 
-  ImpactPrediction, 
+import type {
+  Barangay,
+  FieldReport,
+  Team,
+  RoadEdge,
+  Route,
+  ImpactPrediction,
   SupplyManifest,
-  mockBarangays, 
-  mockFieldReports, 
-  mockTeams, 
-  mockRoadEdges, 
-  mockRoutes, 
-  mockImpactPredictions, 
-  getSphereManifest, 
-  computeSilentAreaScores 
+} from '@/lib/types/coordinator';
+import {
+  mockFieldReports,
+  mockTeams,
+  mockRoadEdges,
+  mockRoutes,
+  getSphereManifest,
 } from '@/lib/mockData';
+import { fetchCoordinatorMapData } from '@/lib/supabase/coordinator';
 import LeftSidebar from './LeftSidebar';
 import InteractiveCommandMap from './InteractiveCommandMap';
 import BottomOperationsConsole from './BottomOperationsConsole';
@@ -32,21 +32,21 @@ export default function CommandDashboard() {
   const [currentView, setCurrentView] = useState('map');
 
   // Cebu Database States
-  const [barangays, setBarangays] = useState<Barangay[]>(mockBarangays);
+  const [barangays, setBarangays] = useState<Barangay[]>([]);
   const [reports, setReports] = useState<FieldReport[]>(mockFieldReports);
   const [teams, setTeams] = useState<Team[]>(mockTeams);
   const [edges, setEdges] = useState<RoadEdge[]>(mockRoadEdges);
   const [routes, setRoutes] = useState<Route[]>(mockRoutes);
   
-  const [predictions, setPredictions] = useState<Record<string, ImpactPrediction>>(mockImpactPredictions);
+  const [predictions, setPredictions] = useState<Record<string, ImpactPrediction>>({});
   const [manifests, setManifests] = useState<Record<string, SupplyManifest>>({});
 
   // Selection states
   const [selectedBarangay, setSelectedBarangay] = useState<Barangay | null>(null);
   const [selectedReport, setSelectedReport] = useState<FieldReport | null>(null);
 
-  // Scoring configurations
-  const [tauHours, setTauHours] = useState(24);
+  // Live Silent Area scores from Supabase — computed server-side by the
+  // silent_area_score() pg_cron job (Phase 2.1), recomputed every 15 min.
   const [scores, setScores] = useState<{ barangayId: string; score: number; hoursSinceContact: number | null; timeFactor: number; popDensityNorm: number; hazardNorm: number }[]>([]);
 
   // Chronological EOC Log state
@@ -58,11 +58,24 @@ export default function CommandDashboard() {
     { id: 'log-5', time: '11:00', event: 'SYSTEM: Typhoon landfall confirmed Cebu City coordinates. LUWAS Operations Active.', type: 'info' }
   ]);
 
-  // Calculate scores on mount or whenever contact points update
+  // Load live barangays + Silent Area scores from Supabase on mount. The map, tooltips,
+  // and intelligence panel all render from this real data (coordinator_barangay_scores
+  // view). Reports / routes / teams remain demo overlays until their engines are wired.
   useEffect(() => {
-    const computed = computeSilentAreaScores(barangays, tauHours);
-    setScores(computed);
-  }, [barangays, tauHours]);
+    let cancelled = false;
+    fetchCoordinatorMapData()
+      .then(({ barangays: realBarangays, scores: realScores }) => {
+        if (cancelled) return;
+        setBarangays(realBarangays);
+        setScores(realScores);
+      })
+      .catch((err) => {
+        console.error('Failed to load live barangay scores from Supabase', err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Compute supply manifests based on effective predictions
   useEffect(() => {
@@ -70,12 +83,17 @@ export default function CommandDashboard() {
     
     barangays.forEach(b => {
       const pred = predictions[b.id];
-      const effectiveAffected = pred?.overrideValue !== null && pred?.overrideValue !== undefined 
-        ? pred.overrideValue 
-        : (pred?.predictedAffected || 0);
-      
+      // Honest empty state: no impact prediction → no manifest. impact_predictions stays
+      // empty until the Phase 4 pipeline (TabPFN → Sphere) writes to it, so real barangays
+      // have no manifest rather than a fabricated zero one.
+      if (!pred) return;
+
+      const effectiveAffected = pred.overrideValue !== null && pred.overrideValue !== undefined
+        ? pred.overrideValue
+        : (pred.predictedAffected || 0);
+
       const sphereBase = getSphereManifest(b.id, effectiveAffected);
-      
+
       updatedManifests[b.id] = {
         ...sphereBase,
         status: manifests[b.id]?.status || 'pending',

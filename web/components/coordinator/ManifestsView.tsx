@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { SupplyManifest, Barangay, ImpactPrediction } from '@/lib/mockData';
+import type { SupplyManifest, Barangay, ImpactPrediction } from '@/lib/types/coordinator';
 import {
   StatusDot,
   Toolbar,
@@ -280,7 +280,11 @@ export default function ManifestsView({ barangays, manifests, predictions, onUpd
             </div>
             <div className="flex-1 overflow-y-auto">
               {listBarangays.length === 0 ? (
-                <div className="px-3 py-10 text-center text-[13px] text-muted">All manifests reviewed.</div>
+                <div className="px-3 py-10 text-center text-[13px] text-muted">
+                  {Object.keys(manifests).length === 0
+                    ? 'No manifests yet — awaiting impact predictions.'
+                    : 'All manifests reviewed.'}
+                </div>
               ) : (
                 listBarangays.map((b) => {
                   const m = manifests[b.id];

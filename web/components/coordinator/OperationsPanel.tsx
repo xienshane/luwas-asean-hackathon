@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { ChevronRight, Check, Flag } from 'lucide-react';
-import { FieldReport, Route, SupplyManifest, Barangay } from '@/lib/mockData';
+import type { FieldReport, Route, SupplyManifest, Barangay } from '@/lib/types/coordinator';
 import { SeverityRail, StatusDot, SEVERITY_TONE } from './ui';
 
 interface OperationsPanelProps {
