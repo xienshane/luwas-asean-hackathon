@@ -133,7 +133,10 @@ export default function InteractiveCommandMap({
   const [selectedEdge, setSelectedEdge] = useState<RoadEdge | null>(null);
   const [roadNotes, setRoadNotes] = useState('');
   const [legendOpen, setLegendOpen] = useState(false);
-  const [hoveredBarangay, setHoveredBarangay] = useState<string | null>(null);
+  // Hover + selection highlight is driven by MapLibre feature-state (set directly on the
+  // source on mouse/selection events) instead of rebuilding ~1,200 features each time.
+  const hoveredBarangayIdRef = useRef<string | null>(null);
+  const selectedBarangayIdRef = useRef<string | null>(null);
 
   // Keep refs of edges for dynamic access
   const edgesRef = useRef(edges);
@@ -422,6 +425,9 @@ export default function InteractiveCommandMap({
       map.addSource('barangays-source', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
+        // promoteId lifts properties.id to the feature id so hover/selection can be driven
+        // by feature-state (set on events) instead of rebuilding all ~1,200 features.
+        promoteId: 'id',
       });
 
       map.addSource('roads-source', {
@@ -443,10 +449,8 @@ export default function InteractiveCommandMap({
           'fill-color': ['get', 'color'],
           'fill-opacity': [
             'case',
-            ['==', ['get', 'id'], hoveredBarangay || ''],
-            0.42,
-            ['==', ['get', 'id'], selectedBarangay?.id || ''],
-            0.4,
+            ['boolean', ['feature-state', 'hovered'], false], 0.42,
+            ['boolean', ['feature-state', 'selected'], false], 0.40,
             0.22
           ],
         },
@@ -459,14 +463,12 @@ export default function InteractiveCommandMap({
         paint: {
           'line-color': [
             'case',
-            ['==', ['get', 'id'], selectedBarangay?.id || ''],
-            COLOR.fg,
+            ['boolean', ['feature-state', 'selected'], false], COLOR.fg,
             BARANGAY_OUTLINE
           ],
           'line-width': [
             'case',
-            ['==', ['get', 'id'], selectedBarangay?.id || ''],
-            2,
+            ['boolean', ['feature-state', 'selected'], false], 2,
             1
           ],
           'line-opacity': 0.7,
@@ -653,33 +655,29 @@ export default function InteractiveCommandMap({
       map.on('click', 'barangays-fill', handleBarangayClick);
       map.on('click', 'barangays-outline', handleBarangayClick);
 
-      // Hover effects
-      map.on('mouseenter', 'barangays-fill', (e: any) => {
-        if (e.features?.[0]?.properties?.id) {
-          const feat = e.features[0];
-          setHoveredBarangay(feat.properties.id);
-          map.getCanvas().style.cursor = 'pointer';
+      // Hover: drive the polygon highlight with feature-state and keep the tooltip in sync
+      // as the cursor crosses between adjacent barangays. Real boundaries touch, so
+      // 'mouseenter' alone wouldn't refire when moving straight from one barangay into the
+      // next — we update on 'mousemove' and only rebuild the tooltip when the id changes.
+      const showBarangayTooltip = (p: any, lngLat: any) => {
+        const scorePct = Math.round(p.score * 100);
+        const density = Number(p.popDensity).toLocaleString();
+        const hazard = Number(p.hazardComposite).toFixed(2);
+        const popN = Number(p.popDensityNorm).toFixed(2);
+        const hazN = Number(p.hazardNorm).toFixed(2);
+        const timeN = Number(p.timeFactor).toFixed(2);
+        const contactStr =
+          p.hoursSinceContact === null || p.hoursSinceContact === undefined || p.hoursSinceContact === ''
+            ? 'No contact'
+            : `${Math.round(Number(p.hoursSinceContact))}h ago`;
+        const state = silentAreaState(Number(p.score));
+        const stateLabel = STATE_LABEL[state];
+        const stateColor = STATE_COLOR[state];
 
-          const p = feat.properties;
-          const scorePct = Math.round(p.score * 100);
-          const density = Number(p.popDensity).toLocaleString();
-          const hazard = Number(p.hazardComposite).toFixed(2);
-          const popN = Number(p.popDensityNorm).toFixed(2);
-          const hazN = Number(p.hazardNorm).toFixed(2);
-          const timeN = Number(p.timeFactor).toFixed(2);
-          const contactStr =
-            p.hoursSinceContact === null || p.hoursSinceContact === undefined || p.hoursSinceContact === ''
-              ? 'No contact'
-              : `${Math.round(Number(p.hoursSinceContact))}h ago`;
-          const state = silentAreaState(Number(p.score));
-          const stateLabel = STATE_LABEL[state];
-          const stateColor = STATE_COLOR[state];
-
-          // Close active hover windows to prevent overlapping states
-          hoverPopupRef.current.remove();
-          hoverPopupRef.current
-            .setLngLat(e.lngLat)
-            .setHTML(`
+        hoverPopupRef.current.remove();
+        hoverPopupRef.current
+          .setLngLat(lngLat)
+          .setHTML(`
               <div class="px-3 py-2 text-[13px] font-sans w-[220px]">
                 <div class="flex items-center justify-between gap-2 border-b border-line pb-1.5 mb-1.5">
                   <span class="font-medium text-fg">${p.name}</span>
@@ -708,16 +706,33 @@ export default function InteractiveCommandMap({
                 </div>
               </div>
             `)
-            .addTo(map);
-        }
-      });
-      
-      map.on('mousemove', 'barangays-fill', (e: any) => {
-        hoverPopupRef.current.setLngLat(e.lngLat);
-      });
+          .addTo(map);
+      };
 
+      const onBarangayHover = (e: any) => {
+        const feat = e.features?.[0];
+        if (!feat?.properties?.id) return;
+        map.getCanvas().style.cursor = 'pointer';
+        const id = feat.properties.id;
+        if (hoveredBarangayIdRef.current !== id) {
+          if (hoveredBarangayIdRef.current !== null) {
+            map.setFeatureState({ source: 'barangays-source', id: hoveredBarangayIdRef.current }, { hovered: false });
+          }
+          hoveredBarangayIdRef.current = id;
+          map.setFeatureState({ source: 'barangays-source', id }, { hovered: true });
+          showBarangayTooltip(feat.properties, e.lngLat); // rebuild only when the barangay changes
+        } else {
+          hoverPopupRef.current.setLngLat(e.lngLat); // same barangay → just follow the cursor
+        }
+      };
+
+      map.on('mouseenter', 'barangays-fill', onBarangayHover);
+      map.on('mousemove', 'barangays-fill', onBarangayHover);
       map.on('mouseleave', 'barangays-fill', () => {
-        setHoveredBarangay(null);
+        if (hoveredBarangayIdRef.current !== null) {
+          map.setFeatureState({ source: 'barangays-source', id: hoveredBarangayIdRef.current }, { hovered: false });
+          hoveredBarangayIdRef.current = null;
+        }
         map.getCanvas().style.cursor = '';
         hoverPopupRef.current.remove();
       });
@@ -816,8 +831,32 @@ export default function InteractiveCommandMap({
         type: 'FeatureCollection',
         features: features
       });
+      // setData resets feature-state — re-apply the current selection highlight so it
+      // survives score refreshes / data reloads.
+      if (selectedBarangayIdRef.current) {
+        map.setFeatureState(
+          { source: 'barangays-source', id: selectedBarangayIdRef.current },
+          { selected: true },
+        );
+      }
     }
-  }, [isMapLoaded, mapLayers.barangays, barangays, getScoreData, generateBarangayPolygon, selectedBarangay, hoveredBarangay]);
+  }, [isMapLoaded, mapLayers.barangays, barangays, getScoreData, generateBarangayPolygon]);
+
+  // Selected-barangay highlight via feature-state (no feature rebuild): clear the prior
+  // selection and set the new one whenever the selection changes.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded || !map.getSource('barangays-source')) return;
+    const prev = selectedBarangayIdRef.current;
+    if (prev) {
+      map.setFeatureState({ source: 'barangays-source', id: prev }, { selected: false });
+    }
+    const next = selectedBarangay?.id ?? null;
+    if (next) {
+      map.setFeatureState({ source: 'barangays-source', id: next }, { selected: true });
+    }
+    selectedBarangayIdRef.current = next;
+  }, [selectedBarangay?.id, isMapLoaded]);
 
   // ── Road network rendering (All roads remain visible) ──
   useEffect(() => {
