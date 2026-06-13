@@ -10,7 +10,7 @@ export async function login(formData: FormData) {
   const email = String(formData.get('email') ?? '')
   const password = String(formData.get('password') ?? '')
   const redirectedFrom = String(formData.get('redirectedFrom') ?? '')
-  const destination = redirectedFrom || '/coordinator/health'
+  const destination = redirectedFrom || '/coordinator'
 
   const { error } = await supabase.auth.signInWithPassword({ email, password })
 
@@ -29,4 +29,33 @@ export async function signOut() {
   await supabase.auth.signOut()
   revalidatePath('/', 'layout')
   redirect('/login')
+}
+
+export async function signup(formData: FormData) {
+  const supabase = await createClient()
+
+  const email = String(formData.get('email') ?? '')
+  const password = String(formData.get('password') ?? '')
+  const confirmPassword = String(formData.get('confirmPassword') ?? '')
+  const fullName = String(formData.get('fullName') ?? '')
+  const agency = String(formData.get('agency') ?? '')
+
+  if (password !== confirmPassword) {
+    redirect('/signup?error=Passwords+do+not+match')
+  }
+
+  const { error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { full_name: fullName, agency },
+    },
+  })
+
+  if (error) {
+    const params = new URLSearchParams({ error: error.message })
+    redirect(`/signup?${params.toString()}`)
+  }
+
+  redirect('/signup?error=Check+your+email+to+confirm+your+account')
 }
