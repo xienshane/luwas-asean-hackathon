@@ -26,6 +26,7 @@ import OperationsPanel from './OperationsPanel';
 import ReportsView from './ReportsView';
 import TeamsView from './TeamsView';
 import ManifestsView from './ManifestsView';
+import { useLiveReports } from '@/lib/live/useLiveReports';
 
 export default function CommandDashboard() {
   // Navigation View selection State
@@ -34,6 +35,9 @@ export default function CommandDashboard() {
   // Cebu Database States
   const [barangays, setBarangays] = useState<Barangay[]>([]);
   const [reports, setReports] = useState<FieldReport[]>(mockFieldReports);
+  // Live field_reports (volunteer PWA + SMS intake) merged into the mock-driven
+  // state — confirm/flag on live rows stays local until Phase 4.1 persists it.
+  useLiveReports(setReports);
   const [teams, setTeams] = useState<Team[]>(mockTeams);
   const [edges, setEdges] = useState<RoadEdge[]>(mockRoadEdges);
   const [routes, setRoutes] = useState<Route[]>(mockRoutes);
