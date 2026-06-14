@@ -26,7 +26,7 @@ interface DirectoryClient {
           col: string,
           opts: { ascending: boolean; nullsFirst: boolean },
         ): {
-          limit(n: number): { maybeSingle(): Promise<{ data: BarangayMatch | null }> };
+          limit(n: number): { maybeSingle(): PromiseLike<{ data: BarangayMatch | null }> };
         };
       };
     };
