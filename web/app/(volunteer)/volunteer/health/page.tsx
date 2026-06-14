@@ -15,17 +15,17 @@ export default async function VolunteerHealthPage() {
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 p-8">
-      <span className="inline-flex w-fit items-center gap-2 rounded-full bg-sky-100 px-3 py-1 text-sm font-medium text-sky-700">
-        ● Volunteer area — healthy
+      <span className="inline-flex w-fit items-center gap-2 rounded-full border border-active/30 bg-active/15 px-3 py-1 text-[12px] font-mono font-medium uppercase tracking-[0.1em] text-active">
+        <span className="h-1.5 w-1.5 rounded-full bg-active" /> Volunteer area — healthy
       </span>
-      <h1 className="text-2xl font-semibold">LUWAS Volunteer</h1>
-      <p className="text-zinc-600">
-        Signed in as <span className="font-medium">{user.email}</span>.
+      <h1 className="font-mono text-2xl font-bold tracking-[0.15em] text-fg">LUWAS Volunteer</h1>
+      <p className="text-muted">
+        Signed in as <span className="font-medium text-fg">{user.email}</span>.
       </p>
       <form action={signOut}>
         <button
           type="submit"
-          className="w-fit rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-50"
+          className="min-h-[44px] w-fit rounded-control border border-line px-4 text-[13px] font-medium text-muted transition-colors hover:text-fg hover:bg-raised"
         >
           Sign out
         </button>

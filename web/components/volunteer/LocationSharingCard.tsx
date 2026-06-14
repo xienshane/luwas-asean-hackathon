@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { AlertTriangle, Radio } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { shouldPublish, type Fix } from '@/lib/live/position';
 
@@ -83,30 +84,51 @@ export default function LocationSharingCard() {
   };
 
   return (
-    <section className="flex flex-col gap-2 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="font-medium">Share my location with HQ</h2>
-          <p className="text-xs text-zinc-500">
+    <section className="flex flex-col overflow-hidden rounded-card border border-line bg-surface">
+      {/* Panel header — matches the Field Report panel */}
+      <div className="flex items-center gap-2 border-b border-line px-4 py-3">
+        <span className="relative flex h-4 w-4 items-center justify-center">
+          <Radio className={`h-4 w-4 ${enabled ? 'text-active' : 'text-muted'}`} />
+          {enabled && (
+            <span className="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-active/70" />
+          )}
+        </span>
+        <h2 className="text-[13px] font-mono font-semibold uppercase tracking-[0.15em] text-fg">
+          Live Location
+        </h2>
+      </div>
+
+      {/* Body */}
+      <div className="flex flex-col gap-3 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[12px] leading-relaxed text-muted">
             Only coordinators can see it. Your latest position replaces the previous one — no
             history is kept.
           </p>
+          <button
+            type="button"
+            onClick={toggle}
+            aria-pressed={enabled}
+            className={`min-h-[44px] shrink-0 rounded-control px-4 text-[12px] font-semibold uppercase tracking-[0.1em] transition-colors ${
+              enabled
+                ? 'border border-active/30 bg-active/15 text-active'
+                : 'border border-line bg-raised text-muted hover:text-fg'
+            }`}
+          >
+            {enabled ? 'On' : 'Off'}
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={toggle}
-          aria-pressed={enabled}
-          className={`rounded-full px-4 py-1.5 text-sm font-semibold ${
-            enabled ? 'bg-emerald-600 text-white' : 'bg-zinc-200 text-zinc-700'
-          }`}
-        >
-          {enabled ? 'Sharing on' : 'Sharing off'}
-        </button>
+        {enabled && lastSentAt && (
+          <p className="font-mono text-[12px] tabular-nums text-muted">
+            Last position sent {lastSentAt}.
+          </p>
+        )}
+        {error && (
+          <p className="flex items-center gap-2 text-[12px] text-critical">
+            <AlertTriangle className="h-3.5 w-3.5" /> {error}
+          </p>
+        )}
       </div>
-      {enabled && lastSentAt && (
-        <p className="text-xs text-zinc-500">Last position sent at {lastSentAt}.</p>
-      )}
-      {error && <p className="text-xs text-red-700">{error}</p>}
     </section>
   );
 }

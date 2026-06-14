@@ -1,13 +1,20 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDown,
+  CloudOff,
+  LocateFixed,
+  Loader2,
+  MapPin,
+  Route,
+  Send,
+  Users,
+} from 'lucide-react';
 import type { NeedsSeverity, RoadStatus } from '@/lib/types/parse';
-
-interface BarangayOption {
-  id: string;
-  name: string;
-  city_municipality: string | null;
-}
+import BarangayPicker, { type BarangayOption } from './BarangayPicker';
 
 type SubmitState =
   | { kind: 'idle' }
@@ -22,6 +29,42 @@ const QUEUED_COUNT_KEY = 'luwas-queued-reports';
 function readQueuedCount(): number {
   if (typeof window === 'undefined') return 0;
   return Number(window.localStorage.getItem(QUEUED_COUNT_KEY) ?? '0') || 0;
+}
+
+// ── Shared token-based classes (mirror the coordinator command-center) ──────
+const control =
+  'w-full rounded-control bg-raised border border-line px-3 py-2.5 text-base text-fg ' +
+  'placeholder:text-muted/50 focus:outline-none focus:border-teal-500 ' +
+  'focus:ring-1 focus:ring-teal-500/30 transition-colors';
+
+function Field({
+  icon: Icon,
+  label,
+  children,
+}: {
+  icon?: React.ElementType;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 flex items-center gap-1.5 text-[10px] font-mono font-semibold uppercase tracking-[0.15em] text-muted">
+        {Icon && <Icon className="h-3 w-3" />} {label}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+// Native <select> keeps the OS picker on mobile (best touch UX); we hide the OS
+// arrow and draw our own chevron so the closed control stays on-theme.
+function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <div className="relative">
+      <select {...props} className={`${control} cursor-pointer appearance-none pr-9`} />
+      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+    </div>
+  );
 }
 
 export default function ReportForm({ barangays }: { barangays: BarangayOption[] }) {
@@ -109,101 +152,117 @@ export default function ReportForm({ barangays }: { barangays: BarangayOption[] 
     }
   };
 
-  const field = 'w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm';
+  const sending = state.kind === 'sending';
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-3 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-      <h2 className="font-medium">Field report</h2>
-
-      <label className="text-sm">
-        <span className="mb-1 block text-zinc-600">Barangay</span>
-        <select value={barangayId} onChange={(e) => setBarangayId(e.target.value)} className={field} required>
-          <option value="">Select barangay…</option>
-          {barangays.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-              {b.city_municipality ? ` — ${b.city_municipality}` : ''}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <div className="grid grid-cols-2 gap-3">
-        <label className="text-sm">
-          <span className="mb-1 block text-zinc-600">Needs severity</span>
-          <select value={severity} onChange={(e) => setSeverity(e.target.value as NeedsSeverity)} className={field}>
-            <option value="low">Low</option>
-            <option value="moderate">Moderate</option>
-            <option value="high">High</option>
-            <option value="critical">Critical</option>
-          </select>
-        </label>
-        <label className="text-sm">
-          <span className="mb-1 block text-zinc-600">Road status</span>
-          <select value={roadStatus} onChange={(e) => setRoadStatus(e.target.value as RoadStatus)} className={field}>
-            <option value="unknown">Unknown</option>
-            <option value="passable">Passable</option>
-            <option value="impassable">Impassable</option>
-          </select>
-        </label>
+    <form
+      onSubmit={submit}
+      className="flex flex-col overflow-hidden rounded-card border border-line bg-surface"
+    >
+      {/* Panel header */}
+      <div className="flex items-center gap-2 border-b border-line px-4 py-3">
+        <Send className="h-4 w-4 text-teal-400" />
+        <h2 className="text-[13px] font-mono font-semibold uppercase tracking-[0.15em] text-fg">
+          Field Report
+        </h2>
       </div>
 
-      <label className="text-sm">
-        <span className="mb-1 block text-zinc-600">People affected (estimate)</span>
-        <input
-          type="number"
-          min="0"
-          inputMode="numeric"
-          value={population}
-          onChange={(e) => setPopulation(e.target.value)}
-          className={field}
-          placeholder="e.g. 120"
-        />
-      </label>
+      {/* Body */}
+      <div className="flex flex-col gap-4 p-4">
+        <Field icon={MapPin} label="Barangay">
+          <BarangayPicker options={barangays} value={barangayId} onChange={setBarangayId} />
+        </Field>
 
-      <label className="text-sm">
-        <span className="mb-1 block text-zinc-600">What is happening?</span>
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={3}
-          maxLength={2000}
-          className={field}
-          placeholder="Flooding near the chapel, families on roofs…"
-        />
-      </label>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <Field icon={AlertTriangle} label="Severity">
+            <Select value={severity} onChange={(e) => setSeverity(e.target.value as NeedsSeverity)}>
+              <option value="low">Low</option>
+              <option value="moderate">Moderate</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </Select>
+          </Field>
+          <Field icon={Route} label="Road">
+            <Select value={roadStatus} onChange={(e) => setRoadStatus(e.target.value as RoadStatus)}>
+              <option value="unknown">Unknown</option>
+              <option value="passable">Passable</option>
+              <option value="impassable">Impassable</option>
+            </Select>
+          </Field>
+          <Field icon={Users} label="People affected">
+            <input
+              type="number"
+              min="0"
+              inputMode="numeric"
+              value={population}
+              onChange={(e) => setPopulation(e.target.value)}
+              className={`${control} tabular-nums`}
+              placeholder="e.g. 120"
+            />
+          </Field>
+        </div>
 
-      <div className="flex items-center gap-2 text-sm">
+        <Field label="What is happening?">
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+            maxLength={2000}
+            className={`${control} resize-none`}
+            placeholder="Flooding near the chapel, families on roofs…"
+          />
+        </Field>
+
+        {/* GPS capture */}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={captureGps}
+            className="flex min-h-[44px] shrink-0 items-center gap-2 rounded-control border border-line bg-raised px-3 text-[13px] font-medium text-fg transition-colors hover:border-teal-600/50 hover:text-teal-300"
+          >
+            <LocateFixed className="h-4 w-4" />
+            {gps ? 'Update GPS' : 'Attach GPS'}
+          </button>
+          <span className="min-w-0 truncate font-mono text-[12px] tabular-nums text-muted">
+            {gps
+              ? `${gps.lat.toFixed(4)}, ${gps.lng.toFixed(4)}`
+              : gpsError ?? 'optional — centroid used otherwise'}
+          </span>
+        </div>
+      </div>
+
+      {/* Footer / action zone */}
+      <div className="flex flex-col gap-3 border-t border-line p-4">
         <button
-          type="button"
-          onClick={captureGps}
-          className="rounded-md border border-zinc-300 px-3 py-1.5 font-medium hover:bg-zinc-100"
+          type="submit"
+          disabled={sending}
+          className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-control bg-teal-700 px-4 text-[13px] font-semibold uppercase tracking-[0.1em] text-teal-50 transition-colors hover:bg-teal-600 disabled:opacity-50"
         >
-          {gps ? 'Update GPS fix' : 'Attach GPS fix'}
+          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          {sending ? 'Submitting…' : 'Submit report'}
         </button>
-        <span className="text-zinc-500">
-          {gps ? `${gps.lat.toFixed(4)}, ${gps.lng.toFixed(4)}` : gpsError ?? 'optional — barangay centroid used otherwise'}
-        </span>
+
+        {state.kind === 'sent' && (
+          <p className="flex items-center gap-2 text-[13px] text-active">
+            <CheckCircle2 className="h-4 w-4" /> Report submitted.
+          </p>
+        )}
+        {state.kind === 'queued' && (
+          <p className="flex items-center gap-2 text-[13px] text-warning">
+            <CloudOff className="h-4 w-4" /> Saved offline — syncs automatically on reconnect.
+          </p>
+        )}
+        {state.kind === 'error' && (
+          <p className="flex items-center gap-2 text-[13px] text-critical">
+            <AlertTriangle className="h-4 w-4" /> {state.message}
+          </p>
+        )}
+        {queued > 0 && (
+          <p className="font-mono text-[12px] tabular-nums text-muted">
+            {queued} report{queued > 1 ? 's' : ''} waiting to sync.
+          </p>
+        )}
       </div>
-
-      <button
-        type="submit"
-        disabled={state.kind === 'sending'}
-        className="mt-1 rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
-      >
-        {state.kind === 'sending' ? 'Submitting…' : 'Submit report'}
-      </button>
-
-      {state.kind === 'sent' && <p className="text-sm text-emerald-700">Report submitted.</p>}
-      {state.kind === 'queued' && (
-        <p className="text-sm text-amber-700">Saved offline — will sync automatically when you reconnect.</p>
-      )}
-      {state.kind === 'error' && <p className="text-sm text-red-700">{state.message}</p>}
-      {queued > 0 && (
-        <p className="text-xs text-zinc-500">
-          {queued} report{queued > 1 ? 's' : ''} waiting to sync.
-        </p>
-      )}
     </form>
   );
 }

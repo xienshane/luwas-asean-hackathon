@@ -4,7 +4,7 @@ export default function VolunteerLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <div className="min-h-dvh bg-zinc-50">
+    <div className="min-h-dvh bg-bg text-fg">
       {children}
       <ServiceWorkerRegistrar />
     </div>

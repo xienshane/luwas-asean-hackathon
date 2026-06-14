@@ -36,8 +36,44 @@
   color-scheme: dark;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   background-color: var(--color-bg);
   color: var(--color-fg);
   font-family: var(--font-sans);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Themed scrollbars — match the command-center surfaces so page scroll and
+   open <select> lists stay on-theme instead of flashing default light chrome.
+   ───────────────────────────────────────────────────────────────────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-raised) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--color-raised);
+  border: 2px solid var(--color-bg);
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #2a3954;
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Native select dark popup + remove the OS arrow (we draw our own chevron). */
+select {
+  color-scheme: dark;
 }
