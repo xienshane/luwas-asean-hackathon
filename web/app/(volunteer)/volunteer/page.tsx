@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { signOut } from '@/app/login/actions';
 import ReportForm from '@/components/volunteer/ReportForm';
+import LocationSharingCard from '@/components/volunteer/LocationSharingCard';
 
 export const metadata = {
   title: 'LUWAS — Volunteer',
@@ -40,6 +41,7 @@ export default async function VolunteerPage() {
       </header>
 
       <ReportForm barangays={barangays ?? []} />
+      <LocationSharingCard />
     </main>
   );
 }
