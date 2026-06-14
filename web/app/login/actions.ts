@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { fetchUserRole, resolveDestination } from '@/lib/auth/roles'
 
 export async function login(formData: FormData) {
   const supabase = await createClient()
@@ -10,15 +11,19 @@ export async function login(formData: FormData) {
   const email = String(formData.get('email') ?? '')
   const password = String(formData.get('password') ?? '')
   const redirectedFrom = String(formData.get('redirectedFrom') ?? '')
-  const destination = redirectedFrom || '/coordinator'
 
-  const { error } = await supabase.auth.signInWithPassword({ email, password })
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
 
   if (error) {
     const params = new URLSearchParams({ error: error.message })
     if (redirectedFrom) params.set('redirectedFrom', redirectedFrom)
     redirect(`/login?${params.toString()}`)
   }
+
+  // Route by the user's role — never blanket-default to /coordinator. A volunteer
+  // is confined to the volunteer area even if redirectedFrom points elsewhere.
+  const role = await fetchUserRole(supabase, data.user!.id)
+  const destination = resolveDestination(role ?? 'volunteer', redirectedFrom)
 
   revalidatePath('/', 'layout')
   redirect(destination)
