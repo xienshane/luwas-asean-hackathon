@@ -9,8 +9,8 @@ import {
   AlertOctagon,
   X,
 } from 'lucide-react';
-import type { Barangay, FieldReport, Team, RoadEdge, Route } from '@/lib/types/coordinator';
-import { mockLocationHubs, mockVolunteers } from '@/lib/mockData';
+import type { Barangay, FieldReport, Team, RoadEdge, Route, Volunteer } from '@/lib/types/coordinator';
+import { mockLocationHubs } from '@/lib/mockData';
 import { COLOR, silentAreaState, STATE_COLOR, STATE_LABEL } from './ui';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -28,6 +28,7 @@ interface InteractiveCommandMapProps {
   teams: Team[];
   edges: RoadEdge[];
   routes: Route[];
+  volunteers: Volunteer[];
   selectedBarangay: Barangay | null;
   onSelectBarangay: (b: Barangay) => void;
   selectedReport: FieldReport | null;
@@ -83,6 +84,7 @@ export default function InteractiveCommandMap({
   teams,
   edges,
   routes,
+  volunteers,
   selectedBarangay,
   onSelectBarangay,
   selectedReport,
@@ -1250,7 +1252,7 @@ export default function InteractiveCommandMap({
 
     if (!mapLayers.volunteers) return;
 
-    mockVolunteers.forEach((vol) => {
+    volunteers.forEach((vol) => {
       const fill = volColor(vol.availability);
       const el = document.createElement('div');
       el.className = 'cursor-pointer';
@@ -1302,7 +1304,7 @@ export default function InteractiveCommandMap({
 
       volunteerMarkersRef.current.push(marker);
     });
-  }, [isMapLoaded, mapLayers.volunteers]);
+  }, [isMapLoaded, mapLayers.volunteers, volunteers]);
 
   // ── Interactive Hub Markers (SVGs categorized by Hub Type) ──
   useEffect(() => {
