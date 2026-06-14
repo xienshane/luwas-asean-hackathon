@@ -107,6 +107,29 @@ npm --prefix web install
 npm --prefix web run dev   # http://localhost:3000
 ```
 
+#### Volunteer PWA + SMS demo (Phases 3.2–3.4)
+
+The volunteer app at `/volunteer` is an installable PWA. The service worker only
+runs in production builds: `npm --prefix web run build && npm --prefix web run start`,
+then test offline submissions via DevTools → Network → Offline (reports queue with
+Background Sync and upload on reconnect, flagged `offline_synced` for coordinators).
+
+Web env additions (see `.env.example`): `SUPABASE_SERVICE_ROLE_KEY` (SMS webhook
+inserts) and `SMS_WEBHOOK_SECRET` (webhook auth token).
+
+Simulate an inbound SMS (no shortcode needed — `/api/sms/mock` wraps the text in a
+Semaphore-style payload and runs the real `/api/sms` pipeline: SEA-LION parse →
+barangay geocode → `field_reports` insert → realtime map pin):
+
+```bash
+curl -X POST "http://localhost:3000/api/sms/mock?token=$SMS_WEBHOOK_SECRET" \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"LUWAS: grabe ang baha sa Guadalupe, mga 80 ka pamilya ang apektado"}'
+```
+
+Volunteer live tracking: toggle "Share my location with HQ" on `/volunteer`
+(records consent), then watch the volunteers layer on the coordinator map.
+
 ### AI services — Phase 2.2 impact predictor
 
 `ai-services/` is one FastAPI app (deploys as a single Hugging Face Space, Docker SDK).
