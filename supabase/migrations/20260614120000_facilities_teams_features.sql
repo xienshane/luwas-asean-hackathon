@@ -58,3 +58,27 @@ with (security_invoker = true) as
          st_x(t.base_location) as base_lng
     from public.teams t;
 grant select on public.coordinator_teams to authenticated;
+
+-- 3 ─ province_impact_features: per-province TabPFN scale/vulnerability features,
+--     derived from HDX exactly as the Phase 1.3 training table built them.
+--       structural_vuln_frac  = 1 - strong_roof_strong_wall / housing_units
+--       unimproved_water_frac = (natural_sources + peddler_others_not_reported) / households
+create or replace view public.province_impact_features as
+  select h.province,
+         sum(h.housing_units)::bigint                         as province_housing_units,
+         (1.0 - sum(h.strong_roof_strong_wall)::double precision
+                  / nullif(sum(h.housing_units), 0))          as structural_vuln_frac,
+         w.province_households,
+         w.unimproved_water_frac
+    from public.hdx_housing_type h
+    join (
+      select province,
+             sum(number_of_households)::bigint                as province_households,
+             ((sum(natural_sources) + sum(peddler_others_not_reported))::double precision
+                / nullif(sum(number_of_households), 0))       as unimproved_water_frac
+        from public.hdx_water_access
+       group by province
+    ) w on w.province = h.province
+   group by h.province, w.province_households, w.unimproved_water_frac;
+
+grant select on public.province_impact_features to authenticated, service_role;
