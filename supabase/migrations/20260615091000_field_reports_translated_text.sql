@@ -13,8 +13,10 @@ alter table public.field_reports
 comment on column public.field_reports.translated_text is
   'English translation of raw_text (null if already English or not yet translated).';
 
--- Re-create the coordinator read model to surface translated_text.
-create or replace view public.coordinator_field_reports
+-- Re-create the coordinator read model to surface translated_text. Dropped first
+-- because CREATE OR REPLACE VIEW cannot insert a column mid-list (only append).
+drop view if exists public.coordinator_field_reports;
+create view public.coordinator_field_reports
 with (security_invoker = true) as
   select fr.id,
          fr.barangay_id,
