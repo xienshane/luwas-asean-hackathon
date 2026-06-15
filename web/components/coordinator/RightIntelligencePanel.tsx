@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import type { Barangay, ImpactPrediction, SupplyManifest, Team, Route } from '@/lib/types/coordinator';
-import { mockLocationHubs, mockHistoricalIncidents, getSphereManifest } from '@/lib/mockData';
+import type { Barangay, ImpactPrediction, SupplyManifest, Team, Route, LocationHub } from '@/lib/types/coordinator';
 import { DetailPanel, silentAreaState, STATE_LABEL, STATE_COLOR } from './ui';
 
 interface RightIntelligencePanelProps {
@@ -12,6 +11,7 @@ interface RightIntelligencePanelProps {
   scores: { barangayId: string; score: number; hoursSinceContact: number | null }[];
   prediction: ImpactPrediction | undefined;
   manifest: SupplyManifest | undefined;
+  facilities?: LocationHub[];
   teams: Team[];
   routes: Route[];
   onSaveOverrides: (
@@ -31,6 +31,7 @@ export default function RightIntelligencePanel({
   scores,
   prediction,
   manifest,
+  facilities,
   teams,
   onSaveOverrides,
   onUpdateManifestStatus,
@@ -65,7 +66,6 @@ export default function RightIntelligencePanel({
   const state = silentAreaState(selectedScore.score);
 
   const isAffectedOverridden = prediction?.overrideValue !== null && prediction?.overrideValue !== undefined;
-  const effectiveAffected = isAffectedOverridden ? prediction!.overrideValue! : prediction?.predictedAffected || 0;
 
   const manifestOverrides =
     manifest?.overridden && typeof manifest.overridden === 'object'
@@ -78,14 +78,19 @@ export default function RightIntelligencePanel({
         })
       : undefined;
 
-  const sphereBaseline = getSphereManifest(selectedBarangay.id, effectiveAffected);
-  const finalWater = manifestOverrides?.waterL ?? sphereBaseline.waterL.recommended;
-  const finalFood = manifestOverrides?.foodPacks ?? sphereBaseline.foodPacks.recommended;
-  const finalHygiene = manifestOverrides?.hygieneKits ?? sphereBaseline.hygieneKits.recommended;
-  const finalMedical = manifestOverrides?.medicalSupplies ?? sphereBaseline.medicalSupplies.recommended;
-  const finalShelter = manifestOverrides?.shelterMaterials ?? sphereBaseline.shelterMaterials.recommended;
-
-  const historicalIncidents = mockHistoricalIncidents[selectedBarangay.id] || [];
+  // Supply figures come from the live Sphere manifest (pipeline output via coordinator_supply_manifests);
+  // empty until a report is confirmed for this barangay. Coordinator overrides still layer on top.
+  const EMPTY_ITEM = { recommended: 0, inventory: 0, shortfall: 0 };
+  const water = manifest?.waterL ?? EMPTY_ITEM;
+  const food = manifest?.foodPacks ?? EMPTY_ITEM;
+  const hygiene = manifest?.hygieneKits ?? EMPTY_ITEM;
+  const medical = manifest?.medicalSupplies ?? EMPTY_ITEM;
+  const shelter = manifest?.shelterMaterials ?? EMPTY_ITEM;
+  const finalWater = manifestOverrides?.waterL ?? water.recommended;
+  const finalFood = manifestOverrides?.foodPacks ?? food.recommended;
+  const finalHygiene = manifestOverrides?.hygieneKits ?? hygiene.recommended;
+  const finalMedical = manifestOverrides?.medicalSupplies ?? medical.recommended;
+  const finalShelter = manifestOverrides?.shelterMaterials ?? shelter.recommended;
 
   const handleSaveOverrides = () => {
     const overrideVal = affectedInput.trim() === '' ? null : parseInt(affectedInput, 10);
@@ -113,11 +118,11 @@ export default function RightIntelligencePanel({
   ];
 
   const supplyRows = [
-    { label: 'Clean water', value: finalWater, unit: 'L', inv: sphereBaseline.waterL.inventory },
-    { label: 'Food packs', value: finalFood, unit: 'packs', inv: sphereBaseline.foodPacks.inventory },
-    { label: 'Hygiene kits', value: finalHygiene, unit: 'kits', inv: sphereBaseline.hygieneKits.inventory },
-    { label: 'Medical', value: finalMedical, unit: 'packs', inv: sphereBaseline.medicalSupplies.inventory },
-    { label: 'Shelter', value: finalShelter, unit: 'units', inv: sphereBaseline.shelterMaterials.inventory },
+    { label: 'Clean water', value: finalWater, unit: 'L', inv: water.inventory },
+    { label: 'Food packs', value: finalFood, unit: 'packs', inv: food.inventory },
+    { label: 'Hygiene kits', value: finalHygiene, unit: 'kits', inv: hygiene.inventory },
+    { label: 'Medical', value: finalMedical, unit: 'packs', inv: medical.inventory },
+    { label: 'Shelter', value: finalShelter, unit: 'units', inv: shelter.inventory },
   ];
 
   const dispatchableTeams = teams.filter((t) => t.status === 'active' || t.status === 'idle');
@@ -209,35 +214,16 @@ export default function RightIntelligencePanel({
               )}
             </div>
 
-            {historicalIncidents.length > 0 && (
-              <div className="border-t border-line pt-3">
-                <div className="text-[12px] text-muted mb-2">Historical incidents</div>
-                <div className="space-y-2">
-                  {historicalIncidents.map((inc) => (
-                    <div key={inc.id} className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="text-fg">
-                          <span className="font-mono tabular-nums text-muted mr-1.5">{inc.year}</span>
-                          {inc.event}
-                        </div>
-                        <div className="text-[12px] text-muted">{inc.affectedCount.toLocaleString()} affected</div>
-                      </div>
-                      <span className="text-[12px] text-muted capitalize shrink-0">{inc.damageSeverity}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </>
         )}
 
         {/* ── Supplies ── */}
         {drawerTab === 'supplies' && (
           <>
-            {!prediction && (
+            {!manifest && (
               <div className="rounded-control border border-line bg-raised/30 px-3 py-2 text-[12px] text-muted leading-relaxed">
-                No impact prediction yet — these Sphere figures populate once TabPFN estimates
-                affected population (Phase 4). Coordinator overrides below still apply.
+                No manifest yet — confirm a report to run the pipeline (TabPFN → Sphere) and
+                generate one. Coordinator overrides below still apply.
               </div>
             )}
             <div className="flex items-center justify-between text-[12px] text-muted">
@@ -273,10 +259,10 @@ export default function RightIntelligencePanel({
                 <div className="space-y-2.5">
                   <Field label="Affected population" value={affectedInput} onChange={setAffectedInput} placeholder={prediction?.predictedAffected.toString()} />
                   <div className="grid grid-cols-2 gap-2.5">
-                    <Field label="Water (L)" value={waterInput} onChange={setWaterInput} placeholder={sphereBaseline.waterL.recommended.toString()} />
-                    <Field label="Food (packs)" value={foodInput} onChange={setFoodInput} placeholder={sphereBaseline.foodPacks.recommended.toString()} />
-                    <Field label="Hygiene (kits)" value={hygieneInput} onChange={setHygieneInput} placeholder={sphereBaseline.hygieneKits.recommended.toString()} />
-                    <Field label="Shelter (units)" value={shelterInput} onChange={setShelterInput} placeholder={sphereBaseline.shelterMaterials.recommended.toString()} />
+                    <Field label="Water (L)" value={waterInput} onChange={setWaterInput} placeholder={water.recommended.toString()} />
+                    <Field label="Food (packs)" value={foodInput} onChange={setFoodInput} placeholder={food.recommended.toString()} />
+                    <Field label="Hygiene (kits)" value={hygieneInput} onChange={setHygieneInput} placeholder={hygiene.recommended.toString()} />
+                    <Field label="Shelter (units)" value={shelterInput} onChange={setShelterInput} placeholder={shelter.recommended.toString()} />
                   </div>
                   <button
                     onClick={handleSaveOverrides}
@@ -311,10 +297,10 @@ export default function RightIntelligencePanel({
             <div>
               <div className="text-[12px] text-muted mb-2">Nearest logistics hubs</div>
               <div className="space-y-1.5">
-                {mockLocationHubs.slice(0, 2).map((hub) => (
+                {(facilities ?? []).slice(0, 2).map((hub) => (
                   <div key={hub.id} className="flex items-center justify-between">
                     <span className="text-fg truncate">{hub.name}</span>
-                    <span className="text-[12px] text-muted font-mono tabular-nums shrink-0">{hub.capacityPercent}%</span>
+                    <span className="text-[12px] text-muted font-mono tabular-nums shrink-0">{hub.capacityPercent ? `${hub.capacityPercent}%` : '—'}</span>
                   </div>
                 ))}
               </div>
