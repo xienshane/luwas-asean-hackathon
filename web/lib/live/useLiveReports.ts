@@ -10,7 +10,7 @@ import {
   type DbFieldReport,
 } from './adapters';
 
-// Feeds real field_reports into the dashboard's existing mock-driven state:
+// Feeds live field_reports into the dashboard's report state:
 // initial fetch (last 100) + a realtime channel for INSERT/UPDATE.
 // setReports is a useState setter — stable identity, safe in the dep array.
 export function useLiveReports(

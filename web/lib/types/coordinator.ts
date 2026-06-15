@@ -24,7 +24,7 @@ export interface Barangay {
   // Real barangay boundary (GeoJSON) for the map fill; absent → map falls back to a
   // centroid hexagon.
   boundary?: BoundaryGeometry;
-  // Not rendered anywhere today; optional so demo fixtures may still set them.
+  // Not rendered anywhere today; optional extras a data source may populate later.
   areaKm2?: number;
   hazardDetails?: {
     flood: number;

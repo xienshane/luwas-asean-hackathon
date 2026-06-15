@@ -10,6 +10,12 @@ import { normalizeSemaphorePayload, type SemaphoreInboundPayload } from '@/lib/s
 //        -H 'Content-Type: application/json' \
 //        -d '{"message":"LUWAS baha sa Guadalupe, mga 80 ka pamilya"}'
 export async function POST(request: Request) {
+  // Demo-only endpoint: 404 in production unless explicitly enabled. The real
+  // inbound webhook is app/api/sms; this simulator must never run live.
+  if (process.env.ENABLE_SMS_MOCK !== 'true') {
+    return Response.json({ error: 'not found' }, { status: 404 });
+  }
+
   const token = new URL(request.url).searchParams.get('token');
   if (!process.env.SMS_WEBHOOK_SECRET || token !== process.env.SMS_WEBHOOK_SECRET) {
     return Response.json({ error: 'unauthorized' }, { status: 401 });
