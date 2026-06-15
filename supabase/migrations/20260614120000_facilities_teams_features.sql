@@ -45,3 +45,16 @@ with (security_invoker = true) as
 grant select on public.coordinator_facilities to authenticated;
 
 -- ===== A2/A3 APPEND BELOW THIS LINE =====
+
+-- 2 ─ teams: vehicle type + ensure base_location for routing.
+alter table public.teams
+  add column if not exists type text not null default '4x4'
+    check (type in ('truck', '4x4', 'boat', 'ambulance'));
+
+create or replace view public.coordinator_teams
+with (security_invoker = true) as
+  select t.id, t.name, t.capacity_kg, t.status, t.type,
+         st_y(t.base_location) as base_lat,
+         st_x(t.base_location) as base_lng
+    from public.teams t;
+grant select on public.coordinator_teams to authenticated;

@@ -13,3 +13,18 @@ insert into public.facilities (id, name, kind, geom, is_depot) values
   ('d0000000-0000-0000-0000-000000000005', 'Mandaue City Hall (north hub)', 'warehouse',
      ST_SetSRID(ST_MakePoint(123.9223, 10.3242), 4326), false)
 on conflict (id) do nothing;
+
+-- Real response teams, based at the depot (PDRRMO). Existing Team Sugbo gets a base + type.
+update public.teams
+   set base_location = (select geom from public.facilities where is_depot limit 1),
+       type = '4x4'
+ where name = 'Team Sugbo';
+
+insert into public.teams (id, name, capacity_kg, status, type, base_location) values
+  ('b0000000-0000-0000-0000-000000000002', 'Logistics Truck 1', 5000, 'idle', 'truck',
+     (select geom from public.facilities where is_depot limit 1)),
+  ('b0000000-0000-0000-0000-000000000003', 'Water Rescue Boat 1', 800, 'idle', 'boat',
+     (select geom from public.facilities where is_depot limit 1)),
+  ('b0000000-0000-0000-0000-000000000004', 'Medic Ambulance 1', 400, 'idle', 'ambulance',
+     (select geom from public.facilities where is_depot limit 1))
+on conflict (id) do nothing;
