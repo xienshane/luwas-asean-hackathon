@@ -6,7 +6,7 @@ import {
   FileText,
   Truck,
   Package,
-  AlertOctagon,
+  RotateCcw,
   PanelLeftOpen,
   PanelLeftClose,
   LogOut,
@@ -21,7 +21,7 @@ interface LeftSidebarProps {
   onViewChange: (view: string) => void;
   reportsCount: number;
   highPriorityCount: number;
-  onCreateIncident: () => void;
+  onReset: () => void;
   onLogout?: () => void;
 }
 
@@ -38,7 +38,7 @@ export default function LeftSidebar({
   onViewChange,
   reportsCount,
   highPriorityCount,
-  onCreateIncident,
+  onReset,
   onLogout,
 }: LeftSidebarProps) {
   // Icon rail by default — the map is the product; chrome stays out of the way.
@@ -130,14 +130,14 @@ export default function LeftSidebar({
         {/* Bottom: emergency action + profile + logout */}
         <div className="border-t border-line p-2 space-y-2">
           <button
-            onClick={onCreateIncident}
-            title="Create Incident"
+            onClick={onReset}
+            title="Reset to scratch"
             className={`w-full flex items-center rounded-control border border-critical/30 text-critical hover:bg-critical/10 transition-colors duration-100 cursor-pointer ${
               collapsed ? 'justify-center py-2.5' : 'gap-2 px-2.5 py-2 text-[13px] font-medium'
             }`}
           >
-            <AlertOctagon className="w-[18px] h-[18px] shrink-0" />
-            {!collapsed && <span>Create Incident</span>}
+            <RotateCcw className="w-[18px] h-[18px] shrink-0" />
+            {!collapsed && <span>Reset</span>}
           </button>
 
           {!collapsed && (

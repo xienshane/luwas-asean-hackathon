@@ -279,10 +279,35 @@ export default function CommandDashboard() {
     ]);
   };
 
-  // Pinned emergency action triggers
-  const handleCreateIncident = () => {
-    addActivityLog('OPERATIONS: New emergency incident manually logged in Cebu command table.', 'alert');
-    alert('LUWAS Action: Incident creation form triggered. NGO logs updated.');
+  // Reset / Clear to scratch — wipe reports + derived plans + GPS and restore the
+  // map to a clean demo state (accounts + base data kept). Confirmed via a modal.
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const handleReset = () => setShowResetConfirm(true);
+
+  const confirmReset = async () => {
+    setResetting(true);
+    try {
+      const res = await fetch('/api/reset', { method: 'POST' });
+      if (!res.ok) throw new Error(`reset ${res.status}`);
+      // Clear operational state locally; base map data is refetched (rescore changed it).
+      setReports([]);
+      setRoutes([]);
+      setPredictions({});
+      setManifests({});
+      setSelectedReport(null);
+      setSelectedBarangay(null);
+      const [map, e] = await Promise.all([fetchCoordinatorMapData(), fetchRoadStatus()]);
+      setBarangays(map.barangays);
+      setScores(map.scores);
+      setEdges(e);
+      addActivityLog('OPERATIONS: Cleared all reports and generated plans. Accounts and base data kept.', 'alert');
+    } catch {
+      addActivityLog('OPERATIONS: Reset failed.', 'alert');
+    } finally {
+      setResetting(false);
+      setShowResetConfirm(false);
+    }
   };
 
   const handleClearBarangaySelection = () => {
@@ -333,7 +358,7 @@ const ResizeHandle = () => (
         onViewChange={setCurrentView}
         reportsCount={reportsCount}
         highPriorityCount={highPriorityCount}
-        onCreateIncident={handleCreateIncident}
+        onReset={handleReset}
         // onBroadcastAlert={() => {}}
         // onExportReport={() => {}}
       />
@@ -430,6 +455,38 @@ const ResizeHandle = () => (
         )}
 
       </div>
+
+      {/* Reset confirmation — destructive, irreversible without reseeding. */}
+      {showResetConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-surface border border-line rounded-card max-w-md w-full mx-4 overflow-hidden">
+            <div className="px-5 py-4 border-b border-line">
+              <h3 className="text-[17px] font-medium text-fg">Reset to scratch</h3>
+              <p className="text-[13px] text-muted mt-1">This cannot be undone.</p>
+            </div>
+            <div className="px-5 py-4 text-[14px] text-muted">
+              Clears all reports and generated plans (predictions, manifests, routes, volunteer
+              positions) and un-blocks every road. Accounts and base map data are kept.
+            </div>
+            <div className="px-5 py-4 border-t border-line flex gap-2 justify-end">
+              <button
+                onClick={() => setShowResetConfirm(false)}
+                disabled={resetting}
+                className="px-4 py-2 text-[13px] text-muted hover:text-fg border border-line rounded-control transition-colors duration-100 cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmReset}
+                disabled={resetting}
+                className="px-4 py-2 text-[13px] font-medium text-critical bg-critical/10 hover:bg-critical/20 border border-critical/30 rounded-control transition-colors duration-100 cursor-pointer disabled:opacity-50"
+              >
+                {resetting ? 'Resetting…' : 'Reset'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
