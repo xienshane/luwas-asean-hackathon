@@ -289,7 +289,10 @@ export default function CommandDashboard() {
     setResetting(true);
     try {
       const res = await fetch('/api/reset', { method: 'POST' });
-      if (!res.ok) throw new Error(`reset ${res.status}`);
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(`reset ${res.status}: ${detail?.error ?? 'unknown'}`);
+      }
       // Clear operational state locally; base map data is refetched (rescore changed it).
       setReports([]);
       setRoutes([]);
@@ -302,8 +305,8 @@ export default function CommandDashboard() {
       setScores(map.scores);
       setEdges(e);
       addActivityLog('OPERATIONS: Cleared all reports and generated plans. Accounts and base data kept.', 'alert');
-    } catch {
-      addActivityLog('OPERATIONS: Reset failed.', 'alert');
+    } catch (err) {
+      addActivityLog(`OPERATIONS: Reset failed — ${err instanceof Error ? err.message : 'unknown error'}.`, 'alert');
     } finally {
       setResetting(false);
       setShowResetConfirm(false);
