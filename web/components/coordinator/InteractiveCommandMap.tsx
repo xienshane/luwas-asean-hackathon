@@ -9,8 +9,7 @@ import {
   AlertOctagon,
   X,
 } from 'lucide-react';
-import type { Barangay, FieldReport, Team, RoadEdge, Route, Volunteer } from '@/lib/types/coordinator';
-import { mockLocationHubs } from '@/lib/mockData';
+import type { Barangay, FieldReport, Team, RoadEdge, Route, Volunteer, LocationHub } from '@/lib/types/coordinator';
 import { COLOR, silentAreaState, STATE_COLOR, STATE_LABEL } from './ui';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -28,6 +27,7 @@ interface InteractiveCommandMapProps {
   teams: Team[];
   edges: RoadEdge[];
   routes: Route[];
+  facilities: LocationHub[];
   volunteers: Volunteer[];
   selectedBarangay: Barangay | null;
   onSelectBarangay: (b: Barangay) => void;
@@ -84,6 +84,7 @@ export default function InteractiveCommandMap({
   teams,
   edges,
   routes,
+  facilities,
   volunteers,
   selectedBarangay,
   onSelectBarangay,
@@ -161,11 +162,11 @@ export default function InteractiveCommandMap({
     [scores],
   );
 
-  // Helper to find the nearest hub to a specific coordinate
+  // Helper to find the nearest facility hub to a specific coordinate
   const getNearestHubToCoords = useCallback((lat: number, lng: number) => {
-    let nearest = mockLocationHubs[0];
+    let nearest: LocationHub | undefined = facilities[0];
     let minDist = Infinity;
-    mockLocationHubs.forEach((hub) => {
+    facilities.forEach((hub) => {
       const dist = calculateDistanceKm(lat, lng, hub.latitude, hub.longitude);
       if (dist < minDist) {
         minDist = dist;
@@ -173,7 +174,7 @@ export default function InteractiveCommandMap({
       }
     });
     return { hub: nearest, distance: minDist };
-  }, []);
+  }, [facilities]);
 
   // ── 1. Generate Barangay Polygons ─────────────────────────────────
   const generateBarangayPolygon = useCallback((barangay: Barangay): [number, number][] => {
@@ -263,6 +264,7 @@ export default function InteractiveCommandMap({
 
     let active = true;
     const { hub } = getNearestHubToCoords(selectedReport.latitude, selectedReport.longitude);
+    if (!hub) return; // no facilities loaded yet → no depot to route from
 
     const fetchIncidentRoute = async () => {
       try {
@@ -1316,7 +1318,7 @@ export default function InteractiveCommandMap({
 
     if (!mapLayers.hubs) return;
 
-    mockLocationHubs.forEach((hub) => {
+    facilities.forEach((hub) => {
       const el = document.createElement('div');
       el.className = 'cursor-pointer';
       
@@ -1376,7 +1378,7 @@ export default function InteractiveCommandMap({
             <div class="px-2.5 py-1.5 text-[13px] font-sans">
               <div class="font-medium text-fg mb-0.5">${hub.name}</div>
               <div class="text-[12px] text-muted capitalize">Type · ${hub.type.replace('_', ' ')}</div>
-              <div class="text-[12px] text-muted mt-0.5">Capacity · <span class="text-fg font-mono tabular-nums">${hub.capacityPercent}%</span></div>
+              <div class="text-[12px] text-muted mt-0.5">Capacity · <span class="text-fg font-mono tabular-nums">${hub.capacityPercent ? `${hub.capacityPercent}%` : '—'}</span></div>
             </div>
           `)
           .addTo(map);
@@ -1392,7 +1394,7 @@ export default function InteractiveCommandMap({
 
       hubMarkersRef.current.push(marker);
     });
-  }, [isMapLoaded, mapLayers.hubs]);
+  }, [isMapLoaded, mapLayers.hubs, facilities]);
 
   // ── Sync layer visibility ──
   useEffect(() => {
