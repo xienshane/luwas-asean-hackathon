@@ -1,5 +1,5 @@
 begin;
-select plan(4);
+select plan(6);
 
 -- Two real Cebu City barangay centroids -> a 2x2 matrix with a finite off-diagonal.
 with two as (
@@ -46,6 +46,28 @@ select ok(
   (select count(*) from public.impact_predictions
      where barangay_id = (select id from public.barangays where geom is not null limit 1)) = 1,
   'upsert keeps one current prediction per barangay'
+);
+
+-- Build a 2-vertex real-road route and confirm it persists with sane geometry.
+with two as (
+  select array_agg(vid) vids from (
+    select (select v.id from public.road_edges_vertices_pgr v
+              order by v.the_geom <-> b.centroid limit 1) vid
+      from public.barangays b
+     where b.city_municipality ilike 'cebu city%' and b.population is not null
+     order by b.population desc limit 2) s
+),
+saved as (
+  select public.pipeline_save_route(
+    (select id from public.teams limit 1),
+    '[{"barangay_name":"test"}]'::jsonb,
+    (select vids from two)) as route_id
+)
+select ok((select route_id from saved) is not null, 'pipeline_save_route returns a route id');
+
+select ok(
+  (select total_distance_m from public.routes order by created_at desc limit 1) > 0,
+  'persisted route has positive real-road length'
 );
 
 select * from finish();

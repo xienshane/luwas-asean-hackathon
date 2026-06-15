@@ -89,3 +89,69 @@ revoke execute on function public.pipeline_cost_matrix(jsonb, numeric) from publ
 grant  execute on function public.pipeline_cost_matrix(jsonb, numeric) to service_role;
 
 -- ===== A6 APPENDS pipeline_save_route BELOW =====
+
+-- Build a road-following LineString through the ordered vids (leg-by-leg
+-- pgr_dijkstra), then insert a planned route. Returns the new route id.
+-- routes.geom is geometry(LineString,4326), so the assembled geometry MUST be a
+-- single LineString: we ST_LineMerge each leg, normalise any stray
+-- MultiLineString into its parts, and concatenate everything with ST_MakeLine
+-- (which always yields one LineString, preserving leg order).
+create or replace function public.pipeline_save_route(
+  p_team_id uuid,
+  p_stops   jsonb,
+  p_vids    bigint[]
+) returns uuid
+language plpgsql
+security definer
+set search_path = public, extensions, pg_temp
+as $$
+declare
+  i        int;
+  geoms    geometry[] := '{}';
+  leg_geom geometry;
+  full_geom geometry;
+  new_id   uuid;
+  total_m  double precision;
+begin
+  if p_vids is null or array_length(p_vids, 1) < 2 then
+    raise exception 'p_vids must have >= 2 vertices';
+  end if;
+
+  for i in 1 .. array_length(p_vids, 1) - 1 loop
+    select st_linemerge(st_collect(e.geom order by d.seq)) into leg_geom
+      from pgr_dijkstra(
+        'select id, source, target, cost, reverse_cost from public.road_edges',
+        p_vids[i], p_vids[i + 1], false) d
+      join public.road_edges e on e.id = d.edge
+     where d.edge <> -1;
+    if leg_geom is not null then
+      if geometrytype(leg_geom) = 'LINESTRING' then
+        geoms := geoms || leg_geom;
+      else
+        -- MultiLineString (legs that don't perfectly touch): append each part.
+        geoms := geoms || array(select (st_dump(leg_geom)).geom);
+      end if;
+    end if;
+  end loop;
+
+  if array_length(geoms, 1) is null then
+    raise exception 'no road geometry found between the given vertices';
+  end if;
+
+  -- ST_MakeLine over the ordered leg lines -> a single LineString (column type).
+  full_geom := st_setsrid(st_makeline(geoms), 4326);
+  total_m   := coalesce(st_length(full_geom::geography), 0);
+
+  insert into public.routes (team_id, status, geom, total_distance_m, stops)
+  values (p_team_id, 'planned', full_geom, total_m, p_stops)
+  returning id into new_id;
+
+  return new_id;
+end;
+$$;
+
+comment on function public.pipeline_save_route(uuid, jsonb, bigint[]) is
+  'Phase 4.1: assemble a real-road LineString through ordered vids and insert a planned route.';
+
+revoke execute on function public.pipeline_save_route(uuid, jsonb, bigint[]) from public;
+grant  execute on function public.pipeline_save_route(uuid, jsonb, bigint[]) to service_role;
