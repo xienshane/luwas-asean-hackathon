@@ -10,14 +10,10 @@ import type {
   ImpactPrediction,
   SupplyManifest,
 } from '@/lib/types/coordinator';
-import {
-  mockFieldReports,
-  mockTeams,
-  mockRoadEdges,
-  mockRoutes,
-  getSphereManifest,
-} from '@/lib/mockData';
-import { fetchCoordinatorMapData } from '@/lib/supabase/coordinator';
+import { fetchCoordinatorMapData, fetchTeams, fetchRoadStatus, fetchFacilities } from '@/lib/supabase/coordinator';
+import { createClient } from '@/lib/supabase/client';
+import { useLivePlan } from '@/lib/live/useLivePlan';
+import type { LocationHub } from '@/lib/types/coordinator';
 import LeftSidebar from './LeftSidebar';
 import InteractiveCommandMap from './InteractiveCommandMap';
 import BottomOperationsConsole from './BottomOperationsConsole';
@@ -28,7 +24,6 @@ import TeamsView from './TeamsView';
 import ManifestsView from './ManifestsView';
 import { useLiveReports } from '@/lib/live/useLiveReports';
 import { useLiveVolunteers } from '@/lib/live/useLiveVolunteers';
-import { mockVolunteers } from '@/lib/mockData';
 
 export default function CommandDashboard() {
   // Navigation View selection State
@@ -36,18 +31,25 @@ export default function CommandDashboard() {
 
   // Cebu Database States
   const [barangays, setBarangays] = useState<Barangay[]>([]);
-  const [reports, setReports] = useState<FieldReport[]>(mockFieldReports);
-  // Live field_reports (volunteer PWA + SMS intake) merged into the mock-driven
-  // state — confirm/flag on live rows stays local until Phase 4.1 persists it.
+  const [reports, setReports] = useState<FieldReport[]>([]);
+  // Live field_reports (volunteer PWA + SMS intake). Confirm/flag now persist to the DB.
   useLiveReports(setReports);
-  // Live GPS markers (volunteer_positions over Realtime); mock roster stays as demo dressing.
+  // Live GPS markers (volunteer_positions over Realtime).
   const liveVolunteers = useLiveVolunteers();
-  const [teams, setTeams] = useState<Team[]>(mockTeams);
-  const [edges, setEdges] = useState<RoadEdge[]>(mockRoadEdges);
-  const [routes, setRoutes] = useState<Route[]>(mockRoutes);
-  
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [edges, setEdges] = useState<RoadEdge[]>([]);
+  const [facilities, setFacilities] = useState<LocationHub[]>([]);
+
+  // Live pipeline output (impact_predictions / supply_manifests / routes via Realtime),
+  // mirrored into local state so coordinator overrides + dispatch stay optimistic (DB
+  // persistence of overrides is Phase 4.2). The pipeline writes; these effects pull.
+  const live = useLivePlan();
+  const [routes, setRoutes] = useState<Route[]>([]);
   const [predictions, setPredictions] = useState<Record<string, ImpactPrediction>>({});
   const [manifests, setManifests] = useState<Record<string, SupplyManifest>>({});
+  useEffect(() => { setRoutes(live.routes); }, [live.routes]);
+  useEffect(() => { setPredictions(live.predictions); }, [live.predictions]);
+  useEffect(() => { setManifests(live.manifests); }, [live.manifests]);
 
   // Selection states
   const [selectedBarangay, setSelectedBarangay] = useState<Barangay | null>(null);
@@ -58,59 +60,29 @@ export default function CommandDashboard() {
   const [scores, setScores] = useState<{ barangayId: string; score: number; hoursSinceContact: number | null; timeFactor: number; popDensityNorm: number; hazardNorm: number }[]>([]);
 
   // Chronological EOC Log state
-  const [activityLogs, setActivityLogs] = useState<{ id: string; time: string; event: string; type: 'info' | 'warn' | 'success' | 'alert' }[]>([
-    { id: 'log-1', time: '13:14', event: 'SYSTEM: Silent Area Score mapping refreshed. 3 priority silence nodes surfaced.', type: 'info' },
-    { id: 'log-2', time: '13:05', event: 'FIELD REPORT: Severe tidal overwash reported in Pasil coastal sector.', type: 'alert' },
-    { id: 'log-3', time: '12:45', event: 'ROAD BLOCK: Gorordo Ave flagged slow due to low electrical wires obstruction.', type: 'warn' },
-    { id: 'log-4', time: '12:12', event: 'SYSTEM: TabPFN v2 impact model computed population prediction matrix.', type: 'success' },
-    { id: 'log-5', time: '11:00', event: 'SYSTEM: Typhoon landfall confirmed Cebu City coordinates. LUWAS Operations Active.', type: 'info' }
-  ]);
+  const [activityLogs, setActivityLogs] = useState<{ id: string; time: string; event: string; type: 'info' | 'warn' | 'success' | 'alert' }[]>([]);
 
   // Load live barangays + Silent Area scores from Supabase on mount. The map, tooltips,
   // and intelligence panel all render from this real data (coordinator_barangay_scores
   // view). Reports / routes / teams remain demo overlays until their engines are wired.
   useEffect(() => {
     let cancelled = false;
-    fetchCoordinatorMapData()
-      .then(({ barangays: realBarangays, scores: realScores }) => {
+    Promise.all([fetchCoordinatorMapData(), fetchTeams(), fetchRoadStatus(), fetchFacilities()])
+      .then(([map, t, e, f]) => {
         if (cancelled) return;
-        setBarangays(realBarangays);
-        setScores(realScores);
+        setBarangays(map.barangays);
+        setScores(map.scores);
+        setTeams(t);
+        setEdges(e);
+        setFacilities(f);
       })
       .catch((err) => {
-        console.error('Failed to load live barangay scores from Supabase', err);
+        console.error('Failed to load live coordinator data from Supabase', err);
       });
     return () => {
       cancelled = true;
     };
   }, []);
-
-  // Compute supply manifests based on effective predictions
-  useEffect(() => {
-    const updatedManifests: Record<string, SupplyManifest> = {};
-    
-    barangays.forEach(b => {
-      const pred = predictions[b.id];
-      // Honest empty state: no impact prediction → no manifest. impact_predictions stays
-      // empty until the Phase 4 pipeline (TabPFN → Sphere) writes to it, so real barangays
-      // have no manifest rather than a fabricated zero one.
-      if (!pred) return;
-
-      const effectiveAffected = pred.overrideValue !== null && pred.overrideValue !== undefined
-        ? pred.overrideValue
-        : (pred.predictedAffected || 0);
-
-      const sphereBase = getSphereManifest(b.id, effectiveAffected);
-
-      updatedManifests[b.id] = {
-        ...sphereBase,
-        status: manifests[b.id]?.status || 'pending',
-        overridden: manifests[b.id]?.overridden ?? false
-      };
-    });
-
-    setManifests(updatedManifests);
-  }, [predictions, barangays]);
 
   // Handlers
   const handleSelectBarangay = (b: Barangay) => {
@@ -129,9 +101,9 @@ export default function CommandDashboard() {
     setSelectedReport(r);
     if (!r) return;
 
-    // Demo reports still carry the old mock barangay ids ('b-*'), which no longer match the
-    // real barangay UUIDs. Resolve to a real barangay so the context panel opens: prefer an
-    // exact name match, else fall back to the barangay whose centroid is nearest the report.
+    // A report may not carry a resolvable barangay UUID (e.g. SMS intake). Resolve to a real
+    // barangay so the context panel opens: prefer an exact name match, else fall back to the
+    // barangay whose centroid is nearest the report's coordinates.
     const byName = barangays.find(
       (b) => b.name.toLowerCase() === r.barangayName.trim().toLowerCase()
     );
@@ -199,40 +171,48 @@ export default function CommandDashboard() {
     addActivityLog(`COORDINATOR OVERRIDE: Modified supply parameters for Barangay ${barangays.find(b => b.id === barangayId)?.name}.`, 'warn');
   };
 
-  // Confirm pending field report
-  const handleConfirmReport = (reportId: string) => {
+  // Confirm a pending field report: persist the status, then fire the end-to-end pipeline
+  // (rescore -> TabPFN impact -> Sphere manifest -> OR-Tools route). Realtime streams the
+  // results back into useLivePlan, so the map/panels update within seconds.
+  const handleConfirmReport = async (reportId: string) => {
     const report = reports.find(r => r.id === reportId);
     if (!report) return;
 
-    // 1. Mark report as confirmed
+    // Optimistic UI: mark confirmed + reset the barangay's contact time to "now".
     setReports(prev => prev.map(r => r.id === reportId ? { ...r, status: 'confirmed' } : r));
-
-    // 2. Reset the barangay's contact time to "now"
     if (report.barangayId) {
-      setBarangays(prev => prev.map(b => 
-        b.id === report.barangayId 
-          ? { ...b, lastConfirmedContact: new Date().toISOString() } 
-          : b
+      setBarangays(prev => prev.map(b =>
+        b.id === report.barangayId ? { ...b, lastConfirmedContact: new Date().toISOString() } : b
       ));
-
-      // Trigger state updates
       const updatedB = barangays.find(b => b.id === report.barangayId);
       if (updatedB) {
-        setSelectedBarangay({ 
-          ...updatedB, 
-          lastConfirmedContact: new Date().toISOString() 
-        });
+        setSelectedBarangay({ ...updatedB, lastConfirmedContact: new Date().toISOString() });
       }
     }
 
-    addActivityLog(`REPORT CONFIRMED: Incident report #${reportId} verified for ${report.barangayName}. Scores recalculated.`, 'success');
+    const supabase = createClient();
+    await supabase.from('field_reports').update({ status: 'confirmed' }).eq('id', reportId);
+    addActivityLog(`REPORT CONFIRMED: ${report.barangayName}. Running pipeline…`, 'success');
+
+    try {
+      const res = await fetch('/api/pipeline', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ barangayId: report.barangayId }),
+      });
+      const out = await res.json();
+      addActivityLog(`PIPELINE: ${out.predictions ?? 0} predictions, ${out.routes ?? 0} routes generated.`, 'info');
+    } catch {
+      addActivityLog('PIPELINE: failed to run (AI service unreachable).', 'alert');
+    }
   };
 
-  // Flag a report as unreliable
-  const handleFlagReport = (reportId: string) => {
+  // Flag a report as unreliable — persist so it drops out of pipeline_targets.
+  const handleFlagReport = async (reportId: string) => {
     setReports(prev => prev.map(r => r.id === reportId ? { ...r, status: 'flagged' } : r));
     setSelectedReport(null);
-    addActivityLog(`REPORT FLAGGED: Report #${reportId} flagged as unreliable.`, 'warn');
+    const supabase = createClient();
+    await supabase.from('field_reports').update({ status: 'flagged' }).eq('id', reportId);
+    addActivityLog(`REPORT FLAGGED: #${reportId} flagged as unreliable.`, 'warn');
   };
 
   // Update Road Edge status (EOC accessibility)
@@ -356,7 +336,8 @@ const ResizeHandle = () => (
                 teams={teams}
                 edges={edges}
                 routes={routes}
-                volunteers={[...liveVolunteers, ...mockVolunteers]}
+                facilities={facilities}
+                volunteers={liveVolunteers}
                 selectedBarangay={selectedBarangay}
                 onSelectBarangay={handleSelectBarangay}
                 selectedReport={selectedReport}
@@ -379,6 +360,7 @@ const ResizeHandle = () => (
               scores={scores}
               prediction={predictions[selectedBarangay.id]}
               manifest={manifests[selectedBarangay.id]}
+              facilities={facilities}
               teams={teams}
               routes={routes}
               onSaveOverrides={handleSaveOverrides}
