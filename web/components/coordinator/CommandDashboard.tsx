@@ -194,6 +194,24 @@ export default function CommandDashboard() {
     await supabase.from('field_reports').update({ status: 'confirmed' }).eq('id', reportId);
     addActivityLog(`REPORT CONFIRMED: ${report.barangayName}. Running pipeline…`, 'success');
 
+    // Backstop translation: app reports never hit /parse, so fill the English
+    // translation here (online, coordinator-initiated). /api/translate skips
+    // already-English text and persists the result; we mirror it into local state.
+    if (!report.translatedText) {
+      try {
+        const tr = await fetch('/api/translate', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reportId }),
+        });
+        const { translated_text } = await tr.json();
+        if (translated_text) {
+          setReports(prev => prev.map(r => r.id === reportId ? { ...r, translatedText: translated_text } : r));
+        }
+      } catch {
+        addActivityLog(`TRANSLATION: unavailable for ${report.barangayName}.`, 'warn');
+      }
+    }
+
     try {
       const res = await fetch('/api/pipeline', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },

@@ -9,7 +9,8 @@ const row: CoordinatorFieldReport = {
   barangay_id: 'b-uuid-1',
   barangay_name: 'Guadalupe',
   source: 'app',
-  raw_text: 'water rising',
+  raw_text: 'nagsaka ang tubig',
+  translated_text: 'water rising',
   population_estimate: 50,
   needs_severity: 'moderate',
   road_status: 'passable',
@@ -28,6 +29,8 @@ describe('dbReportToUi', () => {
     expect(ui.latitude).toBe(10.31);
     expect(ui.longitude).toBe(123.9);
     expect(ui.barangayName).toBe('Guadalupe'); // from the server-side join, not a capped client map
+    expect(ui.rawText).toBe('nagsaka ang tubig');
+    expect(ui.translatedText).toBe('water rising');
     expect(ui.needsSeverity).toBe('medium'); // canonical "moderate" -> UI "medium"
     expect(ui.reporterName).toBe('Field App');
   });

@@ -28,6 +28,7 @@ const parseResponse = (over: Partial<ParseResponse['field_report']> = {}): Parse
   provider: 'sea-lion',
   needs_review: false,
   latency_ms: 800,
+  translated_text: 'flood in Pasil, about 120 people',
 });
 
 const pasil = { id: 'b-uuid-pasil', name: 'Pasil', lat: 10.2917, lng: 123.8936 };
@@ -59,6 +60,7 @@ describe('handleInboundSms', () => {
     expect(row.location).toBe('SRID=4326;POINT(123.8936 10.2917)');
     expect(row.needs_severity).toBe('critical');
     expect(row.road_impassable).toBe(true);
+    expect(row.translated_text).toBe('flood in Pasil, about 120 people');
   });
 
   it('still inserts (flagged, confidence 0) when the parse service fails', async () => {

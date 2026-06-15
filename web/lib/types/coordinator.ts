@@ -41,6 +41,8 @@ export interface FieldReport {
   reporterName: string;
   source: 'app' | 'sms' | 'parsed';
   rawText: string;
+  /** English translation of rawText; null if already English or not yet translated. */
+  translatedText: string | null;
   populationEstimate: number;
   needsSeverity: 'critical' | 'high' | 'medium' | 'low';
   roadStatus: string;

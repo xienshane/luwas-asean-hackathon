@@ -54,4 +54,21 @@ class ParseResponse(BaseModel):
     provider: Literal["sea-lion", "gemini"]
     needs_review: bool = Field(..., description="True => below threshold, not auto-committed")
     latency_ms: float
+    translated_text: Optional[str] = Field(
+        None, description="English translation of raw_text; null if already English"
+    )
+    id: Optional[str] = None
+
+
+class TranslateRequest(BaseModel):
+    text: str = Field(..., min_length=1, description="report text to translate to English")
+    id: Optional[str] = Field(None, description="caller key, echoed back")
+
+
+class TranslateResponse(BaseModel):
+    translated_text: Optional[str] = Field(
+        None, description="English translation; null if the text is already English"
+    )
+    provider: Optional[Literal["sea-lion", "gemini"]] = None
+    latency_ms: float
     id: Optional[str] = None

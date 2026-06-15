@@ -20,6 +20,7 @@ from app.models.parse import (
     Extraction,
     NormalizedFieldReport,
     ParseResponse,
+    TranslateResponse,
 )
 
 logger = logging.getLogger("luwas.parse")
@@ -38,7 +39,10 @@ SYSTEM_PROMPT = (
     '"needs_severity": "low"|"moderate"|"high"|"critical"|null, '
     '"road_status": "passable"|"impassable"|"unknown", '
     '"confidence": {"location": 0..1, "population_estimate": 0..1, '
-    '"needs_severity": 0..1, "road_status": 0..1}, "overall_confidence": 0..1}\n'
+    '"needs_severity": 0..1, "road_status": 0..1}, "overall_confidence": 0..1, '
+    '"translated_text": string|null}\n'
+    "translated_text: a natural English translation of the WHOLE report; null if it is "
+    "already in English. Preserve place names and numbers. "
     "location: the barangay/city/place named (null if none). "
     "population_estimate: number of PEOPLE affected; treat 'families'/'pamilya' as ~5 people each; "
     "null if unstated. "
@@ -47,6 +51,18 @@ SYSTEM_PROMPT = (
     "Set each confidence by how explicitly the field is stated; do not invent values."
 )
 USER_TEMPLATE = 'Field report:\n"""\n{text}\n"""\nReturn the JSON now.'
+
+# Standalone translation (the /translate endpoint, used for app reports that never hit
+# /parse). The model self-reports is_english so already-English text is not "translated".
+TRANSLATE_SYSTEM_PROMPT = (
+    "You translate short disaster field-report messages written in Filipino, Bisaya "
+    "(Cebuano), or Tagalog into clear, natural English for an NGO relief coordinator in "
+    "Cebu, Philippines.\n"
+    'Return ONLY a JSON object (no prose): {"translated_text": string, "is_english": boolean}.\n'
+    "If the message is ALREADY in English, set is_english=true and translated_text to the "
+    "original text unchanged. Preserve place names, numbers, and the sense of urgency."
+)
+TRANSLATE_USER_TEMPLATE = 'Message:\n"""\n{text}\n"""\nReturn the JSON now.'
 
 
 # --- backends ---------------------------------------------------------------
@@ -146,6 +162,14 @@ def _coerce_road(v) -> str:
     return _ROAD_MAP.get(str(v).strip().lower(), "unknown")
 
 
+def _clean_translation(v) -> Optional[str]:
+    """Normalize a model's translated_text: strip, drop empties -> None."""
+    if not v:
+        return None
+    s = str(v).strip()
+    return s or None
+
+
 # --- parser -----------------------------------------------------------------
 class Parser:
     def __init__(
@@ -163,7 +187,7 @@ class Parser:
 
     def parse(self, text: str, id: Optional[str] = None) -> ParseResponse:
         t0 = time.perf_counter()
-        data, provider = self._complete(text)
+        data, provider = self._complete_json(SYSTEM_PROMPT, USER_TEMPLATE.format(text=text))
         extraction, overall = self._normalize(data)
 
         needs_review = overall < self.settings.parse_confidence_threshold
@@ -183,24 +207,42 @@ class Parser:
             provider=provider,
             needs_review=needs_review,
             latency_ms=round((time.perf_counter() - t0) * 1000, 2),
+            translated_text=_clean_translation(data.get("translated_text")),
             id=id,
         )
 
-    def _complete(self, text: str) -> tuple[dict, str]:
-        user = USER_TEMPLATE.format(text=text)
+    def translate(self, text: str, id: Optional[str] = None) -> TranslateResponse:
+        """Translate a report to English. Returns translated_text=None when the model
+        reports the input is already English (so callers can skip persistence)."""
+        t0 = time.perf_counter()
+        data, provider = self._complete_json(
+            TRANSLATE_SYSTEM_PROMPT, TRANSLATE_USER_TEMPLATE.format(text=text)
+        )
+        translated = _clean_translation(data.get("translated_text"))
+        if data.get("is_english"):
+            translated = None
+        return TranslateResponse(
+            translated_text=translated,
+            provider=provider,  # type: ignore[arg-type]
+            latency_ms=round((time.perf_counter() - t0) * 1000, 2),
+            id=id,
+        )
+
+    def _complete_json(self, system: str, user: str) -> tuple[dict, str]:
+        """Run primary (SEA-LION, rate-limited) then fallback (Gemini); return parsed JSON."""
         errors: list[str] = []
 
         if self.primary is not None:
             try:
                 self.rate_limiter.acquire()  # gates SEA-LION's 10-calls/min free tier
-                return extract_json(self.primary.complete(SYSTEM_PROMPT, user)), self.primary.name
+                return extract_json(self.primary.complete(system, user)), self.primary.name
             except Exception as exc:  # noqa: BLE001 — any failure should fall back
                 errors.append(f"{self.primary.name}: {exc}")
-                logger.warning("primary parse failed (%s); trying fallback", exc)
+                logger.warning("primary call failed (%s); trying fallback", exc)
 
         if self.fallback is not None:
             try:
-                return extract_json(self.fallback.complete(SYSTEM_PROMPT, user)), self.fallback.name
+                return extract_json(self.fallback.complete(system, user)), self.fallback.name
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"{self.fallback.name}: {exc}")
 

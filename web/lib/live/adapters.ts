@@ -11,6 +11,7 @@ export interface CoordinatorFieldReport {
   barangay_name: string | null;
   source: 'app' | 'sms' | 'parsed';
   raw_text: string | null;
+  translated_text: string | null;
   population_estimate: number | null;
   needs_severity: string | null;
   road_status: string | null;
@@ -51,6 +52,7 @@ export function dbReportToUi(row: CoordinatorFieldReport): FieldReport | null {
     reporterName,
     source: row.source,
     rawText: row.raw_text ?? '',
+    translatedText: row.translated_text ?? null,
     populationEstimate: row.population_estimate ?? 0,
     needsSeverity: SEVERITY_UI[row.needs_severity ?? ''] ?? 'low',
     roadStatus: row.road_status ?? 'unknown',

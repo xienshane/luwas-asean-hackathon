@@ -31,6 +31,9 @@ export default function ReportsView({ reports, onConfirmReport, onFlagReport }: 
   const [showHistory, setShowHistory] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  // Detail panel shows the English translation by default; toggle reveals the original.
+  // Keyed by report id so switching reports resets to the translation automatically.
+  const [originalForId, setOriginalForId] = useState<string | null>(null);
 
   const match = (r: FieldReport) =>
     (filterSeverity === 'all' || r.needsSeverity === filterSeverity) &&
@@ -237,9 +240,31 @@ export default function ReportsView({ reports, onConfirmReport, onFlagReport }: 
           }
         >
           <div className="p-4 space-y-4 text-[13px]">
-            <div className="bg-surface border border-line rounded-control p-3 text-fg leading-relaxed">
-              &ldquo;{selected.rawText}&rdquo;
-            </div>
+            {(() => {
+              const hasTranslation =
+                !!selected.translatedText && selected.translatedText !== selected.rawText;
+              const showingOriginal = originalForId === selected.id || !hasTranslation;
+              return (
+                <div className="space-y-1.5">
+                  {hasTranslation && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] uppercase tracking-wide text-muted">
+                        {showingOriginal ? 'Original' : 'Translated · machine'}
+                      </span>
+                      <button
+                        onClick={() => setOriginalForId((cur) => (cur === selected.id ? null : selected.id))}
+                        className="text-[12px] text-active hover:underline cursor-pointer"
+                      >
+                        {showingOriginal ? 'Show translation' : 'Show original'}
+                      </button>
+                    </div>
+                  )}
+                  <div className="bg-surface border border-line rounded-control p-3 text-fg leading-relaxed">
+                    &ldquo;{showingOriginal ? selected.rawText : selected.translatedText}&rdquo;
+                  </div>
+                </div>
+              );
+            })()}
             <div className="grid grid-cols-2 gap-y-3 gap-x-4">
               <Meta label="Severity">
                 <span className="flex items-center gap-1.5 capitalize">
@@ -319,7 +344,7 @@ function Row({
       <span className="font-mono tabular-nums text-[12px] text-muted shrink-0 w-10">#{report.id}</span>
       <span className="text-[13px] text-fg shrink-0 w-28 truncate">{report.barangayName}</span>
       <span className="font-mono tabular-nums text-[12px] text-muted shrink-0 w-16">{ago(report.createdAt)}</span>
-      <span className="text-[13px] text-muted truncate flex-1">{report.rawText}</span>
+      <span className="text-[13px] text-muted truncate flex-1">{report.translatedText ?? report.rawText}</span>
       <span className="text-[12px] text-muted shrink-0 w-20 truncate hidden lg:block">{SOURCE_LABEL[report.source]}</span>
       {(onConfirm || onFlag) && (
         <div className="flex items-center gap-1.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-100">
