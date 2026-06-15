@@ -35,10 +35,20 @@ export default async function VolunteerPage() {
     redirect('/login?redirectedFrom=/volunteer');
   }
 
-  const { data: barangays } = await supabase
-    .from('barangay_directory')
-    .select('id, name, city_municipality')
-    .order('name');
+  // The directory has ~1,211 barangays but PostgREST caps a response at 1,000
+  // rows, so page through it to offer the full list (not just the first page).
+  const PAGE = 1000;
+  const barangays: { id: string; name: string; city_municipality: string | null }[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data: page } = await supabase
+      .from('barangay_directory')
+      .select('id, name, city_municipality')
+      .order('name')
+      .range(from, from + PAGE - 1);
+    if (!page?.length) break;
+    barangays.push(...page);
+    if (page.length < PAGE) break;
+  }
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col">
