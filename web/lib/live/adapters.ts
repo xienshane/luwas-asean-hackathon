@@ -1,7 +1,6 @@
-// Adapts live Supabase rows into the mock-driven coordinator UI types.
-// The dashboard stays mock-first until Phase 4.1; live rows are merged in.
-// (FieldReport is defined in lib/types/coordinator — lib/mockData only holds
-// demo *data* of that shape and does not re-export the type.)
+// Adapts live Supabase rows into the coordinator UI types. The dashboard runs
+// entirely on live data; these adapters shape inbound rows (field reports,
+// barangay directory) for the components.
 import type { FieldReport } from '@/lib/types/coordinator';
 import { geometryToLngLat } from './wkb';
 

@@ -1,9 +1,8 @@
 // Coordinator dashboard domain types.
 //
 // These describe the shapes the coordinator UI renders, independent of where the data
-// comes from. Real data (lib/supabase/coordinator.ts) and demo fixtures (lib/mockData.ts)
-// both produce values of these types — so when the mock fixtures are eventually removed,
-// nothing here moves.
+// comes from. The dashboard runs entirely on live Supabase data
+// (lib/supabase/coordinator.ts, lib/live/*) which produces values of these types.
 
 // A GeoJSON Polygon/MultiPolygon geometry — the real barangay boundary from PostGIS,
 // served by the coordinator_barangay_scores view for the map choropleth.
