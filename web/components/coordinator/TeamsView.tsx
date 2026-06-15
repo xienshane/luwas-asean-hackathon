@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
-import type { Team, Route, Barangay } from '@/lib/types/coordinator';
-import { mockVolunteers } from '@/lib/mockData';
+import React, { useState, useEffect } from 'react';
+import type { Team, Route, Barangay, Volunteer } from '@/lib/types/coordinator';
+import { fetchVolunteerRoster } from '@/lib/supabase/coordinator';
 import {
   DetailPanel,
   StatusDot,
@@ -46,10 +46,14 @@ export default function TeamsView({ teams, routes, barangays, onDispatchTeam }: 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dest, setDest] = useState('');
 
+  // Live volunteer roster (coordinator_volunteers view, RLS coordinator-only).
+  const [roster, setRoster] = useState<Volunteer[]>([]);
+  useEffect(() => { fetchVolunteerRoster().then(setRoster).catch(() => setRoster([])); }, []);
+
   const selected = selectedId ? teams.find((t) => t.id === selectedId) ?? null : null;
   const routeFor = (teamId: string) => routes.find((r) => r.teamId === teamId);
   const selectedRoute = selected ? routeFor(selected.id) : undefined;
-  const crew = selected ? mockVolunteers.filter((v) => v.teamId === selected.id) : [];
+  const crew = selected ? roster.filter((v) => v.teamId === selected.id) : [];
 
   const summary = (['active', 'dispatched', 'idle', 'maintenance'] as const)
     .map((s) => ({ s, n: teams.filter((t) => t.status === s).length }))
