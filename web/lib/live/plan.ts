@@ -1,0 +1,54 @@
+import type { Route, ImpactPrediction, SupplyManifest } from '@/lib/types/coordinator';
+
+interface RouteRow {
+  id: string; team_id: string | null; team_name: string | null; status: string;
+  total_distance_m: number | null; stops: any[] | null;
+  geometry: { type: string; coordinates: number[][] } | null;
+}
+export function routeRowToUi(r: RouteRow): Route {
+  const path = (r.geometry?.coordinates ?? []).map(([lng, lat]) => ({ lat, lng }));
+  return {
+    id: r.id, teamId: r.team_id ?? '', teamName: r.team_name ?? '',
+    status: (['planned', 'active', 'completed'].includes(r.status) ? r.status : 'planned') as Route['status'],
+    stops: (r.stops ?? []).map((s) => ({
+      sequence: s.sequence, barangayId: s.barangayId, barangayName: s.barangayName, action: s.action,
+    })),
+    totalDistanceM: Number(r.total_distance_m ?? 0), path,
+  };
+}
+
+const SEV_DB_TO_UI: Record<string, ImpactPrediction['damageSeverity']> = {
+  severe: 'severe', high: 'moderate', moderate: 'minor', low: 'minor',
+};
+const CONF_TO_UI = (c: number): ImpactPrediction['confidence'] => (c >= 0.66 ? 'high' : c >= 0.33 ? 'moderate' : 'low');
+
+interface PredictionRow {
+  barangay_id: string; model: string; predicted_affected: number | null;
+  damage_severity: string | null; confidence: number | null; override_value: number | null; inputs: any;
+}
+export function predictionRowToUi(r: PredictionRow): ImpactPrediction {
+  return {
+    barangayId: r.barangay_id, model: r.model === 'tabpfn' ? 'TabPFN v2' : 'Heuristic',
+    predictedAffected: Number(r.predicted_affected ?? 0),
+    damageSeverity: SEV_DB_TO_UI[r.damage_severity ?? 'moderate'] ?? 'minor',
+    confidence: CONF_TO_UI(Number(r.confidence ?? 0)),
+    overrideValue: r.override_value, contributors: [],
+  };
+}
+
+interface ManifestRow {
+  barangay_id: string; days: number; water_l: number | null; food_packs: number | null;
+  shelter_kits: number | null; blankets: number | null; breakdown: any; overridden: boolean;
+}
+export function manifestRowToUi(r: ManifestRow): SupplyManifest {
+  const item = (recommended: number) => ({ recommended, inventory: 0, shortfall: recommended });
+  const water = Number(r.water_l ?? 0), food = Number(r.food_packs ?? 0);
+  const hygiene = (r.breakdown?.lines ?? []).find((l: any) => l.item?.toLowerCase().includes('hygiene'))?.quantity ?? 0;
+  return {
+    barangayId: r.barangay_id, days: r.days, status: r.overridden ? 'modified' : 'pending',
+    waterL: item(water), foodPacks: item(food),
+    hygieneKits: item(hygiene), medicalSupplies: item(0),
+    shelterMaterials: item(Number(r.shelter_kits ?? 0)),
+    overridden: r.overridden,
+  };
+}
