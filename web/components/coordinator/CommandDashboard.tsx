@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type {
   Barangay,
   FieldReport,
@@ -101,6 +101,10 @@ export default function CommandDashboard() {
     setSelectedReport(r);
     if (!r) return;
 
+    // Default to English: lazily fetch the translation on first view so the map
+    // pin popup and operations/context panels show translated text, confirmed or not.
+    if (!r.translatedText) translateReport(r.id);
+
     // A report may not carry a resolvable barangay UUID (e.g. SMS intake). Resolve to a real
     // barangay so the context panel opens: prefer an exact name match, else fall back to the
     // barangay whose centroid is nearest the report's coordinates.
@@ -171,6 +175,33 @@ export default function CommandDashboard() {
     addActivityLog(`COORDINATOR OVERRIDE: Modified supply parameters for Barangay ${barangays.find(b => b.id === barangayId)?.name}.`, 'warn');
   };
 
+  // Lazily fill a report's English translation. App reports never hit /parse, so
+  // their translation is produced on demand — on first view (pending) or at confirm
+  // time. /api/translate is idempotent, skips already-English/already-translated
+  // text, and persists the result; we mirror it into local state. Tracks in-flight
+  // ids so a report is only requested once (SEA-LION free tier is rate-limited).
+  const translateRequested = useRef<Set<string>>(new Set());
+  const translateReport = async (reportId: string) => {
+    const report = reports.find(r => r.id === reportId);
+    if (!report || report.translatedText || translateRequested.current.has(reportId)) return;
+    translateRequested.current.add(reportId);
+    try {
+      const tr = await fetch('/api/translate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reportId }),
+      });
+      const { translated_text } = await tr.json();
+      if (translated_text) {
+        setReports(prev => prev.map(r => r.id === reportId ? { ...r, translatedText: translated_text } : r));
+        // Keep the selected snapshot fresh so the map detail card re-renders translated.
+        setSelectedReport(prev => prev && prev.id === reportId ? { ...prev, translatedText: translated_text } : prev);
+      }
+    } catch {
+      translateRequested.current.delete(reportId); // allow a retry on a later view
+      addActivityLog(`TRANSLATION: unavailable for ${report.barangayName}.`, 'warn');
+    }
+  };
+
   // Confirm a pending field report: persist the status, then fire the end-to-end pipeline
   // (rescore -> TabPFN impact -> Sphere manifest -> OR-Tools route). Realtime streams the
   // results back into useLivePlan, so the map/panels update within seconds.
@@ -195,22 +226,9 @@ export default function CommandDashboard() {
     addActivityLog(`REPORT CONFIRMED: ${report.barangayName}. Running pipeline…`, 'success');
 
     // Backstop translation: app reports never hit /parse, so fill the English
-    // translation here (online, coordinator-initiated). /api/translate skips
-    // already-English text and persists the result; we mirror it into local state.
-    if (!report.translatedText) {
-      try {
-        const tr = await fetch('/api/translate', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reportId }),
-        });
-        const { translated_text } = await tr.json();
-        if (translated_text) {
-          setReports(prev => prev.map(r => r.id === reportId ? { ...r, translatedText: translated_text } : r));
-        }
-      } catch {
-        addActivityLog(`TRANSLATION: unavailable for ${report.barangayName}.`, 'warn');
-      }
-    }
+    // translation here. (Pending reports are also translated on first view via
+    // translateReport, so by confirm time this is usually already populated.)
+    await translateReport(reportId);
 
     try {
       const res = await fetch('/api/pipeline', {
@@ -434,6 +452,7 @@ const ResizeHandle = () => (
             reports={reports}
             onFlagReport={handleFlagReport}
             onConfirmReport={handleConfirmReport}
+            onTranslateReport={translateReport}
           />
         )}
 

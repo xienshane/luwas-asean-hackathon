@@ -9,6 +9,9 @@ interface ReportsViewProps {
   reports: FieldReport[];
   onConfirmReport: (id: string) => void;
   onFlagReport: (reportId: string) => void;
+  // Lazily fills the English translation for a report that lacks one, so the
+  // detail panel can default to translated text even while a report is unconfirmed.
+  onTranslateReport?: (reportId: string) => void;
 }
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -24,7 +27,7 @@ function ago(iso: string): string {
   return m < 60 ? `${m}m ago` : `${Math.round(m / 60)}h ago`;
 }
 
-export default function ReportsView({ reports, onConfirmReport, onFlagReport }: ReportsViewProps) {
+export default function ReportsView({ reports, onConfirmReport, onFlagReport, onTranslateReport }: ReportsViewProps) {
   const [filterSeverity, setFilterSeverity] = useState<'all' | 'critical' | 'high' | 'medium' | 'low'>('all');
   const [filterSource, setFilterSource] = useState<'all' | 'app' | 'sms' | 'parsed'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -64,6 +67,13 @@ export default function ReportsView({ reports, onConfirmReport, onFlagReport }: 
 
   const selected = selectedId ? reports.find((r) => r.id === selectedId) ?? null : null;
   const hasFilters = filterSeverity !== 'all' || filterSource !== 'all' || searchQuery !== '';
+
+  // Open a report and lazily request its translation if it doesn't have one yet,
+  // so the detail panel shows English by default — confirmed or not.
+  const select = (r: FieldReport) => {
+    setSelectedId(r.id);
+    if (!r.translatedText) onTranslateReport?.(r.id);
+  };
 
   const toggleCheck = (id: string) =>
     setChecked((prev) => {
@@ -165,7 +175,7 @@ export default function ReportsView({ reports, onConfirmReport, onFlagReport }: 
                   report={r}
                   selected={selectedId === r.id}
                   checked={checked.has(r.id)}
-                  onSelect={() => setSelectedId(r.id)}
+                  onSelect={() => select(r)}
                   onCheck={() => toggleCheck(r.id)}
                   onConfirm={() => onConfirmReport(r.id)}
                   onFlag={() => onFlagReport(r.id)}
@@ -182,7 +192,7 @@ export default function ReportsView({ reports, onConfirmReport, onFlagReport }: 
                   report={r}
                   selected={selectedId === r.id}
                   checked={checked.has(r.id)}
-                  onSelect={() => setSelectedId(r.id)}
+                  onSelect={() => select(r)}
                   onCheck={() => toggleCheck(r.id)}
                   onConfirm={() => onConfirmReport(r.id)}
                 />
@@ -196,7 +206,7 @@ export default function ReportsView({ reports, onConfirmReport, onFlagReport }: 
                 <Empty>No confirmed reports.</Empty>
               ) : (
                 confirmed.map((r) => (
-                  <Row key={r.id} report={r} selected={selectedId === r.id} onSelect={() => setSelectedId(r.id)} muted />
+                  <Row key={r.id} report={r} selected={selectedId === r.id} onSelect={() => select(r)} muted />
                 ))
               )}
             </Section>
