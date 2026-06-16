@@ -753,3 +753,43 @@ def test_aggregate_tabpfn_damage_rate_mae_absolute_value():
     """
     result = aggregate(_make_pooled_by_method(), _make_per_storm_raw())
     assert result["overall"]["tabpfn"]["damage_rate"]["mae"] == pytest.approx(0.0175)
+
+
+# ---------------------------------------------------------------------------
+# B3 — measure_latency() (deployed-config latency probe)
+# ---------------------------------------------------------------------------
+
+from scripts.evaluate_impact import measure_latency
+
+
+@pytest.mark.tabpfn
+def test_measure_latency_returns_valid_dict_with_tabpfn_active():
+    """measure_latency(n=3) returns a valid latency dict with tabpfn_active=True.
+
+    Runs the DEPLOYED config (context=128, n_estimators=1).  Assertions:
+    - required keys present: p50, p95, n, batch_size, tabpfn_active
+    - p50 and p95 are finite floats >= 0
+    - n and batch_size are echoed back correctly
+    - tabpfn_active is True (torch + weights available in this env)
+    """
+    import math
+
+    result = measure_latency(n=3)
+
+    assert "p50" in result, "missing key: p50"
+    assert "p95" in result, "missing key: p95"
+    assert "n" in result, "missing key: n"
+    assert "batch_size" in result, "missing key: batch_size"
+    assert "tabpfn_active" in result, "missing key: tabpfn_active"
+
+    assert math.isfinite(result["p50"]), f"p50 not finite: {result['p50']}"
+    assert math.isfinite(result["p95"]), f"p95 not finite: {result['p95']}"
+    assert result["p50"] >= 0.0, f"p50 < 0: {result['p50']}"
+    assert result["p95"] >= 0.0, f"p95 < 0: {result['p95']}"
+
+    assert result["n"] == 3, f"n not echoed: {result['n']}"
+    assert result["batch_size"] == 1, f"batch_size not echoed: {result['batch_size']}"
+
+    assert result["tabpfn_active"] is True, (
+        f"tabpfn_active should be True in torch env, got {result['tabpfn_active']}"
+    )

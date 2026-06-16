@@ -382,6 +382,76 @@ def run_loto(
 
 
 # ---------------------------------------------------------------------------
+# Public: measure_latency
+# ---------------------------------------------------------------------------
+
+def measure_latency(n: int = 30, batch_size: int = 1) -> dict:
+    """Measure inference latency at the DEPLOYED predictor config.
+
+    Instantiates ImpactPredictor with the production Settings (model_framing=
+    "regressor", tabpfn_context_size=128, tabpfn_n_estimators=1, tabpfn_device=
+    "cpu"), warms it up, then times ``predict()`` over ``n`` calls.
+
+    Parameters
+    ----------
+    n : int
+        Number of timed predict() calls. Default 30.
+    batch_size : int
+        Rows per predict() call. Default 1 (single-barangay, production path).
+
+    Returns
+    -------
+    dict with keys:
+        p50          : float — median latency in milliseconds
+        p95          : float — 95th-percentile latency in milliseconds
+        n            : int   — number of timed calls (echoed)
+        batch_size   : int   — rows per call (echoed)
+        tabpfn_active: bool  — True when TabPFN weights loaded successfully
+    """
+    import time
+    import pandas as pd
+    from app.core.config import Settings
+    from app.services.impact_model import ImpactPredictor, FEATURE_COLUMNS
+    from app.models.impact import BarangayFeatures
+
+    settings = Settings()
+    p = ImpactPredictor(settings)
+    p.warmup()  # loads + fits TabPFN in-context; primes forward path
+
+    # Build a representative request from the training table.
+    df = pd.read_csv(settings.training_table_path)
+    sample = df[FEATURE_COLUMNS].sample(batch_size, random_state=0).head(batch_size)
+    features = [
+        BarangayFeatures(
+            category_ordinal=int(row["category_ordinal"]),
+            total_houses=int(row["total_houses"]),
+            province_housing_units=int(row["province_housing_units"]),
+            province_households=int(row["province_households"]),
+            structural_vuln_frac=float(row["structural_vuln_frac"]),
+            unimproved_water_frac=float(row["unimproved_water_frac"]),
+        )
+        for _, row in sample.iterrows()
+    ]
+
+    # Time n predict() calls; warmup already primed the forward path.
+    times_ms: list[float] = []
+    for _ in range(n):
+        t0 = time.perf_counter()
+        p.predict(features)
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        times_ms.append(elapsed_ms)
+
+    times_arr = np.array(times_ms, dtype=float)
+    return {
+        "p50": float(np.percentile(times_arr, 50)),
+        "p95": float(np.percentile(times_arr, 95)),
+        "n": n,
+        "batch_size": batch_size,
+        "tabpfn_active": p.tabpfn_active,
+    }
+
+
+# ---------------------------------------------------------------------------
 # __main__ (CLI stub — C2 finishes this)
 # ---------------------------------------------------------------------------
 
