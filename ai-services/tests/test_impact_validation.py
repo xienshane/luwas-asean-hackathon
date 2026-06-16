@@ -1,6 +1,7 @@
 """
 Tests for pure metric functions in scripts/eval/metrics.py.
-These tests are written FIRST (TDD). They will fail until metrics.py is implemented.
+Tests for baselines in scripts/eval/baselines.py.
+These tests are written FIRST (TDD). They will fail until the modules are implemented.
 
 Run from ai-services/ directory:
     pytest tests/test_impact_validation.py
@@ -13,6 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pytest
+import pandas as pd
 from scripts.eval.metrics import (
     mae,
     rmse,
@@ -23,6 +25,7 @@ from scripts.eval.metrics import (
     mean_interval_width,
     severity_metrics,
 )
+from scripts.eval.baselines import population_only_fit, heuristic_predict
 
 
 # ---------------------------------------------------------------------------
@@ -181,3 +184,126 @@ def test_severity_metrics_zero_support_class():
     assert result["per_class"]["moderate"]["precision"] == 0.0
     assert result["per_class"]["moderate"]["recall"] == 0.0
     assert result["per_class"]["moderate"]["support"] == 0
+
+
+# ---------------------------------------------------------------------------
+# A2 — population_only_fit (D4 baseline)
+# ---------------------------------------------------------------------------
+
+def _make_train_df():
+    """Small in-memory training DataFrame with known statistics."""
+    return pd.DataFrame({
+        "affected": [100, 200, 300],         # mean = 200
+        "damage_rate": [0.2, 0.3, 0.4],      # mean = 0.3
+        "total_houses": [50, 100, 150],       # rates: 2, 2, 2  → mean_rate = 2.0
+    })
+
+
+def _make_test_df():
+    """Test DataFrame including a zero-houses row."""
+    return pd.DataFrame({
+        "affected": [0, 0, 0],               # true values (unused by baseline)
+        "damage_rate": [0.0, 0.0, 0.0],
+        "total_houses": [200, 50, 0],         # last row: zero-houses fallback
+    })
+
+
+def test_population_only_damage_rate_is_constant_train_mean():
+    """damage_rate_pred is the training mean for every test row."""
+    train = _make_train_df()
+    test = _make_test_df()
+    model = population_only_fit(train)
+    affected_pred, damage_rate_pred = model.predict(test)
+    # train.damage_rate mean = (0.2+0.3+0.4)/3 = 0.3 for all rows
+    for dr in damage_rate_pred:
+        assert dr == pytest.approx(0.3)
+
+
+def test_population_only_affected_scales_with_houses():
+    """affected_pred = round(rate_per_house * total_houses) for non-zero house rows."""
+    train = _make_train_df()
+    test = _make_test_df()
+    model = population_only_fit(train)
+    affected_pred, damage_rate_pred = model.predict(test)
+    # rate_per_house = mean([100/50, 200/100, 300/150]) = mean([2, 2, 2]) = 2.0
+    # row 0: round(2.0 * 200) = 400
+    # row 1: round(2.0 * 50)  = 100
+    assert affected_pred[0] == 400
+    assert affected_pred[1] == 100
+
+
+def test_population_only_zero_houses_falls_back_to_mean_affected():
+    """When total_houses == 0, affected_pred falls back to round(mean(train.affected))."""
+    train = _make_train_df()
+    test = _make_test_df()
+    model = population_only_fit(train)
+    affected_pred, damage_rate_pred = model.predict(test)
+    # row 2 has total_houses == 0 → fallback: round(mean([100,200,300])) = round(200.0) = 200
+    assert affected_pred[2] == 200
+
+
+def test_population_only_fit_uses_only_train_data():
+    """Fit on train_df; predict on different test_df — no leakage from test."""
+    train = _make_train_df()
+    # test with very different scales — predictions must still be driven by train stats
+    test_large = pd.DataFrame({
+        "affected": [99999],
+        "damage_rate": [0.99],
+        "total_houses": [0],
+    })
+    model = population_only_fit(train)
+    affected_pred, damage_rate_pred = model.predict(test_large)
+    # fallback: round(mean(train.affected)) = 200, not influenced by test values
+    assert affected_pred[0] == 200
+    assert damage_rate_pred[0] == pytest.approx(0.3)
+
+
+# ---------------------------------------------------------------------------
+# A2 — heuristic_predict (thin adapter over ImpactPredictor)
+# ---------------------------------------------------------------------------
+
+def test_heuristic_predict_reproduces_documented_values():
+    """heuristic_predict reproduces the exact values from test_impact_model.py."""
+    # category_ordinal=3, total_houses=1000, structural_vuln_frac=0.20
+    # intensity=0.6, affected=round(1000*4.1*(0.2+0.8*0.6))=2788, damage_rate=0.144
+    row = {
+        "category_ordinal": 3,
+        "total_houses": 1000,
+        "province_housing_units": 50000,
+        "province_households": 51000,
+        "structural_vuln_frac": 0.20,
+        "unimproved_water_frac": 0.10,
+    }
+    affected, damage_rate = heuristic_predict(row)
+    assert affected == 2788
+    assert damage_rate == pytest.approx(0.144)
+
+
+def test_heuristic_predict_accepts_pandas_series():
+    """heuristic_predict accepts a pandas Series (for use in df.apply)."""
+    row = pd.Series({
+        "category_ordinal": 3,
+        "total_houses": 1000,
+        "province_housing_units": 50000,
+        "province_households": 51000,
+        "structural_vuln_frac": 0.20,
+        "unimproved_water_frac": 0.10,
+    })
+    affected, damage_rate = heuristic_predict(row)
+    assert affected == 2788
+    assert damage_rate == pytest.approx(0.144)
+
+
+def test_heuristic_predict_is_fold_independent():
+    """Calling heuristic_predict twice with same features gives same result."""
+    row = {
+        "category_ordinal": 5,
+        "total_houses": 500,
+        "province_housing_units": 30000,
+        "province_households": 31000,
+        "structural_vuln_frac": 0.40,
+        "unimproved_water_frac": 0.15,
+    }
+    r1 = heuristic_predict(row)
+    r2 = heuristic_predict(row)
+    assert r1 == r2
