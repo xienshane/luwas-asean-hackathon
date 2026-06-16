@@ -24,6 +24,7 @@ import TeamsView from './TeamsView';
 import ManifestsView from './ManifestsView';
 import { useLiveReports } from '@/lib/live/useLiveReports';
 import { useLiveVolunteers } from '@/lib/live/useLiveVolunteers';
+import { roadBlockRequest, isLiveImpassableReport } from '@/lib/coordinator/roadStatus';
 
 // PAGASA storm-intensity ordinal (category_ordinal) -> label, for the Day-0 scenario picker.
 // Matches the model's category_ordinal range (0 TD .. 5 violent typhoon).
@@ -72,6 +73,15 @@ export default function CommandDashboard() {
 
   // Chronological EOC Log state
   const [activityLogs, setActivityLogs] = useState<{ id: string; time: string; event: string; type: 'info' | 'warn' | 'success' | 'alert' }[]>([]);
+
+  // Live re-route (Phase 4.5): a transient banner when routes redraw around a blocked road,
+  // plus refs to fire the auto-reroute once per genuinely-new impassable report.
+  const [rerouteNotice, setRerouteNotice] = useState<string | null>(null);
+  const mountedAtRef = useRef<number>(0);
+  const reroutedReportsRef = useRef<Set<string>>(new Set());
+  // Stamp the mount time in an effect (not during render) so auto-reroute only fires for
+  // reports that arrive after the coordinator opened the dashboard.
+  useEffect(() => { if (!mountedAtRef.current) mountedAtRef.current = Date.now(); }, []);
 
   // Load live barangays + Silent Area scores from Supabase on mount. The map, tooltips,
   // and intelligence panel all render from this real data (coordinator_barangay_scores
@@ -262,11 +272,88 @@ export default function CommandDashboard() {
     addActivityLog(`REPORT FLAGGED: #${reportId} flagged as unreliable.`, 'warn');
   };
 
-  // Update Road Edge status (EOC accessibility)
-  const handleUpdateRoadStatus = (edgeId: string, status: 'open' | 'slow' | 'blocked' | 'damaged', notes?: string) => {
-    setEdges(prev => prev.map(e => e.id === edgeId ? { ...e, status, notes } : e));
-    addActivityLog(`ROAD NETWORK: ${edges.find(e => e.id === edgeId)?.name} status updated to [${status.toUpperCase()}].`, status === 'open' ? 'info' : 'warn');
+  // Re-run the pipeline so OR-Tools redraws routes on the current road graph (avoiding
+  // any blocked edge), refresh the blocked-edge overlay, and surface a transient banner.
+  // Reuses /api/pipeline (DevPlan 4.5); routes redraw via useLivePlan Realtime.
+  const runReroute = async (reasonLabel: string) => {
+    try {
+      const res = await fetch('/api/pipeline', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      });
+      const out = await res.json().catch(() => ({}));
+      try { setEdges(await fetchRoadStatus()); } catch { /* overlay refresh is best-effort */ }
+      setRerouteNotice(`Re-routed: ${reasonLabel}`);
+      addActivityLog(`RE-ROUTE: ${reasonLabel} — ${out.routes ?? 0} route(s) redrawn on real roads.`, 'warn');
+      window.setTimeout(() => setRerouteNotice(null), 8000);
+    } catch {
+      addActivityLog('RE-ROUTE: pipeline unreachable — graph updated, routes not redrawn.', 'alert');
+    }
   };
+
+  // Update Road Edge status (EOC accessibility). 'slow' is advisory (no graph change);
+  // 'blocked'/'damaged' block the edge and 'open' restores it — each attributed to the
+  // coordinator via /api/road-status, then a re-route redraws the affected routes.
+  const handleUpdateRoadStatus = async (edgeId: string, status: 'open' | 'slow' | 'blocked' | 'damaged', notes?: string) => {
+    const edgeName = edges.find(e => e.id === edgeId)?.name ?? `Edge ${edgeId}`;
+    setEdges(prev => prev.map(e => e.id === edgeId ? { ...e, status, notes } : e));
+
+    const req = roadBlockRequest(status, notes);
+    if (!req) { // advisory only
+      addActivityLog(`ROAD NETWORK: ${edgeName} marked [SLOW] (advisory — graph unchanged).`, 'warn');
+      return;
+    }
+    addActivityLog(`ROAD NETWORK: ${edgeName} status [${status.toUpperCase()}] — updating road graph…`, req.impassable ? 'warn' : 'info');
+    try {
+      const res = await fetch('/api/road-status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ edgeId: Number(edgeId), ...req }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.error ?? `road-status ${res.status}`);
+      }
+      await runReroute(req.impassable
+        ? `road reported impassable — ${edgeName}`
+        : `road cleared — ${edgeName}`);
+    } catch (err) {
+      addActivityLog(`ROAD NETWORK: update failed — ${err instanceof Error ? err.message : 'unknown error'}.`, 'alert');
+    }
+  };
+
+  // Coordinator click-to-block: snap the clicked point to the nearest road edge, block it
+  // (attributed via /api/road-status), then re-route around it.
+  const handleBlockRoadAt = async (lat: number, lng: number) => {
+    addActivityLog('ROAD NETWORK: blocking nearest road to the clicked point…', 'warn');
+    try {
+      const res = await fetch('/api/road-status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat, lng, impassable: true, reason: 'coordinator block (map)' }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.error ?? `road-status ${res.status}`);
+      }
+      const out = await res.json().catch(() => ({}));
+      await runReroute(`road blocked by coordinator (edge ${out.edgeId ?? '?'})`);
+    } catch (err) {
+      addActivityLog(`ROAD NETWORK: block failed — ${err instanceof Error ? err.message : 'unknown error'}.`, 'alert');
+    }
+  };
+
+  // Volunteer-driven live re-route: when a NEW impassable report streams in (Realtime),
+  // the DB trigger has already snapped+blocked the matching edge — re-route once and
+  // annotate. Pre-existing reports (created before mount) are skipped so the map doesn't
+  // re-route on load.
+  useEffect(() => {
+    const fresh = reports.filter(
+      (r) => isLiveImpassableReport(r, mountedAtRef.current) && !reroutedReportsRef.current.has(r.id),
+    );
+    if (fresh.length === 0) return;
+    fresh.forEach((r) => reroutedReportsRef.current.add(r.id));
+    const where = fresh[0].barangayName || 'a field report';
+    void runReroute(`road reported impassable by volunteer (${where})`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reports]);
 
   // Update supply manifest status (Approve, Reject)
   const handleUpdateManifestStatus = (barangayId: string, status: 'approved' | 'modified' | 'rejected') => {
@@ -438,7 +525,15 @@ const ResizeHandle = () => (
             created once — re-mounting it left the canvas blank on return. */}
         <div className={`flex-1 min-w-0 min-h-0 ${currentView === 'map' ? 'flex' : 'hidden'}`}>
           <div className="flex-1 flex flex-col min-w-0">
-            <div className="flex-1 min-h-0 p-4">
+            <div className="relative flex-1 min-h-0 p-4">
+              {rerouteNotice && (
+                <div
+                  role="status"
+                  className="absolute left-1/2 top-6 z-20 -translate-x-1/2 rounded-md border border-amber-400/60 bg-amber-500/95 px-4 py-2 text-sm font-semibold text-amber-950 shadow-lg"
+                >
+                  ⟲ {rerouteNotice}
+                </div>
+              )}
               <InteractiveCommandMap
                 active={currentView === 'map'}
                 barangays={barangays}
@@ -454,6 +549,7 @@ const ResizeHandle = () => (
                 onSelectReport={handleSelectReport}
                 scores={scores}
                 onUpdateRoadStatus={handleUpdateRoadStatus}
+                onBlockRoadAt={handleBlockRoadAt}
                 onConfirmReport={handleConfirmReport}
                 onFlagReport={handleFlagReport}
               />

@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Capture the service-role RPC so we can assert the block/restore call + attribution.
 const rpcCalls: Array<{ fn: string; args: any }> = [];
-const rpc = vi.fn(async (fn: string, args: any) => { rpcCalls.push({ fn, args }); return { data: null, error: null }; });
+const rpc = vi.fn(async (fn: string, args: any) => {
+  rpcCalls.push({ fn, args });
+  if (fn === 'nearest_road_edge_at') return { data: 99, error: null };
+  return { data: null, error: null };
+});
 
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => ({ rpc }) }));
 vi.mock('@/lib/supabase/server', () => ({ createClient: async () => ({
@@ -38,7 +42,18 @@ describe('POST /api/road-status', () => {
     expect(call!.args.p_impassable).toBe(false);
   });
 
-  it('rejects a missing or non-numeric edgeId with 400', async () => {
+  it('snaps a clicked {lat,lng} to the nearest edge and blocks it', async () => {
+    const res = await post({ lat: 10.33, lng: 123.905, impassable: true });
+    expect(res.status).toBe(200);
+    const snap = rpcCalls.find((c) => c.fn === 'nearest_road_edge_at');
+    expect(snap!.args).toEqual({ p_lat: 10.33, p_lng: 123.905 });
+    const block = rpcCalls.find((c) => c.fn === 'set_edge_impassable');
+    expect(block!.args.p_edge_id).toBe(99);
+    expect(block!.args.p_impassable).toBe(true);
+    expect(block!.args.p_actor).toBe('coord-1');
+  });
+
+  it('rejects when neither edgeId nor lat/lng is provided with 400', async () => {
     const res = await post({ impassable: true });
     expect(res.status).toBe(400);
     expect(rpcCalls.find((c) => c.fn === 'set_edge_impassable')).toBeUndefined();
