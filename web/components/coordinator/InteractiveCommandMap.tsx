@@ -35,6 +35,8 @@ interface InteractiveCommandMapProps {
   onSelectReport: (r: FieldReport) => void;
   scores: { barangayId: string; score: number; hoursSinceContact: number | null; timeFactor?: number; popDensityNorm?: number; hazardNorm?: number }[];
   onUpdateRoadStatus: (edgeId: string, status: 'open' | 'slow' | 'blocked' | 'damaged', notes?: string) => void;
+  /** Phase 4.5: coordinator click-to-block — snaps the clicked point to the nearest road edge. */
+  onBlockRoadAt?: (lat: number, lng: number) => void;
   onConfirmReport: (reportId: string) => void;
   onFlagReport: (reportId: string) => void;
   onResetReports?: () => void;
@@ -92,6 +94,7 @@ export default function InteractiveCommandMap({
   onSelectReport,
   scores,
   onUpdateRoadStatus,
+  onBlockRoadAt,
   onConfirmReport,
   onFlagReport,
   onResetReports,
@@ -135,6 +138,13 @@ export default function InteractiveCommandMap({
 
   const [selectedEdge, setSelectedEdge] = useState<RoadEdge | null>(null);
   const [roadNotes, setRoadNotes] = useState('');
+  // Phase 4.5: "Block road" mode — the next map click snaps to the nearest edge + blocks it.
+  // Refs let the stable map click listener read the live values without re-binding.
+  const [blockMode, setBlockMode] = useState(false);
+  const blockModeRef = useRef(false);
+  useEffect(() => { blockModeRef.current = blockMode; }, [blockMode]);
+  const onBlockRoadAtRef = useRef(onBlockRoadAt);
+  useEffect(() => { onBlockRoadAtRef.current = onBlockRoadAt; }, [onBlockRoadAt]);
   // Report detail card defaults to the English translation; this holds the report id
   // whose original is currently revealed, so switching reports resets to translated.
   const [reportOriginalId, setReportOriginalId] = useState<string | null>(null);
@@ -376,7 +386,18 @@ export default function InteractiveCommandMap({
   }, [selectedBarangay?.id, selectedReport?.id, isMapLoaded]);
 
   // ── Map click handlers ──
+  // Block-road mode: any click snaps to the nearest edge via the parent handler.
+  const handleMapBlockClick = useCallback((e: any) => {
+    if (!blockModeRef.current) return;
+    const { lat, lng } = e.lngLat ?? {};
+    if (typeof lat === 'number' && typeof lng === 'number') {
+      onBlockRoadAtRef.current?.(lat, lng);
+    }
+    setBlockMode(false);
+  }, []);
+
   const handleRoadClick = useCallback((e: any) => {
+    if (blockModeRef.current) return; // block mode handles the click
     if (!e.features?.length) return;
     const feat = e.features[0];
     const edgeId = feat.properties.id;
@@ -389,6 +410,7 @@ export default function InteractiveCommandMap({
   }, [onSelectReport]);
 
   const handleBarangayClick = useCallback((e: any) => {
+    if (blockModeRef.current) return; // block mode handles the click
     if (!e.features?.length) return;
     const feat = e.features[0];
     const barangayId = feat.properties.id;
@@ -665,6 +687,7 @@ export default function InteractiveCommandMap({
       });
 
       // Event handlers
+      map.on('click', handleMapBlockClick); // block-road mode (no-op unless active)
       map.on('click', 'roads-layer-solid', handleRoadClick);
       map.on('click', 'roads-layer-blocked', handleRoadClick);
       map.on('click', 'barangays-fill', handleBarangayClick);
@@ -1447,6 +1470,13 @@ export default function InteractiveCommandMap({
     return () => clearTimeout(timer);
   }, [isFullscreen]);
 
+  // Crosshair cursor while "Block road" mode is armed.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded) return;
+    map.getCanvas().style.cursor = blockMode ? 'crosshair' : '';
+  }, [blockMode, isMapLoaded]);
+
   // ── Zoom helpers ──
   const zoomIn    = () => mapRef.current?.zoomIn();
   const zoomOut   = () => mapRef.current?.zoomOut();
@@ -1533,6 +1563,19 @@ export default function InteractiveCommandMap({
         </div>
 
         <div className="flex items-center gap-0.5 text-[12px]">
+          {onBlockRoadAt && (
+            <button
+              onClick={() => setBlockMode((v) => !v)}
+              title="Click a road on the map to mark it blocked"
+              className={`mr-1.5 px-2 py-1 rounded-control transition-colors duration-100 cursor-pointer ${
+                blockMode
+                  ? 'bg-critical/15 text-critical border border-critical/40'
+                  : 'text-muted hover:text-fg hover:bg-raised/40 border border-transparent'
+              }`}
+            >
+              {blockMode ? 'Click a road…' : 'Block road'}
+            </button>
+          )}
           {LAYER_BUTTONS.map(({ key, label }) => (
             <button
               key={key}
