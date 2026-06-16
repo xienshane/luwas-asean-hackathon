@@ -11,6 +11,7 @@ import {
   PanelLeftClose,
   LogOut,
   User,
+  CloudLightning,
 } from 'lucide-react';
 import Image from 'next/image';
 import { StatusDot } from './ui';
@@ -22,6 +23,8 @@ interface LeftSidebarProps {
   reportsCount: number;
   highPriorityCount: number;
   onReset: () => void;
+  onRunDay0?: () => void;
+  day0Running?: boolean;
   onLogout?: () => void;
 }
 
@@ -39,6 +42,8 @@ export default function LeftSidebar({
   reportsCount,
   highPriorityCount,
   onReset,
+  onRunDay0,
+  day0Running,
   onLogout,
 }: LeftSidebarProps) {
   // Icon rail by default — the map is the product; chrome stays out of the way.
@@ -129,6 +134,19 @@ export default function LeftSidebar({
 
         {/* Bottom: emergency action + profile + logout */}
         <div className="border-t border-line p-2 space-y-2">
+          {onRunDay0 && (
+            <button
+              onClick={onRunDay0}
+              disabled={day0Running}
+              title="Run Day 0 Predictions — forecast impact before any field report"
+              className={`w-full flex items-center rounded-control border border-active/30 text-active hover:bg-active/10 transition-colors duration-100 cursor-pointer disabled:opacity-50 disabled:cursor-default ${
+                collapsed ? 'justify-center py-2.5' : 'gap-2 px-2.5 py-2 text-[13px] font-medium'
+              }`}
+            >
+              <CloudLightning className={`w-[18px] h-[18px] shrink-0 ${day0Running ? 'animate-pulse' : ''}`} />
+              {!collapsed && <span>{day0Running ? 'Forecasting…' : 'Run Day 0'}</span>}
+            </button>
+          )}
           <button
             onClick={onReset}
             title="Reset to scratch"

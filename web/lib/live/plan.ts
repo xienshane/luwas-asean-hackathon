@@ -25,6 +25,7 @@ const CONF_TO_UI = (c: number): ImpactPrediction['confidence'] => (c >= 0.66 ? '
 interface PredictionRow {
   barangay_id: string; model: string; predicted_affected: number | null;
   damage_severity: string | null; confidence: number | null; override_value: number | null; inputs: any;
+  is_day0?: boolean | null;
 }
 export function predictionRowToUi(r: PredictionRow): ImpactPrediction {
   return {
@@ -33,6 +34,7 @@ export function predictionRowToUi(r: PredictionRow): ImpactPrediction {
     damageSeverity: SEV_DB_TO_UI[r.damage_severity ?? 'moderate'] ?? 'minor',
     confidence: CONF_TO_UI(Number(r.confidence ?? 0)),
     overrideValue: r.override_value, contributors: [],
+    isDay0: r.is_day0 === true,
   };
 }
 

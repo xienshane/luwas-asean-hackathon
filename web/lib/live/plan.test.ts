@@ -14,6 +14,13 @@ it('converts a prediction row to the UI ImpactPrediction', () => {
     damage_severity: 'high', confidence: 0.8, override_value: null, inputs: {} });
   expect(p).toMatchObject({ barangayId: 'b1', predictedAffected: 500, damageSeverity: 'moderate' });
   // map DB severity vocab -> UI: low/moderate->minor, high->moderate, severe->severe
+  expect(p.isDay0).toBe(false); // report-driven rows are not Day-0
+});
+
+it('flags Day-0 predictions via is_day0', () => {
+  const p = predictionRowToUi({ barangay_id: 'b1', model: 'tabpfn', predicted_affected: 500,
+    damage_severity: 'high', confidence: 0.8, override_value: null, inputs: {}, is_day0: true });
+  expect(p.isDay0).toBe(true);
 });
 
 it('converts a manifest row to the UI SupplyManifest', () => {

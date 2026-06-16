@@ -190,6 +190,15 @@ export default function RightIntelligencePanel({
                     </span>
                     <span className="text-[12px] text-muted">est. affected</span>
                   </div>
+                  {prediction.isDay0 && (
+                    <div
+                      className="mt-1.5 inline-flex items-center gap-1.5 rounded-control border border-warning/30 bg-warning/10 px-2 py-1 text-[11px] font-medium text-warning"
+                      title="Day-0 forecast from a uniform storm scenario (no per-barangay wind footprint). Override-able; not yet confirmed by a field report."
+                    >
+                      <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-warning" />
+                      Predicted — Unconfirmed (Day 0)
+                    </div>
+                  )}
                   {isAffectedOverridden && (
                     <div className="mt-1.5 text-[13px] text-active">
                       Overridden · <span className="font-mono tabular-nums">{prediction.overrideValue?.toLocaleString()}</span> people

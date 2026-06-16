@@ -114,6 +114,7 @@ export interface ImpactPrediction {
   confidence: 'high' | 'moderate' | 'low';
   overrideValue: number | null;
   contributors: string[];
+  isDay0: boolean; // produced by the Day-0 forecast (no field report yet) — render as unconfirmed
 }
 
 export interface SupplyItem {

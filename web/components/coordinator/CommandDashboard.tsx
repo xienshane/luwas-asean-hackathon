@@ -25,6 +25,17 @@ import ManifestsView from './ManifestsView';
 import { useLiveReports } from '@/lib/live/useLiveReports';
 import { useLiveVolunteers } from '@/lib/live/useLiveVolunteers';
 
+// PAGASA storm-intensity ordinal (category_ordinal) -> label, for the Day-0 scenario picker.
+// Matches the model's category_ordinal range (0 TD .. 5 violent typhoon).
+const PAGASA_CATEGORIES = [
+  'Tropical Depression',
+  'Tropical Storm',
+  'Severe Tropical Storm',
+  'Typhoon',
+  'Super Typhoon',
+  'Violent Typhoon',
+];
+
 export default function CommandDashboard() {
   // Navigation View selection State
   const [currentView, setCurrentView] = useState('map');
@@ -331,6 +342,39 @@ export default function CommandDashboard() {
     }
   };
 
+  // Day-0 forecast — run TabPFN impact + Sphere manifests across communities BEFORE any
+  // field report exists, for a coordinator-chosen storm scenario. Results stream back via
+  // useLivePlan (Realtime) labelled "Predicted — Unconfirmed (Day 0)" and stay override-able.
+  const [showDay0Modal, setShowDay0Modal] = useState(false);
+  const [day0Running, setDay0Running] = useState(false);
+  const [day0Category, setDay0Category] = useState(4); // PAGASA intensity; 4 = super typhoon
+  const handleRunDay0 = () => setShowDay0Modal(true);
+
+  const confirmDay0 = async () => {
+    setDay0Running(true);
+    addActivityLog(`DAY 0 FORECAST: running ${PAGASA_CATEGORIES[day0Category]} scenario…`, 'info');
+    try {
+      const res = await fetch('/api/pipeline/day0', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ categoryOrdinal: day0Category }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(`day0 ${res.status}: ${detail?.error ?? 'unknown'}`);
+      }
+      const out = await res.json();
+      addActivityLog(
+        `DAY 0 FORECAST: ${out.predictions ?? 0} predictions, ${out.manifests ?? 0} manifests (${out.source ?? 'model'}).`,
+        'success',
+      );
+    } catch (err) {
+      addActivityLog(`DAY 0 FORECAST: failed — ${err instanceof Error ? err.message : 'AI service unreachable'}.`, 'alert');
+    } finally {
+      setDay0Running(false);
+      setShowDay0Modal(false);
+    }
+  };
+
   const handleClearBarangaySelection = () => {
     setSelectedBarangay(null);
     setSelectedReport(null);
@@ -380,6 +424,8 @@ const ResizeHandle = () => (
         reportsCount={reportsCount}
         highPriorityCount={highPriorityCount}
         onReset={handleReset}
+        onRunDay0={handleRunDay0}
+        day0Running={day0Running}
         // onBroadcastAlert={() => {}}
         // onExportReport={() => {}}
       />
@@ -504,6 +550,56 @@ const ResizeHandle = () => (
                 className="px-4 py-2 text-[13px] font-medium text-critical bg-critical/10 hover:bg-critical/20 border border-critical/30 rounded-control transition-colors duration-100 cursor-pointer disabled:opacity-50"
               >
                 {resetting ? 'Resetting…' : 'Reset'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Day-0 forecast — scenario picker. Additive: never auto-dispatches. */}
+      {showDay0Modal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-surface border border-line rounded-card max-w-md w-full mx-4 overflow-hidden">
+            <div className="px-5 py-4 border-b border-line">
+              <h3 className="text-[17px] font-medium text-fg">Run Day 0 Predictions</h3>
+              <p className="text-[13px] text-muted mt-1">
+                Forecast impact across communities before any field report arrives.
+              </p>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <label className="block text-[13px] text-muted">Storm scenario (PAGASA intensity)</label>
+              <select
+                value={day0Category}
+                onChange={(e) => setDay0Category(Number(e.target.value))}
+                disabled={day0Running}
+                className="w-full px-3 py-2 text-[14px] text-fg bg-raised border border-line rounded-control cursor-pointer disabled:opacity-50"
+              >
+                {PAGASA_CATEGORIES.map((label, i) => (
+                  <option key={i} value={i}>{`Cat ${i} — ${label}`}</option>
+                ))}
+              </select>
+              <p className="text-[12px] text-muted leading-relaxed">
+                Runs TabPFN over static vulnerability features for the chosen storm category, then
+                builds Sphere manifests. The hazard signal is a single uniform category (not a
+                per-barangay wind footprint), so estimates are scenario-based. Results appear as
+                <span className="text-fg"> Predicted — Unconfirmed (Day 0)</span> and stay override-able;
+                nothing is dispatched.
+              </p>
+            </div>
+            <div className="px-5 py-4 border-t border-line flex gap-2 justify-end">
+              <button
+                onClick={() => setShowDay0Modal(false)}
+                disabled={day0Running}
+                className="px-4 py-2 text-[13px] text-muted hover:text-fg border border-line rounded-control transition-colors duration-100 cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDay0}
+                disabled={day0Running}
+                className="px-4 py-2 text-[13px] font-medium text-active bg-active/10 hover:bg-active/20 border border-active/30 rounded-control transition-colors duration-100 cursor-pointer disabled:opacity-50"
+              >
+                {day0Running ? 'Forecasting…' : 'Run forecast'}
               </button>
             </div>
           </div>
