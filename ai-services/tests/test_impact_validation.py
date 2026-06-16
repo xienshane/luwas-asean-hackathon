@@ -740,3 +740,16 @@ def test_aggregate_calibration_mean_width_nonnegative():
     cal = result["overall"]["tabpfn"]["calibration"]
     assert cal["mean_width_affected"]      >= 0.0
     assert cal["mean_width_damage_rate"]   >= 0.0
+
+
+def test_aggregate_tabpfn_damage_rate_mae_absolute_value():
+    """Pin an absolute hand-computed value to catch any off-by-a-constant regression.
+
+    From _make_pooled_by_method():
+        true_damage_rate  = [0.10, 0.20, 0.30, 0.40]
+        tabpfn_dr_mean    = [0.11, 0.18, 0.32, 0.38]
+        abs errors        = [0.01, 0.02, 0.02, 0.02]
+        MAE               = (0.01 + 0.02 + 0.02 + 0.02) / 4 = 0.07 / 4 = 0.0175
+    """
+    result = aggregate(_make_pooled_by_method(), _make_per_storm_raw())
+    assert result["overall"]["tabpfn"]["damage_rate"]["mae"] == pytest.approx(0.0175)

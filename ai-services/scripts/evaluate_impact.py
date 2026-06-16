@@ -104,7 +104,12 @@ def _tabpfn_calibration(
 
 
 def _delta_pair(tabpfn_m: dict, baseline_m: dict) -> dict:
-    """Return delta dict: tabpfn metric - baseline metric (negative = tabpfn better)."""
+    """Return delta dict: tabpfn metric - baseline metric (negative = tabpfn better).
+
+    ``severity`` is intentionally excluded: macro_f1 and per-class classification
+    metrics operate on a different scale/interpretation from regression deltas, and
+    the evaluation plan only requires regression deltas (damage_rate, affected).
+    """
     return {
         "damage_rate": {
             "mae":  tabpfn_m["damage_rate"]["mae"]  - baseline_m["damage_rate"]["mae"],
