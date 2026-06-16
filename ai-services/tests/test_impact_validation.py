@@ -294,6 +294,35 @@ def test_heuristic_predict_accepts_pandas_series():
     assert damage_rate == pytest.approx(0.144)
 
 
+def test_population_only_empty_train_raises():
+    """population_only_fit raises ValueError on an empty DataFrame."""
+    empty = pd.DataFrame(columns=["affected", "damage_rate", "total_houses"])
+    with pytest.raises(ValueError, match="must not be empty"):
+        population_only_fit(empty)
+
+
+def test_population_only_all_zero_houses_uses_fallback():
+    """When every training row has total_houses==0, rate_per_house is undefined.
+
+    Predictions for test rows with total_houses>0 must use the fallback
+    (round(mean(train.affected))) rather than silently returning 0.
+    """
+    train = pd.DataFrame({
+        "affected": [50, 100, 150],    # mean = 100 → fallback = 100
+        "damage_rate": [0.1, 0.2, 0.3],
+        "total_houses": [0, 0, 0],     # no house data at all
+    })
+    test = pd.DataFrame({
+        "affected": [0],
+        "damage_rate": [0.0],
+        "total_houses": [500],         # positive houses, but rate is unknowable
+    })
+    model = population_only_fit(train)
+    affected_pred, _ = model.predict(test)
+    # Must equal fallback = round(mean([50, 100, 150])) = 100, NOT 0
+    assert affected_pred[0] == 100
+
+
 def test_heuristic_predict_is_fold_independent():
     """Calling heuristic_predict twice with same features gives same result."""
     row = {

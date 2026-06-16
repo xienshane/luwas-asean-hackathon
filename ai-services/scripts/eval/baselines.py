@@ -18,7 +18,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Union
 
-import numpy as np
 import pandas as pd
 
 
@@ -30,7 +29,7 @@ import pandas as pd
 class _PopulationOnlyModel:
     """Fitted state for the population-only baseline."""
     _mean_damage_rate: float
-    _rate_per_house: float
+    _rate_per_house: float | None  # None when no training row had total_houses > 0
     _fallback_affected: int
 
     def predict(
@@ -42,7 +41,9 @@ class _PopulationOnlyModel:
 
         for _, row in test_df.iterrows():
             houses = row["total_houses"]
-            if houses > 0:
+            # Use per-house rate only when it was estimable from training data
+            # and the test row has at least one house; otherwise use fallback.
+            if houses > 0 and self._rate_per_house is not None:
                 aff = round(self._rate_per_house * houses)
             else:
                 aff = self._fallback_affected
@@ -66,18 +67,24 @@ def population_only_fit(train_df: pd.DataFrame) -> _PopulationOnlyModel:
     -------
     A fitted model with a ``.predict(test_df)`` method.
     """
+    if train_df.empty:
+        raise ValueError("population_only_fit: train_df must not be empty")
+
     mean_damage_rate = float(train_df["damage_rate"].mean())
     fallback_affected = round(float(train_df["affected"].mean()))
 
     # Compute per-house rate only from rows where total_houses > 0.
+    # If no training row has total_houses > 0, rate_per_house is undefined —
+    # store None so _predict() uses the fallback for all test rows instead of
+    # silently predicting 0 for every positive-house row.
     mask = train_df["total_houses"] > 0
     if mask.any():
         rates = (
             train_df.loc[mask, "affected"] / train_df.loc[mask, "total_houses"]
         )
-        rate_per_house = float(rates.mean())
+        rate_per_house: float | None = float(rates.mean())
     else:
-        rate_per_house = 0.0
+        rate_per_house = None
 
     return _PopulationOnlyModel(
         _mean_damage_rate=mean_damage_rate,
@@ -130,7 +137,7 @@ def heuristic_predict(
         province_households=int(row["province_households"]),
         structural_vuln_frac=float(row["structural_vuln_frac"]),
         unimproved_water_frac=float(row["unimproved_water_frac"]),
-        id=row.get("id") if isinstance(row, dict) else None,
+        id=row.get("id"),
     )
 
     [pred] = predictor.predict([feat])
