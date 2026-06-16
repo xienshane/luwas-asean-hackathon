@@ -5,6 +5,7 @@ These tests are written FIRST (TDD). They will fail until metrics.py is implemen
 Run from ai-services/ directory:
     pytest tests/test_impact_validation.py
 """
+import math
 import sys
 from pathlib import Path
 
@@ -62,7 +63,6 @@ def test_log_mae_zeros():
 
 def test_log_mae_known():
     # log1p(0) == 0, log1p(1) == ln(2) ~ 0.6931; mae = 0.6931 / 1
-    import math
     assert log_mae([0.0], [1.0]) == pytest.approx(math.log(2), rel=1e-5)
 
 
@@ -93,9 +93,19 @@ def test_smape_result_in_unit_interval():
 
 
 def test_smape_known_value():
-    # |0 - 1| / ((0 + 1) / 2) / 2 = 1 / 0.5 / 2 = 1.0; then mean = 1.0
-    # but smape is already in [0,1] so value == 1.0
+    # y_true=0, y_pred=1: numerator=1, denominator=|0|+|1|=1, ratio=1.0.
+    # The ratio equals 1.0 regardless of pred magnitude whenever y_true==0
+    # and y_pred!=0, because numerator == denominator after simplification.
     assert smape([0.0], [1.0]) == pytest.approx(1.0)
+
+
+# ---------------------------------------------------------------------------
+# Empty-input contract
+# ---------------------------------------------------------------------------
+
+def test_mae_empty_returns_nan():
+    # Empty inputs return nan — no special-casing; documents the chosen contract.
+    assert math.isnan(mae([], []))
 
 
 # ---------------------------------------------------------------------------

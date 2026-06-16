@@ -3,6 +3,9 @@ Pure metric functions for impact-model validation.
 
 All functions are pure (no I/O, no globals, no side effects).
 Dependencies: numpy, scikit-learn only.
+
+Empty inputs (length-0 arrays) return nan — no special-casing; this is
+intentional so a downstream harness bug surfaces as a visible nan.
 """
 from __future__ import annotations
 
@@ -70,8 +73,9 @@ def smape(y_true, y_pred) -> float:
     """
     Symmetric MAPE scaled to [0, 1].
 
-    Per-element: |y_true - y_pred| / ((|y_true| + |y_pred|) / 2) / 2
-    When both are 0 the term is defined as 0 (0/0 → 0).
+    Returns mean( |y_true - y_pred| / (|y_true| + |y_pred|) ), i.e. the
+    standard sMAPE formula already in [0, 1].  When both values are 0 the
+    0/0 element is defined as 0.
     """
     y_true, y_pred = _arr(y_true), _arr(y_pred)
     numerator = np.abs(y_true - y_pred)
