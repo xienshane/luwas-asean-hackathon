@@ -793,3 +793,284 @@ def test_measure_latency_returns_valid_dict_with_tabpfn_active():
     assert result["tabpfn_active"] is True, (
         f"tabpfn_active should be True in torch env, got {result['tabpfn_active']}"
     )
+
+
+# ---------------------------------------------------------------------------
+# C1 — to_json() and to_markdown() (report writers; NO torch needed)
+# ---------------------------------------------------------------------------
+#
+# These tests use a hand-built minimal results dict that mirrors the schema
+# produced by B2's aggregate().  No model loading, no CSV, no torch.
+
+from scripts.eval.report import to_json, to_markdown
+
+
+def _make_minimal_results() -> dict:
+    """Return a schema-shaped results dict with known values.
+
+    Contains all top-level keys except ``latency_ms_deployed`` (intentionally
+    absent to verify that to_markdown handles missing keys gracefully).
+    """
+    return {
+        # generated_at / git_commit intentionally OMITTED here — the writers
+        # should fill them in if absent.
+        "config": {
+            "folds": 3,
+            "framing": "regressor",
+            "eval_n_estimators": 8,
+            "eval_context": "full",
+            "deployed_context": 128,
+            "deployed_n_estimators": 1,
+            "seed": 0,
+        },
+        "dataset": {
+            "rows": 10,
+            "storms": 3,
+            "year_range": [2010, 2020],
+            "headline_target": "damage_rate",
+        },
+        "overall": {
+            "tabpfn": {
+                "damage_rate": {"mae": 0.02, "rmse": 0.03},
+                "affected": {
+                    "log_mae": 0.10,
+                    "log_rmse": 0.15,
+                    "smape": 0.12,
+                },
+                "severity": {
+                    "accuracy": 0.80,
+                    "macro_f1": 0.75,
+                    "per_class": {
+                        "low":      {"precision": 0.9, "recall": 0.8, "f1": 0.85, "support": 5},
+                        "moderate": {"precision": 0.7, "recall": 0.7, "f1": 0.70, "support": 3},
+                        "high":     {"precision": 0.6, "recall": 0.6, "f1": 0.60, "support": 1},
+                        "severe":   {"precision": 0.5, "recall": 0.5, "f1": 0.50, "support": 1},
+                    },
+                },
+                "calibration": {
+                    "affected_80_coverage": 0.82,
+                    "damage_rate_80_coverage": 0.79,
+                    "mean_width_affected": 45.0,
+                    "mean_width_damage_rate": 0.08,
+                },
+            },
+            "population_only": {
+                "damage_rate": {"mae": 0.10, "rmse": 0.12},
+                "affected": {"log_mae": 0.40, "log_rmse": 0.50, "smape": 0.35},
+                "severity": {"accuracy": 0.60, "macro_f1": 0.55, "per_class": {}},
+            },
+            "heuristic": {
+                "damage_rate": {"mae": 0.08, "rmse": 0.10},
+                "affected": {"log_mae": 0.30, "log_rmse": 0.38, "smape": 0.28},
+                "severity": {"accuracy": 0.65, "macro_f1": 0.60, "per_class": {}},
+            },
+            "deltas": {
+                "tabpfn_vs_population": {
+                    "damage_rate": {"mae": -0.08, "rmse": -0.09},
+                    "affected": {"log_mae": -0.30, "log_rmse": -0.35, "smape": -0.23},
+                },
+                "tabpfn_vs_heuristic": {
+                    "damage_rate": {"mae": -0.06, "rmse": -0.07},
+                    "affected": {"log_mae": -0.20, "log_rmse": -0.23, "smape": -0.16},
+                },
+            },
+        },
+        "per_storm": [
+            {
+                "storm": "Conson",
+                "n": 2,
+                "tabpfn":          {"damage_rate": {"mae": 0.02, "rmse": 0.03}},
+                "population_only": {"damage_rate": {"mae": 0.10, "rmse": 0.12}},
+                "heuristic":       {"damage_rate": {"mae": 0.08, "rmse": 0.10}},
+            },
+            {
+                "storm": "Haiyan",
+                "n": 3,
+                "tabpfn":          {"damage_rate": {"mae": 0.03, "rmse": 0.04}},
+                "population_only": {"damage_rate": {"mae": 0.11, "rmse": 0.13}},
+                "heuristic":       {"damage_rate": {"mae": 0.09, "rmse": 0.11}},
+            },
+        ],
+    }
+
+
+# --- to_json tests ----------------------------------------------------------
+
+def test_to_json_produces_valid_json_file(tmp_path):
+    """to_json writes a valid JSON file that can be round-tripped."""
+    import json
+
+    results = _make_minimal_results()
+    out = tmp_path / "report.json"
+    to_json(results, out)
+
+    assert out.exists(), "to_json did not create the file"
+    loaded = json.loads(out.read_text())
+    assert isinstance(loaded, dict), "round-trip did not produce a dict"
+
+
+def test_to_json_required_top_level_keys(tmp_path):
+    """Round-tripped JSON must contain all required top-level keys."""
+    import json
+
+    out = tmp_path / "sub" / "report.json"
+    to_json(_make_minimal_results(), out)
+    loaded = json.loads(out.read_text())
+
+    for key in ("generated_at", "git_commit", "config", "dataset", "overall", "per_storm"):
+        assert key in loaded, f"missing top-level key: {key!r}"
+
+
+def test_to_json_fills_generated_at_if_absent(tmp_path):
+    """to_json must stamp generated_at when not present in the input dict."""
+    import json
+
+    results = _make_minimal_results()
+    assert "generated_at" not in results, "fixture should NOT have generated_at"
+
+    out = tmp_path / "report.json"
+    to_json(results, out)
+    loaded = json.loads(out.read_text())
+
+    assert "generated_at" in loaded
+    assert loaded["generated_at"] is not None
+    assert len(loaded["generated_at"]) > 0
+
+
+def test_to_json_fills_git_commit_if_absent(tmp_path):
+    """to_json must stamp git_commit when not present in the input dict."""
+    import json
+
+    results = _make_minimal_results()
+    assert "git_commit" not in results, "fixture should NOT have git_commit"
+
+    out = tmp_path / "report.json"
+    to_json(results, out)
+    loaded = json.loads(out.read_text())
+
+    assert "git_commit" in loaded
+    assert loaded["git_commit"] is not None
+    assert len(loaded["git_commit"]) > 0
+
+
+def test_to_json_creates_parent_dirs(tmp_path):
+    """to_json must create parent directories if they do not exist."""
+    import json
+
+    out = tmp_path / "a" / "b" / "c" / "report.json"
+    assert not out.parent.exists(), "parent should not exist yet"
+    to_json(_make_minimal_results(), out)
+    assert out.exists(), "file should exist after to_json"
+
+
+def test_to_json_does_not_overwrite_provided_generated_at(tmp_path):
+    """If generated_at is already in the dict, to_json must preserve it."""
+    import json
+
+    results = _make_minimal_results()
+    sentinel = "2000-01-01T00:00:00+00:00"
+    results["generated_at"] = sentinel
+
+    out = tmp_path / "report.json"
+    to_json(results, out)
+    loaded = json.loads(out.read_text())
+
+    assert loaded["generated_at"] == sentinel
+
+
+def test_to_json_does_not_overwrite_provided_git_commit(tmp_path):
+    """If git_commit is already in the dict, to_json must preserve it."""
+    import json
+
+    results = _make_minimal_results()
+    results["git_commit"] = "abc1234"
+
+    out = tmp_path / "report.json"
+    to_json(results, out)
+    loaded = json.loads(out.read_text())
+
+    assert loaded["git_commit"] == "abc1234"
+
+
+# --- to_markdown tests ------------------------------------------------------
+
+def test_to_markdown_produces_file(tmp_path):
+    """to_markdown writes a non-empty .md file."""
+    out = tmp_path / "report.md"
+    to_markdown(_make_minimal_results(), out)
+    assert out.exists(), "to_markdown did not create the file"
+    assert out.stat().st_size > 0, "to_markdown wrote an empty file"
+
+
+def test_to_markdown_contains_headline_section(tmp_path):
+    """Markdown must contain a headline callout section."""
+    out = tmp_path / "report.md"
+    to_markdown(_make_minimal_results(), out)
+    text = out.read_text()
+    # The headline section should mention damage_rate MAE and methods
+    assert "damage_rate" in text.lower() or "damage rate" in text.lower(), (
+        "headline section should reference damage_rate MAE"
+    )
+    assert "tabpfn" in text.lower(), "headline section should mention tabpfn"
+
+
+def test_to_markdown_lists_all_three_methods(tmp_path):
+    """Markdown must include a row or line for each of the three methods."""
+    out = tmp_path / "report.md"
+    to_markdown(_make_minimal_results(), out)
+    text = out.read_text().lower()
+    for method in ("tabpfn", "population_only", "heuristic"):
+        assert method in text, f"markdown missing method: {method}"
+
+
+def test_to_markdown_contains_per_storm_table(tmp_path):
+    """Markdown must include the per-storm table with storm names."""
+    out = tmp_path / "report.md"
+    to_markdown(_make_minimal_results(), out)
+    text = out.read_text()
+    assert "Conson" in text, "per-storm table missing storm 'Conson'"
+    assert "Haiyan" in text, "per-storm table missing storm 'Haiyan'"
+
+
+def test_to_markdown_contains_how_to_read_note(tmp_path):
+    """Markdown must include the 'How to read this' guidance note."""
+    out = tmp_path / "report.md"
+    to_markdown(_make_minimal_results(), out)
+    text = out.read_text().lower()
+    assert "how to read" in text, "markdown missing 'How to read this' note"
+
+
+def test_to_markdown_handles_missing_latency_gracefully(tmp_path):
+    """to_markdown must not raise if latency_ms_deployed is absent."""
+    results = _make_minimal_results()
+    assert "latency_ms_deployed" not in results, "fixture should lack latency"
+    out = tmp_path / "report.md"
+    # Must not raise
+    to_markdown(results, out)
+    assert out.exists()
+
+
+def test_to_markdown_handles_latency_when_present(tmp_path):
+    """to_markdown includes p50/p95 latency when latency_ms_deployed is present."""
+    results = _make_minimal_results()
+    results["latency_ms_deployed"] = {
+        "p50": 12.5,
+        "p95": 45.0,
+        "n": 30,
+        "batch_size": 1,
+        "tabpfn_active": True,
+    }
+    out = tmp_path / "report.md"
+    to_markdown(results, out)
+    text = out.read_text()
+    # p50 and p95 values should appear somewhere
+    assert "12.5" in text or "12" in text, "p50 latency not in markdown"
+    assert "45.0" in text or "45" in text, "p95 latency not in markdown"
+
+
+def test_to_markdown_creates_parent_dirs(tmp_path):
+    """to_markdown must create parent directories if they do not exist."""
+    out = tmp_path / "nested" / "dir" / "report.md"
+    assert not out.parent.exists()
+    to_markdown(_make_minimal_results(), out)
+    assert out.exists()
