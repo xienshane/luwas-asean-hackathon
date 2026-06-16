@@ -241,6 +241,7 @@ def _collect_fold(
     *,
     n_estimators: int,
     seed: int,
+    device: str = "cpu",
 ) -> dict:
     """Run all three methods on one LOTO fold; return raw arrays.
 
@@ -257,11 +258,11 @@ def _collect_fold(
     # --- TabPFN: two separate fits (affected, damage_rate) ---
     aff_mean, aff_lo, aff_hi = fit_predict_tabpfn(
         X_train, train_df["affected"].to_numpy(dtype=float), X_test,
-        n_estimators=n_estimators, device="cpu", seed=seed,
+        n_estimators=n_estimators, device=device, seed=seed,
     )
     dr_mean, dr_lo, dr_hi = fit_predict_tabpfn(
         X_train, train_df["damage_rate"].to_numpy(dtype=float), X_test,
-        n_estimators=n_estimators, device="cpu", seed=seed,
+        n_estimators=n_estimators, device=device, seed=seed,
     )
 
     tabpfn = {
@@ -347,6 +348,7 @@ def run_loto(
     n_estimators: int,
     limit_storms: int | None = None,
     seed: int = 0,
+    device: str = "cpu",
 ) -> dict:
     """Leave-One-Typhoon-Out evaluation: TabPFN vs population_only vs heuristic.
 
@@ -361,6 +363,8 @@ def run_loto(
         If set, only run that many folds (for smoke/dev runs).
     seed : int
         Random seed passed to TabPFN for reproducibility.
+    device : str
+        Compute device passed to TabPFN (default: "cpu").
 
     Returns
     -------
@@ -374,7 +378,7 @@ def run_loto(
     for i, (storm, train_df, test_df) in enumerate(iter_loto_folds(df)):
         if limit_storms is not None and i >= limit_storms:
             break
-        fold_raw = _collect_fold(storm, train_df, test_df, n_estimators=n_estimators, seed=seed)
+        fold_raw = _collect_fold(storm, train_df, test_df, n_estimators=n_estimators, seed=seed, device=device)
         fold_results.append(fold_raw)
 
     pooled = _concat_pooled(fold_results)
@@ -541,6 +545,7 @@ def main() -> None:
         n_estimators=args.n_estimators,
         limit_storms=args.limit_storms,
         seed=args.seed,
+        device=args.device,
     )
 
     # Optionally measure latency
@@ -596,7 +601,7 @@ def main() -> None:
     print(f"severity macro-F1 (TabPFN): {_f(_g(tabpfn_o, 'severity', 'macro_f1'))}")
     print(f"affected 80% coverage (TabPFN): {_f(_g(tabpfn_o, 'calibration', 'affected_80_coverage'))}")
     print(f"damage_rate 80% coverage (TabPFN): {_f(_g(tabpfn_o, 'calibration', 'damage_rate_80_coverage'))}")
-    if latency_ms_deployed:
+    if latency_ms_deployed is not None:
         print(f"latency p50: {_f(latency_ms_deployed.get('p50'), 1)} ms  "
               f"|  p95: {_f(latency_ms_deployed.get('p95'), 1)} ms")
     else:
