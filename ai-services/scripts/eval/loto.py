@@ -120,7 +120,8 @@ def fit_predict_tabpfn(
     out = m.predict(X_test, output_type="main")
     mean = np.asarray(out["mean"], float)
     q = out["quantiles"]                      # per-quantile arrays, 0.1 .. 0.9
-    assert len(q) >= 2, "expected >=2 quantile levels"
+    if len(q) < 2:
+        raise ValueError("expected >=2 quantile levels from TabPFN predict")
     lo = np.asarray(q[0], float)             # 10th percentile  (lower 80% bound)
     hi = np.asarray(q[-1], float)            # 90th percentile  (upper 80% bound)
     return mean, lo, hi
