@@ -336,3 +336,110 @@ def test_heuristic_predict_is_fold_independent():
     r1 = heuristic_predict(row)
     r2 = heuristic_predict(row)
     assert r1 == r2
+
+
+# ---------------------------------------------------------------------------
+# B1 — LOTO fold splitter + TabPFN fold runner (scripts/eval/loto.py)
+# ---------------------------------------------------------------------------
+
+from scripts.eval.loto import iter_loto_folds, fit_predict_tabpfn, features_matrix, predicted_severity
+from app.core.config import Settings
+
+
+def _load_training_df():
+    """Load the real training CSV (fast — just pandas, no model)."""
+    return pd.read_csv(Settings().training_table_path)
+
+
+# --- Structural / fast tests (no @pytest.mark.tabpfn) ---
+
+def test_loto_fold_count():
+    """iter_loto_folds yields exactly 85 folds (one per distinct cyclone_name)."""
+    df = _load_training_df()
+    folds = list(iter_loto_folds(df))
+    assert len(folds) == 85
+
+
+def test_loto_folds_are_sorted_by_storm_name():
+    """Folds are yielded in sorted order of cyclone_name."""
+    df = _load_training_df()
+    names = [name for name, _, _ in iter_loto_folds(df)]
+    assert names == sorted(names)
+
+
+def test_loto_fold_train_test_disjoint():
+    """For each fold, test rows share no cyclone_name with train rows."""
+    df = _load_training_df()
+    for storm, train_df, test_df in iter_loto_folds(df):
+        assert storm not in train_df["cyclone_name"].values
+        assert set(test_df["cyclone_name"].unique()) == {storm}
+
+
+def test_loto_fold_union_covers_all_rows():
+    """Train + test for every fold together account for all rows."""
+    df = _load_training_df()
+    for _, train_df, test_df in iter_loto_folds(df):
+        assert len(train_df) + len(test_df) == len(df)
+
+
+def test_features_matrix_shape_and_dtype():
+    """features_matrix returns float64 array with shape (n, len(FEATURE_COLUMNS))."""
+    df = _load_training_df()
+    X = features_matrix(df)
+    from app.services.impact_model import FEATURE_COLUMNS
+    assert X.shape == (len(df), len(FEATURE_COLUMNS))
+    assert X.dtype == float
+
+
+def test_predicted_severity_known_values():
+    """predicted_severity bins damage_rate using severity_class thresholds."""
+    import numpy as np
+    rates = np.array([0.0, 0.049, 0.05, 0.19, 0.20, 0.49, 0.50, 1.0])
+    result = predicted_severity(rates)
+    assert result == ["low", "low", "moderate", "moderate", "high", "high", "severe", "severe"]
+
+
+def test_predicted_severity_clips_to_01():
+    """Values outside [0,1] are clipped before binning (no crash, sensible class)."""
+    import numpy as np
+    result = predicted_severity(np.array([-0.5, 1.5]))
+    assert result == ["low", "severe"]
+
+
+# --- Heavy test: actually runs TabPFN (@pytest.mark.tabpfn) ---
+
+@pytest.mark.tabpfn
+def test_tabpfn_fold_runner_first_two_storms():
+    """fit_predict_tabpfn runs correctly on the first 2 LOTO folds.
+
+    Assertions per fold:
+    - mean.shape == (len(test_df),)
+    - lo <= hi elementwise
+    - all outputs are finite
+    """
+    import numpy as np
+
+    df = _load_training_df()
+    settings = Settings()
+    folds = list(iter_loto_folds(df))
+
+    for storm, train_df, test_df in folds[:2]:
+        X_train = features_matrix(train_df)
+        y_train = train_df["affected"].to_numpy(dtype=float)
+        X_test = features_matrix(test_df)
+
+        mean, lo, hi = fit_predict_tabpfn(
+            X_train, y_train, X_test,
+            n_estimators=settings.tabpfn_n_estimators,
+            device=settings.tabpfn_device,
+            seed=0,
+        )
+
+        n = len(test_df)
+        assert mean.shape == (n,), f"storm={storm}: mean shape {mean.shape} != ({n},)"
+        assert lo.shape == (n,)
+        assert hi.shape == (n,)
+        assert np.all(lo <= hi), f"storm={storm}: lo > hi for some predictions"
+        assert np.all(np.isfinite(mean)), f"storm={storm}: non-finite mean"
+        assert np.all(np.isfinite(lo)), f"storm={storm}: non-finite lo"
+        assert np.all(np.isfinite(hi)), f"storm={storm}: non-finite hi"
