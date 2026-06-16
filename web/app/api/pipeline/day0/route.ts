@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { predictImpact } from '@/lib/ai/impact';
 import { buildManifest } from '@/lib/ai/supply';
-import { toFeatures, severityFromDamageRate, type TargetRow } from '@/lib/pipeline/features';
+import { toFeatures, severityFromDamageRate, boundedAffected, type TargetRow } from '@/lib/pipeline/features';
 
 const DAYS = 3;
 const MAX_TARGETS = 50;
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
     return {
       barangay_id: t.barangay_id,
       model: p.source === 'tabpfn' ? 'tabpfn' : 'heuristic',
-      predicted_affected: p.affected,
+      predicted_affected: boundedAffected(p, t.population),
       damage_severity: p.severity_class ?? severityFromDamageRate(p.damage_rate),
       confidence: Number(p.confidence.toFixed(3)),
       inputs: features.find((f) => f.id === t.barangay_id) ?? {},
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
 
   // 5) Sphere manifest per barangay -> upsert. Deterministic, coordinator-override-able.
   const manifestRows = targets.map((t) => {
-    const affected = predByBrgy.get(t.barangay_id)!.affected;
+    const affected = boundedAffected(predByBrgy.get(t.barangay_id)!, t.population);
     return { barangay_id: t.barangay_id, affected };
   });
   const builtManifests = await Promise.all(

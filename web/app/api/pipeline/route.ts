@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { predictImpact } from '@/lib/ai/impact';
 import { buildManifest } from '@/lib/ai/supply';
 import { optimizeRoutes } from '@/lib/ai/routing';
-import { toFeatures, severityFromDamageRate, type TargetRow } from '@/lib/pipeline/features';
+import { toFeatures, severityFromDamageRate, boundedAffected, type TargetRow } from '@/lib/pipeline/features';
 import type { RouteStop, Vehicle } from '@/lib/types/routing';
 
 const DAYS = 3;
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
     return {
       barangay_id: t.barangay_id,
       model: p.source === 'tabpfn' ? 'tabpfn' : 'heuristic',
-      predicted_affected: p.affected,
+      predicted_affected: boundedAffected(p, t.population),
       damage_severity: p.severity_class ?? severityFromDamageRate(p.damage_rate),
       confidence: Number(p.confidence.toFixed(3)),
       inputs: features.find((f) => f.id === t.barangay_id) ?? {},
@@ -70,7 +70,7 @@ export async function POST(request: Request) {
   const demandByBrgy = new Map<string, number>();
   const manifestRows = [];
   for (const t of targets) {
-    const affected = predByBrgy.get(t.barangay_id)!.affected;
+    const affected = boundedAffected(predByBrgy.get(t.barangay_id)!, t.population);
     const m = await buildManifest({ predicted_affected: affected, days: DAYS, id: t.barangay_id });
     demandByBrgy.set(t.barangay_id, m.total_weight_kg);
     const qty = (cat: string) => m.lines.find((l) => l.category === cat)?.quantity ?? 0;
