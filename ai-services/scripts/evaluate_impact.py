@@ -452,8 +452,157 @@ def measure_latency(n: int = 30, batch_size: int = 1) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# __main__ (CLI stub — C2 finishes this)
+# CLI (C2)
 # ---------------------------------------------------------------------------
 
+def main() -> None:
+    """Entry point for the impact-model evaluation CLI."""
+    import argparse
+    import pandas as pd
+    from pathlib import Path
+    from app.core.config import Settings
+    from scripts.eval.report import to_json, to_markdown
+
+    parser = argparse.ArgumentParser(
+        description="LUWAS impact-model LOTO evaluation harness."
+    )
+    parser.add_argument(
+        "--n-estimators", type=int, default=8,
+        help="TabPFN n_estimators for the accuracy run (default: 8).",
+    )
+    parser.add_argument(
+        "--limit-storms", type=int, default=None,
+        help="Only run this many LOTO folds (smoke / dev mode).",
+    )
+    parser.add_argument(
+        "--seed", type=int, default=0,
+        help="Random seed for TabPFN (default: 0).",
+    )
+    parser.add_argument(
+        "--device", type=str, default="cpu",
+        help="Compute device passed to TabPFN (default: cpu).",
+    )
+    parser.add_argument(
+        "--out-dir", type=str, default=None,
+        help="Output directory for the JSON and Markdown reports. "
+             "Defaults to <repo-root>/docs/.",
+    )
+    parser.add_argument(
+        "--skip-latency", action="store_true",
+        help="Skip the latency measurement step (faster smoke runs).",
+    )
+    parser.add_argument(
+        "--calibrate-deployed", action="store_true",
+        help="(Optional) Run a second coverage pass at deployed config 128/1. "
+             "Accepted but currently a no-op; do not rely on its output.",
+    )
+    args = parser.parse_args()
+
+    # Resolve output directory
+    if args.out_dir is not None:
+        out_dir = Path(args.out_dir)
+    else:
+        out_dir = Path(__file__).resolve().parents[2] / "docs"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Load training table
+    settings = Settings()
+    df = pd.read_csv(settings.training_table_path)
+
+    # Derive dataset metadata
+    n_distinct_storms = int(df["cyclone_name"].nunique())
+    folds = n_distinct_storms if args.limit_storms is None else min(args.limit_storms, n_distinct_storms)
+
+    if "year" in df.columns:
+        year_range = [int(df["year"].min()), int(df["year"].max())]
+    else:
+        year_range = [None, None]
+
+    config = {
+        "folds": folds,
+        "framing": "regressor",
+        "eval_n_estimators": args.n_estimators,
+        "eval_context": "full",
+        "deployed_context": 128,
+        "deployed_n_estimators": 1,
+        "seed": args.seed,
+    }
+    dataset = {
+        "rows": len(df),
+        "storms": n_distinct_storms,
+        "year_range": year_range,
+        "headline_target": "damage_rate",
+    }
+
+    # Run LOTO evaluation
+    print(f"Running LOTO evaluation: {folds} fold(s), n_estimators={args.n_estimators}, seed={args.seed} ...")
+    loto_result = run_loto(
+        df,
+        n_estimators=args.n_estimators,
+        limit_storms=args.limit_storms,
+        seed=args.seed,
+    )
+
+    # Optionally measure latency
+    latency_ms_deployed = None
+    if not args.skip_latency:
+        print("Measuring deployed-config latency (30 calls) ...")
+        latency_ms_deployed = measure_latency()
+
+    # Assemble final results dict
+    results = {
+        "config": config,
+        "dataset": dataset,
+        "overall": loto_result["overall"],
+        "per_storm": loto_result["per_storm"],
+        "latency_ms_deployed": latency_ms_deployed,
+    }
+
+    # Write reports
+    json_path = out_dir / "impact_validation_results.json"
+    md_path   = out_dir / "impact_validation_results.md"
+    to_json(results, json_path)
+    to_markdown(results, md_path)
+    print(f"\nReports written to:\n  {json_path}\n  {md_path}")
+
+    # Print headline summary to stdout
+    overall  = results["overall"]
+    tabpfn_o = overall.get("tabpfn", {})
+    pop_o    = overall.get("population_only", {})
+    heur_o   = overall.get("heuristic", {})
+
+    def _g(d, *keys):
+        cur = d
+        for k in keys:
+            if not isinstance(cur, dict):
+                return None
+            cur = cur.get(k)
+        return cur
+
+    def _f(v, digits=4):
+        if v is None:
+            return "n/a"
+        try:
+            return f"{float(v):.{digits}f}"
+        except (TypeError, ValueError):
+            return str(v)
+
+    print("\n" + "=" * 60)
+    print("HEADLINE NUMBERS (Slide 11)")
+    print("=" * 60)
+    print(f"damage_rate MAE  |  TabPFN: {_f(_g(tabpfn_o, 'damage_rate', 'mae'))}  "
+          f"|  pop_only: {_f(_g(pop_o, 'damage_rate', 'mae'))}  "
+          f"|  heuristic: {_f(_g(heur_o, 'damage_rate', 'mae'))}")
+    print(f"severity macro-F1 (TabPFN): {_f(_g(tabpfn_o, 'severity', 'macro_f1'))}")
+    print(f"affected 80% coverage (TabPFN): {_f(_g(tabpfn_o, 'calibration', 'affected_80_coverage'))}")
+    print(f"damage_rate 80% coverage (TabPFN): {_f(_g(tabpfn_o, 'calibration', 'damage_rate_80_coverage'))}")
+    if latency_ms_deployed:
+        print(f"latency p50: {_f(latency_ms_deployed.get('p50'), 1)} ms  "
+              f"|  p95: {_f(latency_ms_deployed.get('p95'), 1)} ms")
+    else:
+        print("latency: n/a (--skip-latency)")
+    print("=" * 60)
+
+
 if __name__ == "__main__":
-    print("TODO: CLI not yet implemented. See task C2.")
+    main()
