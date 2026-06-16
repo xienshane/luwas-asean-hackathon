@@ -83,6 +83,23 @@ The Pydantic models in `app/models/impact.py` are the **canonical contract**;
   `damage_rate ≈ structural_vuln_frac × (0.3 + 0.7·intensity)`, `intensity =
   category_ordinal / 5`.
 
+## Validation (Phase 5.1)
+
+Leave-one-typhoon-out (LOTO) cross-validation of the TabPFN impact predictor against a
+population-only baseline and the built-in `_heuristic`, with 80% interval calibration
+and a deployed-config latency probe (128-row context, `n_estimators=1`).
+
+```bash
+# Full 85-fold accuracy run (writes docs/impact_validation_results.{md,json})
+python scripts/evaluate_impact.py
+
+# Fast smoke (e.g. 3 storms)
+python scripts/evaluate_impact.py --limit-storms 3
+```
+
+Results land in `docs/impact_validation_results.md` (human-readable) and
+`docs/impact_validation_results.json` (machine-readable, committed to the repo).
+
 ## Sphere supply engine (module, Phase 2.3)
 
 `app/services/sphere_supply.py` is a **deterministic, offline** function — no model, no
