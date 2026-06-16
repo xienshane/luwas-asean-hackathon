@@ -443,3 +443,300 @@ def test_tabpfn_fold_runner_first_two_storms():
         assert np.all(np.isfinite(mean)), f"storm={storm}: non-finite mean"
         assert np.all(np.isfinite(lo)), f"storm={storm}: non-finite lo"
         assert np.all(np.isfinite(hi)), f"storm={storm}: non-finite hi"
+
+
+# ---------------------------------------------------------------------------
+# B2 — aggregate() unit tests (NO torch; purely synthetic data)
+# ---------------------------------------------------------------------------
+#
+# Design: run_loto is split into:
+#   (a) _collect_fold()  — per-fold runner returning raw (true, pred) arrays
+#   (b) aggregate()      — pure function; metrics dict from pooled arrays
+#
+# These tests target (b) only.  We feed hand-built synthetic pooled_by_method
+# and per_storm_raw dicts and verify metric correctness + delta arithmetic.
+# No TabPFN, no torch, no CSV loading.
+
+from scripts.evaluate_impact import aggregate
+
+
+def _make_pooled_by_method():
+    """Build a minimal pooled_by_method dict with known values.
+
+    Two storms, two rows each (4 rows total).  Values chosen so expected
+    metrics are easy to verify by hand.
+    """
+    import numpy as np
+
+    # Ground-truth targets
+    true_affected    = np.array([100.0, 200.0, 300.0, 400.0])
+    true_damage_rate = np.array([0.1,   0.2,   0.3,   0.4])
+
+    # TabPFN predictions (deterministic, slightly off)
+    tabpfn_affected_mean = np.array([110.0, 190.0, 310.0, 390.0])
+    tabpfn_affected_lo   = np.array([ 80.0, 160.0, 270.0, 350.0])
+    tabpfn_affected_hi   = np.array([140.0, 220.0, 350.0, 430.0])
+    tabpfn_dr_mean       = np.array([0.11,  0.18,  0.32,  0.38])
+    tabpfn_dr_lo         = np.array([0.05,  0.10,  0.25,  0.30])
+    tabpfn_dr_hi         = np.array([0.20,  0.28,  0.40,  0.48])
+
+    # population_only: constant prediction per-fold approximated by a scalar
+    pop_affected    = np.array([250.0, 250.0, 250.0, 250.0])
+    pop_damage_rate = np.array([0.25,  0.25,  0.25,  0.25])
+
+    # heuristic: another deterministic predictor
+    heur_affected    = np.array([120.0, 180.0, 320.0, 380.0])
+    heur_damage_rate = np.array([0.12,  0.19,  0.31,  0.39])
+
+    return {
+        "tabpfn": {
+            "true_affected":    true_affected,
+            "true_damage_rate": true_damage_rate,
+            "pred_affected_mean": tabpfn_affected_mean,
+            "pred_affected_lo":   tabpfn_affected_lo,
+            "pred_affected_hi":   tabpfn_affected_hi,
+            "pred_damage_rate_mean": tabpfn_dr_mean,
+            "pred_damage_rate_lo":   tabpfn_dr_lo,
+            "pred_damage_rate_hi":   tabpfn_dr_hi,
+        },
+        "population_only": {
+            "true_affected":    true_affected,
+            "true_damage_rate": true_damage_rate,
+            "pred_affected":    pop_affected,
+            "pred_damage_rate": pop_damage_rate,
+        },
+        "heuristic": {
+            "true_affected":    true_affected,
+            "true_damage_rate": true_damage_rate,
+            "pred_affected":    heur_affected,
+            "pred_damage_rate": heur_damage_rate,
+        },
+    }
+
+
+def _make_per_storm_raw():
+    """Two storms; each with 2 rows, same layout as pooled_by_method."""
+    import numpy as np
+
+    storms = []
+    for i, storm in enumerate(["Ambo", "Bagyong"]):
+        offset = i * 2
+        true_aff = np.array([100.0, 200.0]) + offset * 100
+        true_dr  = np.array([0.1, 0.2]) + offset * 0.1
+
+        storms.append({
+            "storm": storm,
+            "tabpfn": {
+                "true_affected":    true_aff,
+                "true_damage_rate": true_dr,
+                "pred_affected_mean": true_aff + np.array([10.0, -10.0]),
+                "pred_affected_lo":   true_aff - 20,
+                "pred_affected_hi":   true_aff + 20,
+                "pred_damage_rate_mean": true_dr + np.array([0.01, -0.02]),
+                "pred_damage_rate_lo":   true_dr - 0.05,
+                "pred_damage_rate_hi":   true_dr + 0.05,
+            },
+            "population_only": {
+                "true_affected":    true_aff,
+                "true_damage_rate": true_dr,
+                "pred_affected":    np.array([250.0, 250.0]),
+                "pred_damage_rate": np.array([0.25, 0.25]),
+            },
+            "heuristic": {
+                "true_affected":    true_aff,
+                "true_damage_rate": true_dr,
+                "pred_affected":    true_aff + np.array([20.0, -20.0]),
+                "pred_damage_rate": true_dr + np.array([0.02, -0.01]),
+            },
+        })
+    return storms
+
+
+def test_aggregate_returns_required_top_level_keys():
+    """aggregate() result must contain 'overall' and 'per_storm'."""
+    result = aggregate(_make_pooled_by_method(), _make_per_storm_raw())
+    assert "overall" in result
+    assert "per_storm" in result
+
+
+def test_aggregate_overall_has_all_methods():
+    """overall must contain tabpfn, population_only, heuristic."""
+    result = aggregate(_make_pooled_by_method(), _make_per_storm_raw())
+    overall = result["overall"]
+    assert "tabpfn" in overall
+    assert "population_only" in overall
+    assert "heuristic" in overall
+
+
+def test_aggregate_overall_damage_rate_metrics_present():
+    """Every method must have damage_rate.{mae, rmse}."""
+    result = aggregate(_make_pooled_by_method(), _make_per_storm_raw())
+    for method in ("tabpfn", "population_only", "heuristic"):
+        dr = result["overall"][method]["damage_rate"]
+        assert "mae" in dr and "rmse" in dr, f"missing dr metrics for {method}"
+
+
+def test_aggregate_overall_affected_metrics_present():
+    """Every method must have affected.{log_mae, log_rmse, smape}."""
+    result = aggregate(_make_pooled_by_method(), _make_per_storm_raw())
+    for method in ("tabpfn", "population_only", "heuristic"):
+        aff = result["overall"][method]["affected"]
+        assert "log_mae" in aff, f"missing log_mae for {method}"
+        assert "log_rmse" in aff, f"missing log_rmse for {method}"
+        assert "smape" in aff, f"missing smape for {method}"
+
+
+def test_aggregate_overall_severity_metrics_present():
+    """Every method must have severity.{accuracy, macro_f1, per_class}."""
+    result = aggregate(_make_pooled_by_method(), _make_per_storm_raw())
+    for method in ("tabpfn", "population_only", "heuristic"):
+        sev = result["overall"][method]["severity"]
+        assert "accuracy" in sev, f"missing severity.accuracy for {method}"
+        assert "macro_f1" in sev, f"missing severity.macro_f1 for {method}"
+        assert "per_class" in sev, f"missing severity.per_class for {method}"
+
+
+def test_aggregate_tabpfn_has_calibration():
+    """tabpfn must have calibration.{affected_80_coverage, damage_rate_80_coverage,
+    mean_width_affected, mean_width_damage_rate}."""
+    result = aggregate(_make_pooled_by_method(), _make_per_storm_raw())
+    cal = result["overall"]["tabpfn"].get("calibration", {})
+    assert "affected_80_coverage"     in cal
+    assert "damage_rate_80_coverage"  in cal
+    assert "mean_width_affected"      in cal
+    assert "mean_width_damage_rate"   in cal
+
+
+def test_aggregate_overall_has_deltas():
+    """overall must contain deltas.tabpfn_vs_population and deltas.tabpfn_vs_heuristic."""
+    result = aggregate(_make_pooled_by_method(), _make_per_storm_raw())
+    deltas = result["overall"].get("deltas", {})
+    assert "tabpfn_vs_population" in deltas
+    assert "tabpfn_vs_heuristic"  in deltas
+
+
+def test_aggregate_delta_arithmetic_damage_rate_mae():
+    """delta damage_rate.mae == tabpfn.mae - baseline.mae (negative = tabpfn better)."""
+    import numpy as np
+    pooled = _make_pooled_by_method()
+    result = aggregate(pooled, _make_per_storm_raw())
+
+    overall = result["overall"]
+    tabpfn_mae = overall["tabpfn"]["damage_rate"]["mae"]
+    pop_mae    = overall["population_only"]["damage_rate"]["mae"]
+    heur_mae   = overall["heuristic"]["damage_rate"]["mae"]
+
+    deltas = overall["deltas"]
+    assert deltas["tabpfn_vs_population"]["damage_rate"]["mae"] == pytest.approx(
+        tabpfn_mae - pop_mae
+    )
+    assert deltas["tabpfn_vs_heuristic"]["damage_rate"]["mae"] == pytest.approx(
+        tabpfn_mae - heur_mae
+    )
+
+
+def test_aggregate_delta_arithmetic_affected_smape():
+    """delta affected.smape == tabpfn.smape - baseline.smape."""
+    result = aggregate(_make_pooled_by_method(), _make_per_storm_raw())
+    overall = result["overall"]
+    tabpfn_smape = overall["tabpfn"]["affected"]["smape"]
+    pop_smape    = overall["population_only"]["affected"]["smape"]
+    heur_smape   = overall["heuristic"]["affected"]["smape"]
+
+    deltas = overall["deltas"]
+    assert deltas["tabpfn_vs_population"]["affected"]["smape"] == pytest.approx(
+        tabpfn_smape - pop_smape
+    )
+    assert deltas["tabpfn_vs_heuristic"]["affected"]["smape"] == pytest.approx(
+        tabpfn_smape - heur_smape
+    )
+
+
+def test_aggregate_delta_arithmetic_damage_rate_rmse():
+    """delta damage_rate.rmse == tabpfn.rmse - baseline.rmse."""
+    result = aggregate(_make_pooled_by_method(), _make_per_storm_raw())
+    overall = result["overall"]
+    tabpfn_rmse = overall["tabpfn"]["damage_rate"]["rmse"]
+    pop_rmse    = overall["population_only"]["damage_rate"]["rmse"]
+    heur_rmse   = overall["heuristic"]["damage_rate"]["rmse"]
+    deltas = overall["deltas"]
+    assert deltas["tabpfn_vs_population"]["damage_rate"]["rmse"] == pytest.approx(
+        tabpfn_rmse - pop_rmse
+    )
+    assert deltas["tabpfn_vs_heuristic"]["damage_rate"]["rmse"] == pytest.approx(
+        tabpfn_rmse - heur_rmse
+    )
+
+
+def test_aggregate_delta_arithmetic_affected_log_mae():
+    """delta affected.log_mae == tabpfn.log_mae - baseline.log_mae."""
+    result = aggregate(_make_pooled_by_method(), _make_per_storm_raw())
+    overall = result["overall"]
+    tabpfn_lm = overall["tabpfn"]["affected"]["log_mae"]
+    pop_lm     = overall["population_only"]["affected"]["log_mae"]
+    heur_lm    = overall["heuristic"]["affected"]["log_mae"]
+    deltas = overall["deltas"]
+    assert deltas["tabpfn_vs_population"]["affected"]["log_mae"] == pytest.approx(
+        tabpfn_lm - pop_lm
+    )
+    assert deltas["tabpfn_vs_heuristic"]["affected"]["log_mae"] == pytest.approx(
+        tabpfn_lm - heur_lm
+    )
+
+
+def test_aggregate_per_storm_count():
+    """per_storm list has one entry per storm in per_storm_raw."""
+    result = aggregate(_make_pooled_by_method(), _make_per_storm_raw())
+    assert len(result["per_storm"]) == 2
+
+
+def test_aggregate_per_storm_has_storm_and_n():
+    """Each per_storm entry must have 'storm' and 'n' keys."""
+    result = aggregate(_make_pooled_by_method(), _make_per_storm_raw())
+    for entry in result["per_storm"]:
+        assert "storm" in entry
+        assert "n" in entry
+
+
+def test_aggregate_per_storm_methods_present():
+    """Each per_storm entry must have tabpfn, population_only, heuristic."""
+    result = aggregate(_make_pooled_by_method(), _make_per_storm_raw())
+    for entry in result["per_storm"]:
+        for method in ("tabpfn", "population_only", "heuristic"):
+            assert method in entry, f"missing {method} in storm {entry.get('storm')}"
+
+
+def test_aggregate_overall_metrics_are_pooled_not_averaged():
+    """overall metrics are computed on pooled raw arrays, NOT averaged per-storm.
+
+    Verify by computing expected mae manually on the pooled arrays from
+    pooled_by_method and comparing to aggregate()'s overall result.
+    """
+    import numpy as np
+    from scripts.eval.metrics import mae
+
+    pooled = _make_pooled_by_method()
+    result = aggregate(pooled, _make_per_storm_raw())
+
+    # Manually compute expected mae for tabpfn damage_rate from pooled arrays
+    expected_mae = mae(
+        pooled["tabpfn"]["true_damage_rate"],
+        pooled["tabpfn"]["pred_damage_rate_mean"],
+    )
+    assert result["overall"]["tabpfn"]["damage_rate"]["mae"] == pytest.approx(expected_mae)
+
+
+def test_aggregate_calibration_coverage_in_unit_interval():
+    """Calibration coverage values must be in [0, 1]."""
+    result = aggregate(_make_pooled_by_method(), _make_per_storm_raw())
+    cal = result["overall"]["tabpfn"]["calibration"]
+    for key in ("affected_80_coverage", "damage_rate_80_coverage"):
+        assert 0.0 <= cal[key] <= 1.0, f"{key} = {cal[key]} out of [0,1]"
+
+
+def test_aggregate_calibration_mean_width_nonnegative():
+    """Calibration mean interval widths must be >= 0."""
+    result = aggregate(_make_pooled_by_method(), _make_per_storm_raw())
+    cal = result["overall"]["tabpfn"]["calibration"]
+    assert cal["mean_width_affected"]      >= 0.0
+    assert cal["mean_width_damage_rate"]   >= 0.0
