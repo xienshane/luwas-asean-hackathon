@@ -109,7 +109,7 @@ export default function OperationsPanel({
                 <span className="text-[14px] font-medium text-fg truncate">{r.barangayName}</span>
                 <span className="text-[12px] text-muted font-mono tabular-nums shrink-0">{hhmm(r.createdAt)}</span>
               </div>
-              <p className="text-[13px] text-muted leading-snug line-clamp-2 mb-2">{r.rawText}</p>
+              <p className="text-[13px] text-muted leading-snug line-clamp-2 mb-2">{r.translatedText ?? r.rawText}</p>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[12px] text-muted truncate">
                   {SOURCE_LABEL[r.source]} · {r.reporterName}

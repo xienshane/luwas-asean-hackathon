@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { dbReportToUi, mergeReport, timeAgo, type DbFieldReport } from './adapters';
+import { dbReportToUi, mergeReport, timeAgo, type CoordinatorFieldReport } from './adapters';
 
-const directory = new Map([
-  ['b-uuid-1', { id: 'b-uuid-1', name: 'Guadalupe', city_municipality: 'Cebu City', lat: 10.3225, lng: 123.8845, population: 68420 }],
-]);
-
-const row: DbFieldReport = {
+// Rows now come from the coordinator_field_reports view: the barangay name is
+// joined server-side and lat/lng are already resolved (report location → barangay
+// centroid fallback), so the adapter no longer needs a client-side directory.
+const row: CoordinatorFieldReport = {
   id: 'aaaaaaaa-0000-0000-0000-000000000001',
   barangay_id: 'b-uuid-1',
+  barangay_name: 'Guadalupe',
   source: 'app',
-  raw_text: 'water rising',
-  location: { type: 'Point', coordinates: [123.9, 10.31] },
+  raw_text: 'nagsaka ang tubig',
+  translated_text: 'water rising',
   population_estimate: 50,
   needs_severity: 'moderate',
   road_status: 'passable',
@@ -19,37 +19,40 @@ const row: DbFieldReport = {
   status: 'pending',
   created_at: '2026-06-12T08:00:00Z',
   offline_synced: false,
+  lat: 10.31,
+  lng: 123.9,
 };
 
 describe('dbReportToUi', () => {
-  it('maps a row with geometry into the UI shape', () => {
-    const ui = dbReportToUi(row, directory)!;
+  it('maps a row into the UI shape, resolving the name from the row', () => {
+    const ui = dbReportToUi(row)!;
     expect(ui.latitude).toBe(10.31);
     expect(ui.longitude).toBe(123.9);
-    expect(ui.barangayName).toBe('Guadalupe');
+    expect(ui.barangayName).toBe('Guadalupe'); // from the server-side join, not a capped client map
+    expect(ui.rawText).toBe('nagsaka ang tubig');
+    expect(ui.translatedText).toBe('water rising');
     expect(ui.needsSeverity).toBe('medium'); // canonical "moderate" -> UI "medium"
     expect(ui.reporterName).toBe('Field App');
   });
 
-  it('falls back to the barangay centroid when location is null', () => {
-    const ui = dbReportToUi({ ...row, location: null }, directory)!;
-    expect(ui.latitude).toBeCloseTo(10.3225);
+  it('falls back to "Unknown barangay" only when the joined name is null', () => {
+    expect(dbReportToUi({ ...row, barangay_name: null })!.barangayName).toBe('Unknown barangay');
   });
 
   it('labels offline-synced and SMS reports for the coordinator', () => {
-    expect(dbReportToUi({ ...row, offline_synced: true }, directory)!.reporterName).toBe(
+    expect(dbReportToUi({ ...row, offline_synced: true })!.reporterName).toBe(
       'Field App · offline sync',
     );
-    expect(dbReportToUi({ ...row, source: 'sms' }, directory)!.reporterName).toBe('SMS Intake');
+    expect(dbReportToUi({ ...row, source: 'sms' })!.reporterName).toBe('SMS Intake');
   });
 
   it('returns null when no coordinates are resolvable', () => {
-    expect(dbReportToUi({ ...row, location: null, barangay_id: null }, directory)).toBeNull();
+    expect(dbReportToUi({ ...row, lat: null, lng: null })).toBeNull();
   });
 });
 
 describe('mergeReport', () => {
-  const a = dbReportToUi(row, directory)!;
+  const a = dbReportToUi(row)!;
   it('prepends a new report', () => {
     expect(mergeReport([], a)).toEqual([a]);
   });

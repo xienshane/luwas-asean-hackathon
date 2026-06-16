@@ -1,9 +1,8 @@
 // Coordinator dashboard domain types.
 //
 // These describe the shapes the coordinator UI renders, independent of where the data
-// comes from. Real data (lib/supabase/coordinator.ts) and demo fixtures (lib/mockData.ts)
-// both produce values of these types — so when the mock fixtures are eventually removed,
-// nothing here moves.
+// comes from. The dashboard runs entirely on live Supabase data
+// (lib/supabase/coordinator.ts, lib/live/*) which produces values of these types.
 
 // A GeoJSON Polygon/MultiPolygon geometry — the real barangay boundary from PostGIS,
 // served by the coordinator_barangay_scores view for the map choropleth.
@@ -25,7 +24,7 @@ export interface Barangay {
   // Real barangay boundary (GeoJSON) for the map fill; absent → map falls back to a
   // centroid hexagon.
   boundary?: BoundaryGeometry;
-  // Not rendered anywhere today; optional so demo fixtures may still set them.
+  // Not rendered anywhere today; optional extras a data source may populate later.
   areaKm2?: number;
   hazardDetails?: {
     flood: number;
@@ -42,6 +41,8 @@ export interface FieldReport {
   reporterName: string;
   source: 'app' | 'sms' | 'parsed';
   rawText: string;
+  /** English translation of rawText; null if already English or not yet translated. */
+  translatedText: string | null;
   populationEstimate: number;
   needsSeverity: 'critical' | 'high' | 'medium' | 'low';
   roadStatus: string;
@@ -113,6 +114,7 @@ export interface ImpactPrediction {
   confidence: 'high' | 'moderate' | 'low';
   overrideValue: number | null;
   contributors: string[];
+  isDay0: boolean; // produced by the Day-0 forecast (no field report yet) — render as unconfirmed
 }
 
 export interface SupplyItem {

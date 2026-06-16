@@ -1,25 +1,17 @@
-// Adapts live Supabase rows into the mock-driven coordinator UI types.
-// The dashboard stays mock-first until Phase 4.1; live rows are merged in.
-// (FieldReport is defined in lib/types/coordinator — lib/mockData only holds
-// demo *data* of that shape and does not re-export the type.)
+// Adapts live Supabase rows into the coordinator UI types. The dashboard runs
+// entirely on live data; these adapters shape inbound rows for the components.
 import type { FieldReport } from '@/lib/types/coordinator';
-import { geometryToLngLat } from './wkb';
 
-export interface BarangayDirectoryEntry {
-  id: string;
-  name: string;
-  city_municipality: string | null;
-  lat: number;
-  lng: number;
-  population: number | null;
-}
-
-export interface DbFieldReport {
+// A row from the coordinator_field_reports view: barangay name joined and pin
+// lat/lng resolved (report location → barangay centroid) server-side, so no
+// client-side directory (and no 1,000-row PostgREST cap) is involved.
+export interface CoordinatorFieldReport {
   id: string;
   barangay_id: string | null;
+  barangay_name: string | null;
   source: 'app' | 'sms' | 'parsed';
   raw_text: string | null;
-  location: unknown;
+  translated_text: string | null;
   population_estimate: number | null;
   needs_severity: string | null;
   road_status: string | null;
@@ -28,6 +20,8 @@ export interface DbFieldReport {
   status: 'pending' | 'confirmed' | 'flagged';
   created_at: string;
   offline_synced?: boolean | null;
+  lat: number | null;
+  lng: number | null;
 }
 
 // Canonical DB vocabulary (low|moderate|high|critical) -> the UI type's union.
@@ -38,15 +32,9 @@ const SEVERITY_UI: Record<string, FieldReport['needsSeverity']> = {
   critical: 'critical',
 };
 
-export function dbReportToUi(
-  row: DbFieldReport,
-  directory: Map<string, BarangayDirectoryEntry>,
-): FieldReport | null {
-  const fromGeom = geometryToLngLat(row.location);
-  const brgy = row.barangay_id ? directory.get(row.barangay_id) : undefined;
-  const lat = fromGeom?.lat ?? brgy?.lat;
-  const lng = fromGeom?.lng ?? brgy?.lng;
-  if (lat == null || lng == null) return null; // nothing to pin (e.g. unmatched SMS)
+export function dbReportToUi(row: CoordinatorFieldReport): FieldReport | null {
+  const { lat, lng } = row;
+  if (lat == null || lng == null) return null; // nothing to pin (e.g. unmatched SMS, no centroid)
 
   const reporterName =
     row.source === 'sms'
@@ -60,10 +48,11 @@ export function dbReportToUi(
   return {
     id: row.id,
     barangayId: row.barangay_id,
-    barangayName: brgy?.name ?? 'Unknown barangay',
+    barangayName: row.barangay_name ?? 'Unknown barangay',
     reporterName,
     source: row.source,
     rawText: row.raw_text ?? '',
+    translatedText: row.translated_text ?? null,
     populationEstimate: row.population_estimate ?? 0,
     needsSeverity: SEVERITY_UI[row.needs_severity ?? ''] ?? 'low',
     roadStatus: row.road_status ?? 'unknown',

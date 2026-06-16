@@ -132,6 +132,46 @@ def test_per_field_confidences_are_exposed():
     assert resp.extraction.road_status_confidence == pytest.approx(0.9)
 
 
+# --- translation ------------------------------------------------------------
+
+def test_parse_surfaces_translated_text_when_present():
+    reply = HIGH_CONF.replace(
+        '"overall_confidence": 0.82',
+        '"overall_confidence": 0.82, "translated_text": "Severe flooding in Apas"',
+    )
+    resp = make_parser(FakeBackend("sea-lion", reply=reply)).parse("Grabe ang baha sa Apas")
+    assert resp.translated_text == "Severe flooding in Apas"
+
+
+def test_parse_translated_text_null_when_absent_or_blank():
+    assert make_parser(FakeBackend("sea-lion", reply=HIGH_CONF)).parse("x").translated_text is None
+    reply = HIGH_CONF.replace('"overall_confidence": 0.82',
+                              '"overall_confidence": 0.82, "translated_text": "  "')
+    assert make_parser(FakeBackend("sea-lion", reply=reply)).parse("x").translated_text is None
+
+
+def test_translate_returns_english():
+    reply = '{"translated_text": "Severe flooding in Apas", "is_english": false}'
+    resp = make_parser(FakeBackend("sea-lion", reply=reply)).translate("Grabe ang baha sa Apas", id="t1")
+    assert resp.translated_text == "Severe flooding in Apas"
+    assert resp.provider == "sea-lion"
+    assert resp.id == "t1"
+
+
+def test_translate_returns_none_for_already_english():
+    reply = '{"translated_text": "Flooding in Apas", "is_english": true}'
+    resp = make_parser(FakeBackend("sea-lion", reply=reply)).translate("Flooding in Apas")
+    assert resp.translated_text is None
+
+
+def test_translate_falls_back_to_gemini():
+    primary = FakeBackend("sea-lion", error=RuntimeError("down"))
+    fallback = FakeBackend("gemini", reply='{"translated_text": "Help in Pasil", "is_english": false}')
+    resp = make_parser(primary, fallback).translate("Tabang sa Pasil")
+    assert resp.provider == "gemini"
+    assert resp.translated_text == "Help in Pasil"
+
+
 # --- fallback ---------------------------------------------------------------
 
 def test_falls_back_to_gemini_on_sea_lion_error():

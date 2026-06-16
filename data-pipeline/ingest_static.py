@@ -173,40 +173,95 @@ def ingest_barangays(engine) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 2. PSA population -> barangays.population  (Cebu City coverage)
+# 2. PSA population -> barangays.population  (province-wide coverage)
 # ---------------------------------------------------------------------------
-def ingest_population(engine) -> None:
-    banner("PSA 2020 population -> public.barangays.population")
-    df = pd.read_csv(RAW / "barangay_population.csv")
-    df.columns = [c.strip().lower() for c in df.columns]
-    df["population"] = (
-        df["population"].astype(str).str.replace(",", "", regex=False).str.strip()
-    )
-    df["population"] = pd.to_numeric(df["population"], errors="coerce")
-    df["key"] = df["barangay"].astype(str).str.strip().str.lower()
-    # drop the city-total row(s) (e.g. "CITY OF CEBU (Capital)")
-    df = df[~df["key"].str.contains("city of cebu") & df["population"].notna()]
+# The PSA 2020 CSV is a flat report: a province-total row ("CEBU *"), then one
+# ALL-CAPS municipality header per municipality (carrying its subtotal), each
+# followed by its mixed-case barangay rows. Cebu City appears at the end under
+# "CITY OF CEBU (Capital)". Barangay names repeat across municipalities (dozens
+# of "Poblacion"/"Bagacay"), so we forward-fill the current municipality and
+# match on (municipality, barangay) — never name alone. The 3 Highly-Urbanized
+# Cities not in the province file (Lapu-Lapu, Mandaue) have no source here.
+def _muni_key(name: str) -> str:
+    """Canonical municipality key: strip parens/digits, drop CITY/OF so
+    'CITY OF TOLEDO', 'Toledo City' and 'CITY OF CEBU (Capital)' all collapse."""
+    import re
+    n = re.sub(r"\(.*?\)", "", str(name)).upper().replace("*", "")
+    n = re.sub(r"\bCITY\b", " ", n)
+    n = re.sub(r"\bOF\b", " ", n)
+    n = re.sub(r"\d+", " ", n)
+    return re.sub(r"[^A-Z]+", " ", n).strip()
 
-    df[["key", "population"]].to_sql("_stg_pop", engine, if_exists="replace", index=False)
+
+def _is_muni_header(name: str) -> bool:
+    """A row is a municipality header if ALL-CAPS (Alcantara..Tudela) or the
+    mixed-case Cebu City header 'CITY OF CEBU (Capital)'."""
+    n = str(name).strip()
+    if not n:
+        return False
+    if n.upper().startswith("CITY OF CEBU"):
+        return True
+    return any(c.isalpha() for c in n) and n.upper() == n
+
+
+def ingest_population(engine) -> None:
+    banner("PSA 2020 population -> public.barangays.population (province-wide)")
+    raw = pd.read_csv(
+        RAW / "barangay_population.csv", header=0,
+        names=["barangay", "population"], dtype=str, keep_default_na=False,
+    )
+
+    rows, cur = [], None
+    for _, r in raw.iterrows():
+        name = str(r["barangay"]).strip()
+        low = name.lower()
+        if not name or low.startswith("source") or "philippine statistics" in low:
+            continue
+        if _is_muni_header(name):
+            # the province total ("CEBU *") is a header but NOT a municipality
+            cur = None if name.upper().startswith("CEBU *") else name
+            continue
+        if cur is None:
+            continue
+        pop = pd.to_numeric(str(r["population"]).replace(",", "").strip(), errors="coerce")
+        if pd.isna(pop):
+            continue
+        rows.append({
+            "muni_key": _muni_key(cur),
+            "bgy_key": " ".join(name.lower().split()),
+            "population": int(pop),
+        })
+    stg = pd.DataFrame(rows)
+    stg.to_sql("_stg_pop", engine, if_exists="replace", index=False)
+
+    # Same municipality-key normalization on the table side, in SQL, so the join
+    # is municipality-aware (regexp_replace mirrors _muni_key()).
+    tbl_muni_key = (
+        "upper(regexp_replace(regexp_replace(regexp_replace(regexp_replace("
+        "b.city_municipality, '\\(.*?\\)', '', 'g'), '\\m(CITY|OF)\\M', ' ', 'gi'), "
+        "'[0-9]+', ' ', 'g'), '[^A-Za-z]+', ' ', 'g'))"
+    )
     with engine.begin() as c:
         matched = c.execute(text(
-            """
+            f"""
             update public.barangays b
                set population = s.population
               from _stg_pop s
-             where lower(btrim(b.name)) = s.key
-               and (b.city_municipality ilike '%cebu city%'
-                    or b.city_municipality ilike '%city of cebu%');
+             where lower(btrim(b.name)) = s.bgy_key
+               and btrim(regexp_replace({tbl_muni_key}, '\\s+', ' ', 'g'))
+                   = btrim(s.muni_key);
             """
         )).rowcount
         total = c.execute(text("select count(*) from _stg_pop")).scalar()
+        munis = c.execute(text("select count(distinct muni_key) from _stg_pop")).scalar()
         c.execute(text("drop table if exists _stg_pop;"))
-        with_pop = c.execute(
-            text("select count(*) from public.barangays where population is not null")
-        ).scalar()
-    print(f"  population rows in CSV: {total}; matched to barangays: {matched}")
-    print(f"  barangays with population set: {with_pop} (Cebu City pilot coverage)")
-    check("population join matched at least 1 barangay", matched > 0, f"{matched} matched")
+        with_pop, total_bgy = c.execute(text(
+            "select count(population), count(*) from public.barangays"
+        )).one()
+    print(f"  CSV barangay rows: {total} across {munis} municipalities; matched: {matched}")
+    print(f"  barangays with population set: {with_pop} / {total_bgy} "
+          f"({total_bgy - with_pop} still without — HUCs/unmatched)")
+    check("population matched the bulk of barangays", matched >= 1000, f"{matched} matched")
 
 
 # ---------------------------------------------------------------------------

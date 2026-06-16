@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type {
   Barangay,
   FieldReport,
@@ -10,14 +10,10 @@ import type {
   ImpactPrediction,
   SupplyManifest,
 } from '@/lib/types/coordinator';
-import {
-  mockFieldReports,
-  mockTeams,
-  mockRoadEdges,
-  mockRoutes,
-  getSphereManifest,
-} from '@/lib/mockData';
-import { fetchCoordinatorMapData } from '@/lib/supabase/coordinator';
+import { fetchCoordinatorMapData, fetchTeams, fetchRoadStatus, fetchFacilities } from '@/lib/supabase/coordinator';
+import { createClient } from '@/lib/supabase/client';
+import { useLivePlan } from '@/lib/live/useLivePlan';
+import type { LocationHub } from '@/lib/types/coordinator';
 import LeftSidebar from './LeftSidebar';
 import InteractiveCommandMap from './InteractiveCommandMap';
 import BottomOperationsConsole from './BottomOperationsConsole';
@@ -28,7 +24,17 @@ import TeamsView from './TeamsView';
 import ManifestsView from './ManifestsView';
 import { useLiveReports } from '@/lib/live/useLiveReports';
 import { useLiveVolunteers } from '@/lib/live/useLiveVolunteers';
-import { mockVolunteers } from '@/lib/mockData';
+
+// PAGASA storm-intensity ordinal (category_ordinal) -> label, for the Day-0 scenario picker.
+// Matches the model's category_ordinal range (0 TD .. 5 violent typhoon).
+const PAGASA_CATEGORIES = [
+  'Tropical Depression',
+  'Tropical Storm',
+  'Severe Tropical Storm',
+  'Typhoon',
+  'Super Typhoon',
+  'Violent Typhoon',
+];
 
 export default function CommandDashboard() {
   // Navigation View selection State
@@ -36,18 +42,25 @@ export default function CommandDashboard() {
 
   // Cebu Database States
   const [barangays, setBarangays] = useState<Barangay[]>([]);
-  const [reports, setReports] = useState<FieldReport[]>(mockFieldReports);
-  // Live field_reports (volunteer PWA + SMS intake) merged into the mock-driven
-  // state — confirm/flag on live rows stays local until Phase 4.1 persists it.
+  const [reports, setReports] = useState<FieldReport[]>([]);
+  // Live field_reports (volunteer PWA + SMS intake). Confirm/flag now persist to the DB.
   useLiveReports(setReports);
-  // Live GPS markers (volunteer_positions over Realtime); mock roster stays as demo dressing.
+  // Live GPS markers (volunteer_positions over Realtime).
   const liveVolunteers = useLiveVolunteers();
-  const [teams, setTeams] = useState<Team[]>(mockTeams);
-  const [edges, setEdges] = useState<RoadEdge[]>(mockRoadEdges);
-  const [routes, setRoutes] = useState<Route[]>(mockRoutes);
-  
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [edges, setEdges] = useState<RoadEdge[]>([]);
+  const [facilities, setFacilities] = useState<LocationHub[]>([]);
+
+  // Live pipeline output (impact_predictions / supply_manifests / routes via Realtime),
+  // mirrored into local state so coordinator overrides + dispatch stay optimistic (DB
+  // persistence of overrides is Phase 4.2). The pipeline writes; these effects pull.
+  const live = useLivePlan();
+  const [routes, setRoutes] = useState<Route[]>([]);
   const [predictions, setPredictions] = useState<Record<string, ImpactPrediction>>({});
   const [manifests, setManifests] = useState<Record<string, SupplyManifest>>({});
+  useEffect(() => { setRoutes(live.routes); }, [live.routes]);
+  useEffect(() => { setPredictions(live.predictions); }, [live.predictions]);
+  useEffect(() => { setManifests(live.manifests); }, [live.manifests]);
 
   // Selection states
   const [selectedBarangay, setSelectedBarangay] = useState<Barangay | null>(null);
@@ -58,59 +71,29 @@ export default function CommandDashboard() {
   const [scores, setScores] = useState<{ barangayId: string; score: number; hoursSinceContact: number | null; timeFactor: number; popDensityNorm: number; hazardNorm: number }[]>([]);
 
   // Chronological EOC Log state
-  const [activityLogs, setActivityLogs] = useState<{ id: string; time: string; event: string; type: 'info' | 'warn' | 'success' | 'alert' }[]>([
-    { id: 'log-1', time: '13:14', event: 'SYSTEM: Silent Area Score mapping refreshed. 3 priority silence nodes surfaced.', type: 'info' },
-    { id: 'log-2', time: '13:05', event: 'FIELD REPORT: Severe tidal overwash reported in Pasil coastal sector.', type: 'alert' },
-    { id: 'log-3', time: '12:45', event: 'ROAD BLOCK: Gorordo Ave flagged slow due to low electrical wires obstruction.', type: 'warn' },
-    { id: 'log-4', time: '12:12', event: 'SYSTEM: TabPFN v2 impact model computed population prediction matrix.', type: 'success' },
-    { id: 'log-5', time: '11:00', event: 'SYSTEM: Typhoon landfall confirmed Cebu City coordinates. LUWAS Operations Active.', type: 'info' }
-  ]);
+  const [activityLogs, setActivityLogs] = useState<{ id: string; time: string; event: string; type: 'info' | 'warn' | 'success' | 'alert' }[]>([]);
 
   // Load live barangays + Silent Area scores from Supabase on mount. The map, tooltips,
   // and intelligence panel all render from this real data (coordinator_barangay_scores
   // view). Reports / routes / teams remain demo overlays until their engines are wired.
   useEffect(() => {
     let cancelled = false;
-    fetchCoordinatorMapData()
-      .then(({ barangays: realBarangays, scores: realScores }) => {
+    Promise.all([fetchCoordinatorMapData(), fetchTeams(), fetchRoadStatus(), fetchFacilities()])
+      .then(([map, t, e, f]) => {
         if (cancelled) return;
-        setBarangays(realBarangays);
-        setScores(realScores);
+        setBarangays(map.barangays);
+        setScores(map.scores);
+        setTeams(t);
+        setEdges(e);
+        setFacilities(f);
       })
       .catch((err) => {
-        console.error('Failed to load live barangay scores from Supabase', err);
+        console.error('Failed to load live coordinator data from Supabase', err);
       });
     return () => {
       cancelled = true;
     };
   }, []);
-
-  // Compute supply manifests based on effective predictions
-  useEffect(() => {
-    const updatedManifests: Record<string, SupplyManifest> = {};
-    
-    barangays.forEach(b => {
-      const pred = predictions[b.id];
-      // Honest empty state: no impact prediction → no manifest. impact_predictions stays
-      // empty until the Phase 4 pipeline (TabPFN → Sphere) writes to it, so real barangays
-      // have no manifest rather than a fabricated zero one.
-      if (!pred) return;
-
-      const effectiveAffected = pred.overrideValue !== null && pred.overrideValue !== undefined
-        ? pred.overrideValue
-        : (pred.predictedAffected || 0);
-
-      const sphereBase = getSphereManifest(b.id, effectiveAffected);
-
-      updatedManifests[b.id] = {
-        ...sphereBase,
-        status: manifests[b.id]?.status || 'pending',
-        overridden: manifests[b.id]?.overridden ?? false
-      };
-    });
-
-    setManifests(updatedManifests);
-  }, [predictions, barangays]);
 
   // Handlers
   const handleSelectBarangay = (b: Barangay) => {
@@ -129,9 +112,13 @@ export default function CommandDashboard() {
     setSelectedReport(r);
     if (!r) return;
 
-    // Demo reports still carry the old mock barangay ids ('b-*'), which no longer match the
-    // real barangay UUIDs. Resolve to a real barangay so the context panel opens: prefer an
-    // exact name match, else fall back to the barangay whose centroid is nearest the report.
+    // Default to English: lazily fetch the translation on first view so the map
+    // pin popup and operations/context panels show translated text, confirmed or not.
+    if (!r.translatedText) translateReport(r.id);
+
+    // A report may not carry a resolvable barangay UUID (e.g. SMS intake). Resolve to a real
+    // barangay so the context panel opens: prefer an exact name match, else fall back to the
+    // barangay whose centroid is nearest the report's coordinates.
     const byName = barangays.find(
       (b) => b.name.toLowerCase() === r.barangayName.trim().toLowerCase()
     );
@@ -199,40 +186,80 @@ export default function CommandDashboard() {
     addActivityLog(`COORDINATOR OVERRIDE: Modified supply parameters for Barangay ${barangays.find(b => b.id === barangayId)?.name}.`, 'warn');
   };
 
-  // Confirm pending field report
-  const handleConfirmReport = (reportId: string) => {
+  // Lazily fill a report's English translation. App reports never hit /parse, so
+  // their translation is produced on demand — on first view (pending) or at confirm
+  // time. /api/translate is idempotent, skips already-English/already-translated
+  // text, and persists the result; we mirror it into local state. Tracks in-flight
+  // ids so a report is only requested once (SEA-LION free tier is rate-limited).
+  const translateRequested = useRef<Set<string>>(new Set());
+  const translateReport = async (reportId: string) => {
+    const report = reports.find(r => r.id === reportId);
+    if (!report || report.translatedText || translateRequested.current.has(reportId)) return;
+    translateRequested.current.add(reportId);
+    try {
+      const tr = await fetch('/api/translate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reportId }),
+      });
+      const { translated_text } = await tr.json();
+      if (translated_text) {
+        setReports(prev => prev.map(r => r.id === reportId ? { ...r, translatedText: translated_text } : r));
+        // Keep the selected snapshot fresh so the map detail card re-renders translated.
+        setSelectedReport(prev => prev && prev.id === reportId ? { ...prev, translatedText: translated_text } : prev);
+      }
+    } catch {
+      translateRequested.current.delete(reportId); // allow a retry on a later view
+      addActivityLog(`TRANSLATION: unavailable for ${report.barangayName}.`, 'warn');
+    }
+  };
+
+  // Confirm a pending field report: persist the status, then fire the end-to-end pipeline
+  // (rescore -> TabPFN impact -> Sphere manifest -> OR-Tools route). Realtime streams the
+  // results back into useLivePlan, so the map/panels update within seconds.
+  const handleConfirmReport = async (reportId: string) => {
     const report = reports.find(r => r.id === reportId);
     if (!report) return;
 
-    // 1. Mark report as confirmed
+    // Optimistic UI: mark confirmed + reset the barangay's contact time to "now".
     setReports(prev => prev.map(r => r.id === reportId ? { ...r, status: 'confirmed' } : r));
-
-    // 2. Reset the barangay's contact time to "now"
     if (report.barangayId) {
-      setBarangays(prev => prev.map(b => 
-        b.id === report.barangayId 
-          ? { ...b, lastConfirmedContact: new Date().toISOString() } 
-          : b
+      setBarangays(prev => prev.map(b =>
+        b.id === report.barangayId ? { ...b, lastConfirmedContact: new Date().toISOString() } : b
       ));
-
-      // Trigger state updates
       const updatedB = barangays.find(b => b.id === report.barangayId);
       if (updatedB) {
-        setSelectedBarangay({ 
-          ...updatedB, 
-          lastConfirmedContact: new Date().toISOString() 
-        });
+        setSelectedBarangay({ ...updatedB, lastConfirmedContact: new Date().toISOString() });
       }
     }
 
-    addActivityLog(`REPORT CONFIRMED: Incident report #${reportId} verified for ${report.barangayName}. Scores recalculated.`, 'success');
+    const supabase = createClient();
+    await supabase.from('field_reports').update({ status: 'confirmed' }).eq('id', reportId);
+    addActivityLog(`REPORT CONFIRMED: ${report.barangayName}. Running pipeline…`, 'success');
+
+    // Backstop translation: app reports never hit /parse, so fill the English
+    // translation here. (Pending reports are also translated on first view via
+    // translateReport, so by confirm time this is usually already populated.)
+    await translateReport(reportId);
+
+    try {
+      const res = await fetch('/api/pipeline', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ barangayId: report.barangayId }),
+      });
+      const out = await res.json();
+      addActivityLog(`PIPELINE: ${out.predictions ?? 0} predictions, ${out.routes ?? 0} routes generated.`, 'info');
+    } catch {
+      addActivityLog('PIPELINE: failed to run (AI service unreachable).', 'alert');
+    }
   };
 
-  // Flag a report as unreliable
-  const handleFlagReport = (reportId: string) => {
+  // Flag a report as unreliable — persist so it drops out of pipeline_targets.
+  const handleFlagReport = async (reportId: string) => {
     setReports(prev => prev.map(r => r.id === reportId ? { ...r, status: 'flagged' } : r));
     setSelectedReport(null);
-    addActivityLog(`REPORT FLAGGED: Report #${reportId} flagged as unreliable.`, 'warn');
+    const supabase = createClient();
+    await supabase.from('field_reports').update({ status: 'flagged' }).eq('id', reportId);
+    addActivityLog(`REPORT FLAGGED: #${reportId} flagged as unreliable.`, 'warn');
   };
 
   // Update Road Edge status (EOC accessibility)
@@ -281,10 +308,71 @@ export default function CommandDashboard() {
     ]);
   };
 
-  // Pinned emergency action triggers
-  const handleCreateIncident = () => {
-    addActivityLog('OPERATIONS: New emergency incident manually logged in Cebu command table.', 'alert');
-    alert('LUWAS Action: Incident creation form triggered. NGO logs updated.');
+  // Reset / Clear to scratch — wipe reports + derived plans + GPS and restore the
+  // map to a clean demo state (accounts + base data kept). Confirmed via a modal.
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const handleReset = () => setShowResetConfirm(true);
+
+  const confirmReset = async () => {
+    setResetting(true);
+    try {
+      const res = await fetch('/api/reset', { method: 'POST' });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(`reset ${res.status}: ${detail?.error ?? 'unknown'}`);
+      }
+      // Clear operational state locally; base map data is refetched (rescore changed it).
+      setReports([]);
+      setRoutes([]);
+      setPredictions({});
+      setManifests({});
+      setSelectedReport(null);
+      setSelectedBarangay(null);
+      const [map, e] = await Promise.all([fetchCoordinatorMapData(), fetchRoadStatus()]);
+      setBarangays(map.barangays);
+      setScores(map.scores);
+      setEdges(e);
+      addActivityLog('OPERATIONS: Cleared all reports and generated plans. Accounts and base data kept.', 'alert');
+    } catch (err) {
+      addActivityLog(`OPERATIONS: Reset failed — ${err instanceof Error ? err.message : 'unknown error'}.`, 'alert');
+    } finally {
+      setResetting(false);
+      setShowResetConfirm(false);
+    }
+  };
+
+  // Day-0 forecast — run TabPFN impact + Sphere manifests across communities BEFORE any
+  // field report exists, for a coordinator-chosen storm scenario. Results stream back via
+  // useLivePlan (Realtime) labelled "Predicted — Unconfirmed (Day 0)" and stay override-able.
+  const [showDay0Modal, setShowDay0Modal] = useState(false);
+  const [day0Running, setDay0Running] = useState(false);
+  const [day0Category, setDay0Category] = useState(4); // PAGASA intensity; 4 = super typhoon
+  const handleRunDay0 = () => setShowDay0Modal(true);
+
+  const confirmDay0 = async () => {
+    setDay0Running(true);
+    addActivityLog(`DAY 0 FORECAST: running ${PAGASA_CATEGORIES[day0Category]} scenario…`, 'info');
+    try {
+      const res = await fetch('/api/pipeline/day0', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ categoryOrdinal: day0Category }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(`day0 ${res.status}: ${detail?.error ?? 'unknown'}`);
+      }
+      const out = await res.json();
+      addActivityLog(
+        `DAY 0 FORECAST: ${out.predictions ?? 0} predictions, ${out.manifests ?? 0} manifests (${out.source ?? 'model'}).`,
+        'success',
+      );
+    } catch (err) {
+      addActivityLog(`DAY 0 FORECAST: failed — ${err instanceof Error ? err.message : 'AI service unreachable'}.`, 'alert');
+    } finally {
+      setDay0Running(false);
+      setShowDay0Modal(false);
+    }
   };
 
   const handleClearBarangaySelection = () => {
@@ -335,7 +423,9 @@ const ResizeHandle = () => (
         onViewChange={setCurrentView}
         reportsCount={reportsCount}
         highPriorityCount={highPriorityCount}
-        onCreateIncident={handleCreateIncident}
+        onReset={handleReset}
+        onRunDay0={handleRunDay0}
+        day0Running={day0Running}
         // onBroadcastAlert={() => {}}
         // onExportReport={() => {}}
       />
@@ -356,7 +446,8 @@ const ResizeHandle = () => (
                 teams={teams}
                 edges={edges}
                 routes={routes}
-                volunteers={[...liveVolunteers, ...mockVolunteers]}
+                facilities={facilities}
+                volunteers={liveVolunteers}
                 selectedBarangay={selectedBarangay}
                 onSelectBarangay={handleSelectBarangay}
                 selectedReport={selectedReport}
@@ -379,6 +470,7 @@ const ResizeHandle = () => (
               scores={scores}
               prediction={predictions[selectedBarangay.id]}
               manifest={manifests[selectedBarangay.id]}
+              facilities={facilities}
               teams={teams}
               routes={routes}
               onSaveOverrides={handleSaveOverrides}
@@ -406,6 +498,7 @@ const ResizeHandle = () => (
             reports={reports}
             onFlagReport={handleFlagReport}
             onConfirmReport={handleConfirmReport}
+            onTranslateReport={translateReport}
           />
         )}
 
@@ -430,6 +523,88 @@ const ResizeHandle = () => (
         )}
 
       </div>
+
+      {/* Reset confirmation — destructive, irreversible without reseeding. */}
+      {showResetConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-surface border border-line rounded-card max-w-md w-full mx-4 overflow-hidden">
+            <div className="px-5 py-4 border-b border-line">
+              <h3 className="text-[17px] font-medium text-fg">Reset to scratch</h3>
+              <p className="text-[13px] text-muted mt-1">This cannot be undone.</p>
+            </div>
+            <div className="px-5 py-4 text-[14px] text-muted">
+              Clears all reports and generated plans (predictions, manifests, routes, volunteer
+              positions) and un-blocks every road. Accounts and base map data are kept.
+            </div>
+            <div className="px-5 py-4 border-t border-line flex gap-2 justify-end">
+              <button
+                onClick={() => setShowResetConfirm(false)}
+                disabled={resetting}
+                className="px-4 py-2 text-[13px] text-muted hover:text-fg border border-line rounded-control transition-colors duration-100 cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmReset}
+                disabled={resetting}
+                className="px-4 py-2 text-[13px] font-medium text-critical bg-critical/10 hover:bg-critical/20 border border-critical/30 rounded-control transition-colors duration-100 cursor-pointer disabled:opacity-50"
+              >
+                {resetting ? 'Resetting…' : 'Reset'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Day-0 forecast — scenario picker. Additive: never auto-dispatches. */}
+      {showDay0Modal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-surface border border-line rounded-card max-w-md w-full mx-4 overflow-hidden">
+            <div className="px-5 py-4 border-b border-line">
+              <h3 className="text-[17px] font-medium text-fg">Run Day 0 Predictions</h3>
+              <p className="text-[13px] text-muted mt-1">
+                Forecast impact across communities before any field report arrives.
+              </p>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <label className="block text-[13px] text-muted">Storm scenario (PAGASA intensity)</label>
+              <select
+                value={day0Category}
+                onChange={(e) => setDay0Category(Number(e.target.value))}
+                disabled={day0Running}
+                className="w-full px-3 py-2 text-[14px] text-fg bg-raised border border-line rounded-control cursor-pointer disabled:opacity-50"
+              >
+                {PAGASA_CATEGORIES.map((label, i) => (
+                  <option key={i} value={i}>{`Cat ${i} — ${label}`}</option>
+                ))}
+              </select>
+              <p className="text-[12px] text-muted leading-relaxed">
+                Runs TabPFN over static vulnerability features for the chosen storm category, then
+                builds Sphere manifests. The hazard signal is a single uniform category (not a
+                per-barangay wind footprint), so estimates are scenario-based. Results appear as
+                <span className="text-fg"> Predicted — Unconfirmed (Day 0)</span> and stay override-able;
+                nothing is dispatched.
+              </p>
+            </div>
+            <div className="px-5 py-4 border-t border-line flex gap-2 justify-end">
+              <button
+                onClick={() => setShowDay0Modal(false)}
+                disabled={day0Running}
+                className="px-4 py-2 text-[13px] text-muted hover:text-fg border border-line rounded-control transition-colors duration-100 cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDay0}
+                disabled={day0Running}
+                className="px-4 py-2 text-[13px] font-medium text-active bg-active/10 hover:bg-active/20 border border-active/30 rounded-control transition-colors duration-100 cursor-pointer disabled:opacity-50"
+              >
+                {day0Running ? 'Forecasting…' : 'Run forecast'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

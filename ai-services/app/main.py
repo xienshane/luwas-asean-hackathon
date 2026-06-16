@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.core.config import Settings
-from app.routers import impact, parse, routing
+from app.routers import impact, parse, routing, supply
 from app.services.impact_model import ImpactPredictor
 from app.services.parser import build_parser
 
@@ -26,6 +26,7 @@ app = FastAPI(title="LUWAS AI services", version="0.1.0", lifespan=lifespan)
 app.include_router(impact.router)
 app.include_router(routing.router)
 app.include_router(parse.router)
+app.include_router(supply.router)
 
 
 @app.get("/health")

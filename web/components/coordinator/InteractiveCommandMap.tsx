@@ -9,8 +9,7 @@ import {
   AlertOctagon,
   X,
 } from 'lucide-react';
-import type { Barangay, FieldReport, Team, RoadEdge, Route, Volunteer } from '@/lib/types/coordinator';
-import { mockLocationHubs } from '@/lib/mockData';
+import type { Barangay, FieldReport, Team, RoadEdge, Route, Volunteer, LocationHub } from '@/lib/types/coordinator';
 import { COLOR, silentAreaState, STATE_COLOR, STATE_LABEL } from './ui';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -28,6 +27,7 @@ interface InteractiveCommandMapProps {
   teams: Team[];
   edges: RoadEdge[];
   routes: Route[];
+  facilities: LocationHub[];
   volunteers: Volunteer[];
   selectedBarangay: Barangay | null;
   onSelectBarangay: (b: Barangay) => void;
@@ -84,6 +84,7 @@ export default function InteractiveCommandMap({
   teams,
   edges,
   routes,
+  facilities,
   volunteers,
   selectedBarangay,
   onSelectBarangay,
@@ -134,6 +135,9 @@ export default function InteractiveCommandMap({
 
   const [selectedEdge, setSelectedEdge] = useState<RoadEdge | null>(null);
   const [roadNotes, setRoadNotes] = useState('');
+  // Report detail card defaults to the English translation; this holds the report id
+  // whose original is currently revealed, so switching reports resets to translated.
+  const [reportOriginalId, setReportOriginalId] = useState<string | null>(null);
   const [legendOpen, setLegendOpen] = useState(false);
   // Hover + selection highlight is driven by MapLibre feature-state (set directly on the
   // source on mouse/selection events) instead of rebuilding ~1,200 features each time.
@@ -161,11 +165,11 @@ export default function InteractiveCommandMap({
     [scores],
   );
 
-  // Helper to find the nearest hub to a specific coordinate
+  // Helper to find the nearest facility hub to a specific coordinate
   const getNearestHubToCoords = useCallback((lat: number, lng: number) => {
-    let nearest = mockLocationHubs[0];
+    let nearest: LocationHub | undefined = facilities[0];
     let minDist = Infinity;
-    mockLocationHubs.forEach((hub) => {
+    facilities.forEach((hub) => {
       const dist = calculateDistanceKm(lat, lng, hub.latitude, hub.longitude);
       if (dist < minDist) {
         minDist = dist;
@@ -173,7 +177,7 @@ export default function InteractiveCommandMap({
       }
     });
     return { hub: nearest, distance: minDist };
-  }, []);
+  }, [facilities]);
 
   // ── 1. Generate Barangay Polygons ─────────────────────────────────
   const generateBarangayPolygon = useCallback((barangay: Barangay): [number, number][] => {
@@ -263,6 +267,7 @@ export default function InteractiveCommandMap({
 
     let active = true;
     const { hub } = getNearestHubToCoords(selectedReport.latitude, selectedReport.longitude);
+    if (!hub) return; // no facilities loaded yet → no depot to route from
 
     const fetchIncidentRoute = async () => {
       try {
@@ -1112,7 +1117,7 @@ export default function InteractiveCommandMap({
                   <span style="width:6px;height:6px;border-radius:9999px;background:${dot}"></span>${status}
                 </span>
               </div>
-              <div class="text-fg mb-1 line-clamp-2">"${report.rawText}"</div>
+              <div class="text-fg mb-1 line-clamp-2">"${report.translatedText ?? report.rawText}"</div>
               <div class="text-[12px] text-muted capitalize">Source · ${report.source}</div>
             </div>
           `)
@@ -1316,7 +1321,7 @@ export default function InteractiveCommandMap({
 
     if (!mapLayers.hubs) return;
 
-    mockLocationHubs.forEach((hub) => {
+    facilities.forEach((hub) => {
       const el = document.createElement('div');
       el.className = 'cursor-pointer';
       
@@ -1376,7 +1381,7 @@ export default function InteractiveCommandMap({
             <div class="px-2.5 py-1.5 text-[13px] font-sans">
               <div class="font-medium text-fg mb-0.5">${hub.name}</div>
               <div class="text-[12px] text-muted capitalize">Type · ${hub.type.replace('_', ' ')}</div>
-              <div class="text-[12px] text-muted mt-0.5">Capacity · <span class="text-fg font-mono tabular-nums">${hub.capacityPercent}%</span></div>
+              <div class="text-[12px] text-muted mt-0.5">Capacity · <span class="text-fg font-mono tabular-nums">${hub.capacityPercent ? `${hub.capacityPercent}%` : '—'}</span></div>
             </div>
           `)
           .addTo(map);
@@ -1392,7 +1397,7 @@ export default function InteractiveCommandMap({
 
       hubMarkersRef.current.push(marker);
     });
-  }, [isMapLoaded, mapLayers.hubs]);
+  }, [isMapLoaded, mapLayers.hubs, facilities]);
 
   // ── Sync layer visibility ──
   useEffect(() => {
@@ -1679,9 +1684,33 @@ export default function InteractiveCommandMap({
                 </span>
               </div>
 
-              <div className="bg-bg border border-line p-2.5 rounded-control text-[13px] text-fg leading-relaxed">
-                &ldquo;{selectedReport.rawText}&rdquo;
-              </div>
+              {(() => {
+                const hasTranslation =
+                  !!selectedReport.translatedText && selectedReport.translatedText !== selectedReport.rawText;
+                const showingOriginal = reportOriginalId === selectedReport.id || !hasTranslation;
+                return (
+                  <div className="space-y-1.5">
+                    {hasTranslation && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] uppercase tracking-wide text-muted">
+                          {showingOriginal ? 'Original' : 'Translated · machine'}
+                        </span>
+                        <button
+                          onClick={() =>
+                            setReportOriginalId((cur) => (cur === selectedReport.id ? null : selectedReport.id))
+                          }
+                          className="text-[12px] text-active hover:underline cursor-pointer"
+                        >
+                          {showingOriginal ? 'Show translation' : 'Show original'}
+                        </button>
+                      </div>
+                    )}
+                    <div className="bg-bg border border-line p-2.5 rounded-control text-[13px] text-fg leading-relaxed">
+                      &ldquo;{showingOriginal ? selectedReport.rawText : selectedReport.translatedText}&rdquo;
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="grid grid-cols-2 gap-2.5 text-[12px] border-b border-line pb-2.5">
                 <div>

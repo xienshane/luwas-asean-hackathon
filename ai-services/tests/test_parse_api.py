@@ -78,6 +78,28 @@ def test_parse_rejects_empty_text(client):
     assert r.status_code == 422
 
 
+def test_translate_ok(client):
+    install_parser('{"translated_text": "Severe flooding in Apas", "is_english": false}')
+    r = client.post("/translate", json={"text": "Grabe ang baha sa Apas", "id": "t1"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["translated_text"] == "Severe flooding in Apas"
+    assert body["provider"] == "sea-lion"
+    assert body["id"] == "t1"
+
+
+def test_translate_already_english_returns_null(client):
+    install_parser('{"translated_text": "Flooding in Apas", "is_english": true}')
+    r = client.post("/translate", json={"text": "Flooding in Apas"})
+    assert r.status_code == 200
+    assert r.json()["translated_text"] is None
+
+
+def test_translate_rejects_empty_text(client):
+    r = client.post("/translate", json={"text": ""})
+    assert r.status_code == 422
+
+
 def test_health_reports_parse_providers(client):
     r = client.get("/health")
     assert r.status_code == 200

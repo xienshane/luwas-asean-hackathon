@@ -12,6 +12,7 @@ import type { NormalizedInboundSms } from './normalize';
 export interface SmsReportRow {
   source: 'sms';
   raw_text: string;
+  translated_text: string | null;
   barangay_id: string | null;
   location: string | null; // EWKT
   population_estimate: number | null;
@@ -49,6 +50,7 @@ export async function handleInboundSms(
   const row: SmsReportRow = {
     source: 'sms',
     raw_text: input.message,
+    translated_text: parsed?.translated_text ?? null,
     barangay_id: match?.id ?? null,
     location: match ? `SRID=4326;POINT(${match.lng} ${match.lat})` : null,
     population_estimate: fr?.population_estimate ?? null,

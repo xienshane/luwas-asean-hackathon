@@ -49,5 +49,22 @@ export interface ParseResponse {
   /** True => below threshold, not auto-committed. */
   needs_review: boolean;
   latency_ms: number;
+  /** English translation of raw_text; null if already English. */
+  translated_text: string | null;
+  id?: string | null;
+}
+
+export interface TranslateRequest {
+  /** Report text to translate to English. */
+  text: string;
+  /** Caller key, echoed back. */
+  id?: string | null;
+}
+
+export interface TranslateResponse {
+  /** English translation; null if the text is already English. */
+  translated_text: string | null;
+  provider: ParseProvider | null;
+  latency_ms: number;
   id?: string | null;
 }

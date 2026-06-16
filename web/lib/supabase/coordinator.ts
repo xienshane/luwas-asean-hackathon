@@ -1,5 +1,5 @@
 import { createClient } from './client';
-import type { Barangay, BoundaryGeometry } from '@/lib/types/coordinator';
+import type { Barangay, BoundaryGeometry, Team, RoadEdge, LocationHub, Volunteer } from '@/lib/types/coordinator';
 
 // Silent Area score components for one barangay — mirrors what the map tooltip and the
 // intelligence panel read. Matches the shape CommandDashboard previously computed locally.
@@ -79,4 +79,82 @@ export async function fetchCoordinatorMapData(): Promise<CoordinatorMapData> {
   }));
 
   return { barangays, scores };
+}
+
+// ── Teams ──────────────────────────────────────────────────────────────────
+export interface TeamRow {
+  id: string; name: string; capacity_kg: number | null; status: string;
+  type: string; base_lat: number | null; base_lng: number | null;
+}
+export function teamRowToUi(r: TeamRow): Team {
+  return {
+    id: r.id, name: r.name, capacityKg: Number(r.capacity_kg ?? 0),
+    status: (['active', 'dispatched', 'maintenance', 'idle'].includes(r.status) ? r.status : 'idle') as Team['status'],
+    type: (['truck', '4x4', 'boat', 'ambulance'].includes(r.type) ? r.type : '4x4') as Team['type'],
+    baseLocation: { lat: r.base_lat ?? 10.3157, lng: r.base_lng ?? 123.8854 },
+  };
+}
+export async function fetchTeams(): Promise<Team[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.from('coordinator_teams')
+    .select('id,name,capacity_kg,status,type,base_lat,base_lng');
+  if (error) throw error;
+  return (data ?? []).map((r) => teamRowToUi(r as TeamRow));
+}
+
+// ── Road status (impassable edges only) ──────────────────────────────────────
+interface RoadStatusRow {
+  id: number; name: string | null; length_m: number | null; impassable: boolean;
+  geometry: { type: string; coordinates: number[][] } | null;
+}
+export function roadStatusRowToEdge(r: RoadStatusRow): RoadEdge {
+  const coords = r.geometry?.coordinates ?? [];
+  const a = coords[0] ?? [0, 0];
+  const b = coords[coords.length - 1] ?? a;
+  return {
+    id: String(r.id), name: r.name ?? `Edge ${r.id}`,
+    sourceNode: 'A', targetNode: 'B',
+    sourceCoords: { lat: a[1], lng: a[0] }, targetCoords: { lat: b[1], lng: b[0] },
+    status: 'blocked', lengthM: Number(r.length_m ?? 0),
+    notes: 'Flagged impassable by a field report',
+  };
+}
+export async function fetchRoadStatus(): Promise<RoadEdge[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.from('coordinator_road_status')
+    .select('id,name,length_m,impassable,geometry');
+  if (error) throw error;
+  return (data ?? []).map((r) => roadStatusRowToEdge(r as RoadStatusRow));
+}
+
+// ── Facilities (map hubs) ────────────────────────────────────────────────────
+interface FacilityRow {
+  id: string; name: string; kind: string; is_depot: boolean;
+  latitude: number; longitude: number;
+}
+export function facilityRowToHub(r: FacilityRow): LocationHub {
+  const type: LocationHub['type'] = r.kind === 'shelter' ? 'shelter' : r.kind === 'staging' ? 'supply_hub' : 'warehouse';
+  return { id: r.id, name: r.name, type, latitude: r.latitude, longitude: r.longitude, capacityPercent: 0 };
+}
+export async function fetchFacilities(): Promise<LocationHub[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.from('coordinator_facilities')
+    .select('id,name,kind,is_depot,latitude,longitude');
+  if (error) throw error;
+  return (data ?? []).map((r) => facilityRowToHub(r as FacilityRow));
+}
+
+// ── Volunteer roster (TeamsView crew) ────────────────────────────────────────
+export async function fetchVolunteerRoster(): Promise<Volunteer[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.from('coordinator_volunteers')
+    .select('id,full_name,team_id,status,last_location_at');
+  if (error) throw error;
+  return (data ?? []).map((r: any) => ({
+    id: r.id, name: r.full_name ?? 'Volunteer', phone: '',
+    teamId: r.team_id, teamName: null,
+    availability: r.status === 'active' ? 'available' : 'offline',
+    lastCheckIn: r.last_location_at ?? '—',
+    latitude: 0, longitude: 0,
+  }));
 }

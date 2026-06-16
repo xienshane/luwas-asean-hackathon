@@ -96,14 +96,9 @@ insert into public.volunteers (id, full_name, phone, team_id, status, consent_at
    'b0000000-0000-0000-0000-000000000001', 'active', now())
 on conflict do nothing;
 
--- 5) Sample Cebu City barangays (approximate centroids). --------------------
-insert into public.barangays (id, name, city_municipality, province, population, centroid) values
-  ('c0000000-0000-0000-0000-000000000001', 'Lahug',        'Cebu City', 'Cebu', 25000, ST_SetSRID(ST_MakePoint(123.8980, 10.3340), 4326)),
-  ('c0000000-0000-0000-0000-000000000002', 'Mabolo',       'Cebu City', 'Cebu', 22000, ST_SetSRID(ST_MakePoint(123.9120, 10.3180), 4326)),
-  ('c0000000-0000-0000-0000-000000000003', 'Guadalupe',    'Cebu City', 'Cebu', 50000, ST_SetSRID(ST_MakePoint(123.8800, 10.3110), 4326)),
-  ('c0000000-0000-0000-0000-000000000004', 'Banilad',      'Cebu City', 'Cebu', 12000, ST_SetSRID(ST_MakePoint(123.9120, 10.3380), 4326)),
-  ('c0000000-0000-0000-0000-000000000005', 'Apas',         'Cebu City', 'Cebu', 15000, ST_SetSRID(ST_MakePoint(123.9070, 10.3370), 4326)),
-  ('c0000000-0000-0000-0000-000000000006', 'Capitol Site', 'Cebu City', 'Cebu',  8000, ST_SetSRID(ST_MakePoint(123.8910, 10.3150), 4326)),
-  ('c0000000-0000-0000-0000-000000000007', 'Tisa',         'Cebu City', 'Cebu', 30000, ST_SetSRID(ST_MakePoint(123.8700, 10.3000), 4326)),
-  ('c0000000-0000-0000-0000-000000000008', 'Talamban',     'Cebu City', 'Cebu', 40000, ST_SetSRID(ST_MakePoint(123.9130, 10.3760), 4326))
-on conflict do nothing;
+-- 5) Cebu City barangays now come from the real OSM-boundary ingest
+--    (data-pipeline/ingest_static.py -> public.barangays, 80 barangays under
+--    'Cebu City (Capital)' with geom + PSA population). The earlier 8 synthetic
+--    geomless demo rows (c0000000-…-0001..0008) duplicated those real barangays
+--    and could never be scored (silent_area_score requires geom), so they were
+--    dropped. Nothing references their IDs (field_reports use real barangay_ids).
