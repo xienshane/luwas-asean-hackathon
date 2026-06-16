@@ -254,6 +254,34 @@ def to_markdown(results: dict, path: str | Path) -> None:
     ]
 
     # -----------------------------------------------------------------------
+    # Section 2b — TabPFN per-class severity breakdown (honesty: class imbalance)
+    # -----------------------------------------------------------------------
+    per_class = _get(tabpfn_o, "severity", "per_class")
+    if isinstance(per_class, dict) and per_class:
+        lines += [
+            "### TabPFN Severity — Per-Class Breakdown",
+            "",
+            "The headline macro-F1 averages over all four classes, so it is dragged "
+            "down by minority classes. The per-class view shows where the model "
+            "actually performs.",
+            "",
+            "| Class | Precision | Recall | F1 | Support |",
+            "| --- | --- | --- | --- | --- |",
+        ]
+        # Render in ordinal severity order when present.
+        order = ["low", "moderate", "high", "severe"]
+        ordered = [c for c in order if c in per_class]
+        ordered += [c for c in per_class if c not in order]
+        for cls in ordered:
+            stats = per_class.get(cls, {})
+            lines.append(
+                f"| {cls} | {_fmt(stats.get('precision'))} "
+                f"| {_fmt(stats.get('recall'))} | {_fmt(stats.get('f1'))} "
+                f"| {stats.get('support', 'n/a')} |"
+            )
+        lines += [""]
+
+    # -----------------------------------------------------------------------
     # Section 3 — Per-storm table
     # -----------------------------------------------------------------------
     lines += [
@@ -281,13 +309,25 @@ def to_markdown(results: dict, path: str | Path) -> None:
     storms       = dataset.get("storms",              "n/a")
     year_range   = dataset.get("year_range",          ["n/a", "n/a"])
     headline_tgt = dataset.get("headline_target",     "n/a")
+    framing      = config.get("framing",              "n/a")
+    eval_ctx     = config.get("eval_context",         "n/a")
+    eval_nest    = config.get("eval_n_estimators",    "n/a")
+    dep_ctx      = config.get("deployed_context",     "n/a")
+    dep_nest     = config.get("deployed_n_estimators", "n/a")
 
     lines += [
         "## Evaluation Configuration",
         "",
         f"- **Folds:** {folds}  |  **Rows:** {rows}  |  **Storms:** {storms}",
         f"- **Year range:** {year_range[0]}–{year_range[1] if len(year_range) > 1 else 'n/a'}",
-        f"- **Headline target:** {headline_tgt}",
+        f"- **Headline target:** {headline_tgt}  |  **Framing:** {framing}",
+        f"- **Accuracy run (capability):** context = {eval_ctx}, "
+        f"n_estimators = {eval_nest}.",
+        f"- **Deployed config (production latency):** context = {dep_ctx}, "
+        f"n_estimators = {dep_nest}.",
+        "  Accuracy figures above were obtained at the *stronger* accuracy config; "
+        "the latency figure reflects the *deployed* config. They are intentionally "
+        "different (see MODEL_CARD §5.3).",
         "",
     ]
 
@@ -308,6 +348,11 @@ def to_markdown(results: dict, path: str | Path) -> None:
         "Both are deterministic and produce no prediction intervals.",
         "- **TabPFN** is the primary model; a negative delta (Δ < 0) means "
         "TabPFN is better than the baseline on that metric.",
+        "- **Severity macro-F1 is held down by class imbalance:** the minority "
+        "`moderate` and `high` classes have very low support and are nearly "
+        "*unpredicted* (per-class F1 ≈ 0), so the model effectively distinguishes "
+        "`low` vs `severe`. See the per-class breakdown above — read macro-F1 with "
+        "that limitation in mind rather than as uniform 4-class skill.",
         "- All AI outputs are *assistive*: the coordinator can override every "
         "prediction and manifest in the dashboard.",
         "",

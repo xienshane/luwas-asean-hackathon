@@ -1040,6 +1040,42 @@ def test_to_markdown_contains_how_to_read_note(tmp_path):
     assert "how to read" in text, "markdown missing 'How to read this' note"
 
 
+def test_to_markdown_surfaces_eval_vs_deployed_config(tmp_path):
+    """Markdown must disclose the eval (capability) vs deployed (production) config."""
+    out = tmp_path / "report.md"
+    to_markdown(_make_minimal_results(), out)
+    text = out.read_text().lower()
+    # eval config: full context, 8 estimators
+    assert "full" in text, "markdown missing eval_context 'full'"
+    # deployed config: 128-row context, 1 estimator
+    assert "128" in text, "markdown missing deployed_context '128'"
+
+
+def test_to_markdown_shows_severity_per_class_and_imbalance_caveat(tmp_path):
+    """Markdown must render TabPFN per-class severity and name the imbalance limitation."""
+    results = _make_minimal_results()
+    # Force a minority class to be unpredicted (f1=0) to mirror the real finding.
+    results["overall"]["tabpfn"]["severity"]["per_class"]["high"] = {
+        "precision": 0.0, "recall": 0.0, "f1": 0.0, "support": 39,
+    }
+    out = tmp_path / "report.md"
+    to_markdown(results, out)
+    text = out.read_text().lower()
+    # a per-class row for a minority class
+    assert "moderate" in text and "high" in text, "missing per-class severity rows"
+    # the honesty caveat about minority classes being nearly unpredicted
+    assert "minority" in text or "unpredicted" in text, "missing class-imbalance caveat"
+
+
+def test_to_markdown_skips_per_class_table_when_absent(tmp_path):
+    """Per-class table is skipped (no raise) when per_class is empty."""
+    results = _make_minimal_results()
+    results["overall"]["tabpfn"]["severity"]["per_class"] = {}
+    out = tmp_path / "report.md"
+    to_markdown(results, out)  # must not raise
+    assert out.exists()
+
+
 def test_to_markdown_handles_missing_latency_gracefully(tmp_path):
     """to_markdown must not raise if latency_ms_deployed is absent."""
     results = _make_minimal_results()

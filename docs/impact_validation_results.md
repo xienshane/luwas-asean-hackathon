@@ -1,6 +1,6 @@
 # LUWAS Impact-Model Validation Report
 
-*Generated:* 2026-06-16T12:27:41.160456+00:00  |  *Commit:* `a93bcb5`
+*Generated:* 2026-06-16T12:27:41.148450+00:00  |  *Commit:* `a93bcb5`
 
 ## Headline Numbers (Slide 11)
 
@@ -31,6 +31,17 @@ Metrics computed on pooled held-out predictions across all folds.
 | --- | --- | --- | --- | --- |
 | vs population_only | -0.3176 | -0.2367 | -2.0250 | -0.2426 |
 | vs heuristic | -0.3028 | -0.2757 | -1.5414 | -0.1444 |
+
+### TabPFN Severity — Per-Class Breakdown
+
+The headline macro-F1 averages over all four classes, so it is dragged down by minority classes. The per-class view shows where the model actually performs.
+
+| Class | Precision | Recall | F1 | Support |
+| --- | --- | --- | --- | --- |
+| low | 1.0000 | 0.9176 | 0.9570 | 607 |
+| moderate | 0.0000 | 0.0000 | 0.0000 | 13 |
+| high | 0.0000 | 0.0000 | 0.0000 | 39 |
+| severe | 0.8817 | 0.9286 | 0.9045 | 602 |
 
 ## Per-Storm Results
 
@@ -126,7 +137,10 @@ Metrics computed on pooled held-out predictions across all folds.
 
 - **Folds:** 85  |  **Rows:** 1261  |  **Storms:** 85
 - **Year range:** 2010–2020
-- **Headline target:** damage_rate
+- **Headline target:** damage_rate  |  **Framing:** regressor
+- **Accuracy run (capability):** context = full, n_estimators = 8.
+- **Deployed config (production latency):** context = 128, n_estimators = 1.
+  Accuracy figures above were obtained at the *stronger* accuracy config; the latency figure reflects the *deployed* config. They are intentionally different (see MODEL_CARD §5.3).
 
 ## How to Read This Report
 
@@ -134,4 +148,5 @@ Metrics computed on pooled held-out predictions across all folds.
 - **Prediction intervals** (80 % coverage columns) are decision-support tools, not guarantees — coordinators should treat them as plausible ranges rather than precise bounds.  See MODEL_CARD §5.3 and §4.3 for calibration assumptions and limitations.
 - **Baselines:** `population_only` regresses on population density only; `heuristic` applies fixed damage fractions per wind-speed bucket.  Both are deterministic and produce no prediction intervals.
 - **TabPFN** is the primary model; a negative delta (Δ < 0) means TabPFN is better than the baseline on that metric.
+- **Severity macro-F1 is held down by class imbalance:** the minority `moderate` and `high` classes have very low support and are nearly *unpredicted* (per-class F1 ≈ 0), so the model effectively distinguishes `low` vs `severe`. See the per-class breakdown above — read macro-F1 with that limitation in mind rather than as uniform 4-class skill.
 - All AI outputs are *assistive*: the coordinator can override every prediction and manifest in the dashboard.
