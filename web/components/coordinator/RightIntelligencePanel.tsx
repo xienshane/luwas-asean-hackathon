@@ -17,7 +17,7 @@ interface RightIntelligencePanelProps {
   onSaveOverrides: (
     barangayId: string,
     affectedOverride: number | null,
-    suppliesOverride: { waterL?: number; foodPacks?: number; shelterKits?: number; blankets?: number } | null
+    suppliesOverride: { waterL?: number; foodPacks?: number; shelterKits?: number; blankets?: number; hygieneKits?: number; medicalSupplies?: number; shelterMaterials?: number } | null
   ) => void;
   onUpdateManifestStatus: (barangayId: string, status: 'approved' | 'modified' | 'rejected') => void;
   onDispatchTeam: (teamId: string, barangayId: string) => void;
@@ -40,9 +40,12 @@ export default function RightIntelligencePanel({
 }: RightIntelligencePanelProps) {
   const [drawerTab, setDrawerTab] = useState<Tab>('overview');
   const [isEditing, setIsEditing] = useState(false);
+  
+  // Input fields for override parameters
   const [affectedInput, setAffectedInput] = useState('');
   const [waterInput, setWaterInput] = useState('');
   const [foodInput, setFoodInput] = useState('');
+  const [blanketInput, setBlanketInput] = useState('');
   const [hygieneInput, setHygieneInput] = useState('');
   const [medicalInput, setMedicalInput] = useState('');
   const [shelterInput, setShelterInput] = useState('');
@@ -52,6 +55,7 @@ export default function RightIntelligencePanel({
       setAffectedInput(prediction?.overrideValue?.toString() || '');
       setWaterInput('');
       setFoodInput('');
+      setBlanketInput('');
       setHygieneInput('');
       setMedicalInput('');
       setShelterInput('');
@@ -59,7 +63,6 @@ export default function RightIntelligencePanel({
     }
   }, [selectedBarangay, prediction]);
 
-  // Parent only mounts this panel with a selection; guard keeps types honest.
   if (!selectedBarangay) return null;
 
   const selectedScore = scores.find((s) => s.barangayId === selectedBarangay.id) ?? { score: 0, hoursSinceContact: null };
@@ -67,27 +70,31 @@ export default function RightIntelligencePanel({
 
   const isAffectedOverridden = prediction?.overrideValue !== null && prediction?.overrideValue !== undefined;
 
+  // Read overrides from legacy manifest.overridden object structure (ensure it's an object)
   const manifestOverrides =
-    manifest?.overridden && typeof manifest.overridden === 'object'
+    typeof manifest?.overridden === 'object' && manifest?.overridden !== null
       ? (manifest.overridden as {
           waterL?: number;
           foodPacks?: number;
           hygieneKits?: number;
           medicalSupplies?: number;
           shelterMaterials?: number;
+          blankets?: number;
         })
       : undefined;
 
-  // Supply figures come from the live Sphere manifest (pipeline output via coordinator_supply_manifests);
-  // empty until a report is confirmed for this barangay. Coordinator overrides still layer on top.
+  // Supply figures come from the live Sphere manifest (pipeline output)
   const EMPTY_ITEM = { recommended: 0, inventory: 0, shortfall: 0 };
   const water = manifest?.waterL ?? EMPTY_ITEM;
   const food = manifest?.foodPacks ?? EMPTY_ITEM;
+  const blankets = (manifest as any)?.blankets ?? EMPTY_ITEM;
   const hygiene = manifest?.hygieneKits ?? EMPTY_ITEM;
   const medical = manifest?.medicalSupplies ?? EMPTY_ITEM;
   const shelter = manifest?.shelterMaterials ?? EMPTY_ITEM;
+
   const finalWater = manifestOverrides?.waterL ?? water.recommended;
   const finalFood = manifestOverrides?.foodPacks ?? food.recommended;
+  const finalBlankets = manifestOverrides?.blankets ?? blankets.recommended;
   const finalHygiene = manifestOverrides?.hygieneKits ?? hygiene.recommended;
   const finalMedical = manifestOverrides?.medicalSupplies ?? medical.recommended;
   const finalShelter = manifestOverrides?.shelterMaterials ?? shelter.recommended;
@@ -97,17 +104,22 @@ export default function RightIntelligencePanel({
     const overrides = {
       waterL: waterInput ? parseInt(waterInput, 10) : undefined,
       foodPacks: foodInput ? parseInt(foodInput, 10) : undefined,
+      blankets: blanketInput ? parseInt(blanketInput, 10) : undefined,
       hygieneKits: hygieneInput ? parseInt(hygieneInput, 10) : undefined,
       medicalSupplies: medicalInput ? parseInt(medicalInput, 10) : undefined,
       shelterMaterials: shelterInput ? parseInt(shelterInput, 10) : undefined,
     };
-    onSaveOverrides(
-      selectedBarangay.id,
-      overrideVal,
-      overrides.waterL || overrides.foodPacks || overrides.hygieneKits || overrides.medicalSupplies || overrides.shelterMaterials
-        ? overrides
-        : null
-    );
+
+    // Check if at least one supply parameter is being overridden
+    const holdsAnyOverride =
+      overrides.waterL !== undefined ||
+      overrides.foodPacks !== undefined ||
+      overrides.blankets !== undefined ||
+      overrides.hygieneKits !== undefined ||
+      overrides.medicalSupplies !== undefined ||
+      overrides.shelterMaterials !== undefined;
+
+    onSaveOverrides(selectedBarangay.id, overrideVal, holdsAnyOverride ? overrides : null);
     setIsEditing(false);
   };
 
@@ -120,6 +132,7 @@ export default function RightIntelligencePanel({
   const supplyRows = [
     { label: 'Clean water', value: finalWater, unit: 'L', inv: water.inventory },
     { label: 'Food packs', value: finalFood, unit: 'packs', inv: food.inventory },
+    { label: 'Blankets', value: finalBlankets, unit: 'pcs', inv: blankets.inventory },
     { label: 'Hygiene kits', value: finalHygiene, unit: 'kits', inv: hygiene.inventory },
     { label: 'Medical', value: finalMedical, unit: 'packs', inv: medical.inventory },
     { label: 'Shelter', value: finalShelter, unit: 'units', inv: shelter.inventory },
@@ -222,7 +235,6 @@ export default function RightIntelligencePanel({
                 </p>
               )}
             </div>
-
           </>
         )}
 
@@ -239,17 +251,17 @@ export default function RightIntelligencePanel({
               <span>Sphere manifest</span>
               <span>3-day ration</span>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2 font-mono">
               {supplyRows.map((r) => (
                 <div key={r.label} className="flex items-center justify-between">
                   <div>
-                    <div className="text-fg">{r.label}</div>
+                    <div className="text-fg font-sans">{r.label}</div>
                     <div className="text-[12px] text-muted">
                       Inv <span className="font-mono tabular-nums">{r.inv.toLocaleString()}</span>
                     </div>
                   </div>
                   <span className="font-mono tabular-nums text-fg">
-                    {r.value.toLocaleString()} <span className="text-muted">{r.unit}</span>
+                    {r.value.toLocaleString()} <span className="text-muted font-sans">{r.unit}</span>
                   </span>
                 </div>
               ))}
@@ -270,7 +282,9 @@ export default function RightIntelligencePanel({
                   <div className="grid grid-cols-2 gap-2.5">
                     <Field label="Water (L)" value={waterInput} onChange={setWaterInput} placeholder={water.recommended.toString()} />
                     <Field label="Food (packs)" value={foodInput} onChange={setFoodInput} placeholder={food.recommended.toString()} />
+                    <Field label="Blankets (pcs)" value={blanketInput} onChange={setBlanketInput} placeholder={blankets.recommended.toString()} />
                     <Field label="Hygiene (kits)" value={hygieneInput} onChange={setHygieneInput} placeholder={hygiene.recommended.toString()} />
+                    <Field label="Medical (packs)" value={medicalInput} onChange={setMedicalInput} placeholder={medical.recommended.toString()} />
                     <Field label="Shelter (units)" value={shelterInput} onChange={setShelterInput} placeholder={shelter.recommended.toString()} />
                   </div>
                   <button
