@@ -76,6 +76,29 @@ export function parseOpenMeteo(json: unknown): Reading {
   };
 }
 
+export interface SamplePoint {
+  name: string;
+  lat: number;
+  lng: number;
+}
+
+// Storm intensity for the Day-0 forecast is driven by the WORST conditions across the
+// Cebu pilot region, not just the capital. We read a few points spanning the province
+// (north/central/south) and take the max wind — TCWS-style worst-case framing.
+export const CEBU_SAMPLE_POINTS: readonly SamplePoint[] = [
+  { name: 'Cebu City',  lat: 10.3157, lng: 123.8854 }, // central / capital
+  { name: 'North Cebu', lat: 11.05,   lng: 123.95   }, // Bogo / Daanbantayan
+  { name: 'South Cebu', lat: 9.85,    lng: 123.50   }, // Santander
+] as const;
+
+// Collapse several point readings to the single worst-case (highest sustained wind).
+// Gust/precip/observed_at follow that worst-wind point so the displayed values are
+// internally consistent. Throws on an empty list (caller treats as feed failure).
+export function pickWorstReading(readings: Reading[]): Reading {
+  if (readings.length === 0) throw new Error('pickWorstReading: no readings');
+  return readings.reduce((worst, r) => (r.wind_kmh > worst.wind_kmh ? r : worst));
+}
+
 export function toLiveConditions(reading: Reading, opts: { stale?: boolean } = {}): LiveConditions {
   const ordinal = windToCategoryOrdinal(reading.wind_kmh);
   return {

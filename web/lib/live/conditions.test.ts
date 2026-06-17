@@ -5,8 +5,12 @@ import {
   parseOpenMeteo,
   openMeteoUrl,
   toLiveConditions,
+  pickWorstReading,
+  CEBU_SAMPLE_POINTS,
   PAGASA_CATEGORY_LABELS,
 } from './conditions';
+
+const reading = (wind_kmh: number) => ({ wind_kmh, gust_kmh: wind_kmh + 20, precip_mm: 1, observed_at: 't' });
 
 describe('windToCategoryOrdinal (matches training CATEGORY_ORDER 0..5)', () => {
   it.each([
@@ -67,6 +71,34 @@ describe('parseOpenMeteo', () => {
   it('throws when wind_speed_10m is missing', () => {
     expect(() => parseOpenMeteo({ current: {} })).toThrow();
     expect(() => parseOpenMeteo({})).toThrow();
+  });
+});
+
+describe('CEBU_SAMPLE_POINTS', () => {
+  it('spans the province with valid Cebu-area coordinates', () => {
+    expect(CEBU_SAMPLE_POINTS.length).toBeGreaterThanOrEqual(3);
+    for (const p of CEBU_SAMPLE_POINTS) {
+      expect(p.lat).toBeGreaterThan(9);
+      expect(p.lat).toBeLessThan(12);
+      expect(p.lng).toBeGreaterThan(123);
+      expect(p.lng).toBeLessThan(125);
+    }
+  });
+});
+
+describe('pickWorstReading', () => {
+  it('returns the reading with the highest sustained wind', () => {
+    const worst = pickWorstReading([reading(60), reading(160), reading(90)]);
+    expect(worst.wind_kmh).toBe(160);
+    expect(worst.gust_kmh).toBe(180); // gust follows the worst-wind point
+  });
+
+  it('handles a single reading', () => {
+    expect(pickWorstReading([reading(70)]).wind_kmh).toBe(70);
+  });
+
+  it('throws on an empty list', () => {
+    expect(() => pickWorstReading([])).toThrow();
   });
 });
 
