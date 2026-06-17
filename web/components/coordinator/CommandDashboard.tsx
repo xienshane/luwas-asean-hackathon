@@ -28,23 +28,16 @@ import { roadBlockRequest, isLiveImpassableReport } from '@/lib/coordinator/road
 import { PAGASA_CATEGORY_LABELS, type LiveConditions } from '@/lib/live/conditions';
 
 export default function CommandDashboard() {
-  // Navigation View selection State
   const [currentView, setCurrentView] = useState('map');
 
-  // Cebu Database States
   const [barangays, setBarangays] = useState<Barangay[]>([]);
   const [reports, setReports] = useState<FieldReport[]>([]);
-  // Live field_reports (volunteer PWA + SMS intake). Confirm/flag now persist to the DB.
   useLiveReports(setReports);
-  // Live GPS markers (volunteer_positions over Realtime).
   const liveVolunteers = useLiveVolunteers();
   const [teams, setTeams] = useState<Team[]>([]);
   const [edges, setEdges] = useState<RoadEdge[]>([]);
   const [facilities, setFacilities] = useState<LocationHub[]>([]);
 
-  // Live pipeline output (impact_predictions / supply_manifests / routes via Realtime),
-  // mirrored into local state so coordinator overrides + dispatch stay optimistic (DB
-  // persistence of overrides is Phase 4.2). The pipeline writes; these effects pull.
   const live = useLivePlan();
   const [routes, setRoutes] = useState<Route[]>([]);
   const [predictions, setPredictions] = useState<Record<string, ImpactPrediction>>({});
@@ -53,29 +46,19 @@ export default function CommandDashboard() {
   useEffect(() => { setPredictions(live.predictions); }, [live.predictions]);
   useEffect(() => { setManifests(live.manifests); }, [live.manifests]);
 
-  // Selection states
   const [selectedBarangay, setSelectedBarangay] = useState<Barangay | null>(null);
   const [selectedReport, setSelectedReport] = useState<FieldReport | null>(null);
 
-  // Live Silent Area scores from Supabase — computed server-side by the
-  // silent_area_score() pg_cron job (Phase 2.1), recomputed every 15 min.
   const [scores, setScores] = useState<{ barangayId: string; score: number; hoursSinceContact: number | null; timeFactor: number; popDensityNorm: number; hazardNorm: number }[]>([]);
 
-  // Chronological EOC Log state
   const [activityLogs, setActivityLogs] = useState<{ id: string; time: string; event: string; type: 'info' | 'warn' | 'success' | 'alert' }[]>([]);
 
-  // Live re-route (Phase 4.5): a transient banner when routes redraw around a blocked road,
-  // plus refs to fire the auto-reroute once per genuinely-new impassable report.
   const [rerouteNotice, setRerouteNotice] = useState<string | null>(null);
   const mountedAtRef = useRef<number>(0);
   const reroutedReportsRef = useRef<Set<string>>(new Set());
-  // Stamp the mount time in an effect (not during render) so auto-reroute only fires for
-  // reports that arrive after the coordinator opened the dashboard.
+  
   useEffect(() => { if (!mountedAtRef.current) mountedAtRef.current = Date.now(); }, []);
 
-  // Load live barangays + Silent Area scores from Supabase on mount. The map, tooltips,
-  // and intelligence panel all render from this real data (coordinator_barangay_scores
-  // view). Reports / routes / teams remain demo overlays until their engines are wired.
   useEffect(() => {
     let cancelled = false;
     Promise.all([fetchCoordinatorMapData(), fetchTeams(), fetchRoadStatus(), fetchFacilities()])
@@ -95,11 +78,8 @@ export default function CommandDashboard() {
     };
   }, []);
 
-  // Handlers
   const handleSelectBarangay = (b: Barangay) => {
     setSelectedBarangay(b);
-    
-    // Auto-select corresponding report if exists
     const matchingReport = reports.find(r => r.barangayId === b.id && r.status === 'pending');
     if (matchingReport) {
       setSelectedReport(matchingReport);
@@ -111,14 +91,8 @@ export default function CommandDashboard() {
   const handleSelectReport = (r: FieldReport) => {
     setSelectedReport(r);
     if (!r) return;
-
-    // Default to English: lazily fetch the translation on first view so the map
-    // pin popup and operations/context panels show translated text, confirmed or not.
     if (!r.translatedText) translateReport(r.id);
 
-    // A report may not carry a resolvable barangay UUID (e.g. SMS intake). Resolve to a real
-    // barangay so the context panel opens: prefer an exact name match, else fall back to the
-    // barangay whose centroid is nearest the report's coordinates.
     const byName = barangays.find(
       (b) => b.name.toLowerCase() === r.barangayName.trim().toLowerCase()
     );
@@ -137,12 +111,12 @@ export default function CommandDashboard() {
   };
 
   // Update AI predictions and Sphere supply manifest overrides
-  const handleSaveOverrides = (
+  const handleSaveOverrides = async (
     barangayId: string,
     affectedOverride: number | null,
     suppliesOverride: { waterL?: number; foodPacks?: number; shelterKits?: number; blankets?: number; hygieneKits?: number; medicalSupplies?: number; shelterMaterials?: number } | null
   ) => {
-    // 1. Update predictions override
+    // 1. Update predictions local state override
     setPredictions(prev => {
       const current = prev[barangayId];
       if (!current) return prev;
@@ -155,7 +129,7 @@ export default function CommandDashboard() {
       };
     });
 
-    // 2. Update manifests overrides
+    // 2. Update manifests local state overrides
     setManifests(prev => {
       const current = prev[barangayId];
       if (!current) return prev;
@@ -166,7 +140,6 @@ export default function CommandDashboard() {
         hygieneKits: suppliesOverride.hygieneKits,
         medicalSupplies: suppliesOverride.medicalSupplies,
         shelterMaterials: suppliesOverride.shelterMaterials,
-        // map backward compatibility
         shelterKits: suppliesOverride.shelterKits,
         blankets: suppliesOverride.blankets
       } : undefined;
@@ -182,15 +155,154 @@ export default function CommandDashboard() {
       };
     });
 
-    // Log the override
-    addActivityLog(`COORDINATOR OVERRIDE: Modified supply parameters for Barangay ${barangays.find(b => b.id === barangayId)?.name}.`, 'warn');
+    // Log the override locally
+    const bName = barangays.find(b => b.id === barangayId)?.name ?? 'Unknown Barangay';
+    if (affectedOverride !== null) {
+      addActivityLog(`COORDINATOR OVERRIDE: Modified TabPFN impact prediction for Barangay ${bName} to ${affectedOverride} affected people.`, 'warn');
+    }
+    if (suppliesOverride) {
+      const details = [];
+      if (suppliesOverride.waterL !== undefined) details.push(`Water: ${suppliesOverride.waterL}L`);
+      if (suppliesOverride.foodPacks !== undefined) details.push(`Food: ${suppliesOverride.foodPacks} packs`);
+      if (suppliesOverride.blankets !== undefined) details.push(`Blankets: ${suppliesOverride.blankets} pcs`);
+      if (suppliesOverride.hygieneKits !== undefined) details.push(`Hygiene: ${suppliesOverride.hygieneKits} kits`);
+      if (suppliesOverride.medicalSupplies !== undefined) details.push(`Medical: ${suppliesOverride.medicalSupplies} packs`);
+      if (suppliesOverride.shelterMaterials !== undefined) details.push(`Shelter: ${suppliesOverride.shelterMaterials} units`);
+      
+      addActivityLog(`COORDINATOR OVERRIDE: Modified Sphere manifest for Barangay ${bName} (${details.join(', ')}).`, 'warn');
+    }
+    if (affectedOverride === null && !suppliesOverride) {
+      addActivityLog(`COORDINATOR OVERRIDE: Cleared overrides for Barangay ${bName} to restore default predictions.`, 'info');
+    }
+
+    // Persist overrides to Supabase
+    try {
+      const supabase = createClient();
+      
+      // Update or upsert impact_predictions override
+      const { error: predError } = await supabase
+        .from('impact_predictions')
+        .upsert(
+          { barangay_id: barangayId, override_value: affectedOverride },
+          { onConflict: 'barangay_id' }
+        );
+      if (predError) {
+        console.error('Failed to save impact override:', predError);
+        addActivityLog(`OVERRIDE ERROR: Failed to save impact override.`, 'alert');
+      }
+
+      // Update or upsert supply_manifests override
+      if (suppliesOverride) {
+        const { data: existing } = await supabase
+          .from('supply_manifests')
+          .select('*')
+          .eq('barangay_id', barangayId)
+          .maybeSingle();
+
+        const days = existing?.days ?? 3;
+        const access_modifier = Number(existing?.access_modifier ?? 1.0);
+        let breakdown = existing?.breakdown || { lines: [] };
+
+        if (!breakdown.lines || breakdown.lines.length === 0) {
+          breakdown.lines = [];
+        }
+
+        // Helper to cleanly find and update, or push a newly structured manifest line
+        const updateOrAddLine = (category: string, itemDefaultName: string, quantity: number, unit: string, unitWeight: number) => {
+          const idx = breakdown.lines.findIndex((line: any) => 
+            line.category === category || line.item?.toLowerCase().includes(itemDefaultName.toLowerCase())
+          );
+          const newLine = {
+            item: itemDefaultName,
+            category,
+            unit,
+            quantity,
+            unit_weight_kg: unitWeight,
+            weight_kg: quantity * unitWeight,
+            basis: 'Coordinator override',
+            inputs: {}
+          };
+          if (idx >= 0) {
+            breakdown.lines[idx] = { ...breakdown.lines[idx], ...newLine };
+          } else {
+            breakdown.lines.push(newLine);
+          }
+        };
+
+        if (suppliesOverride.waterL !== undefined) {
+          updateOrAddLine('water', 'Drinking water', suppliesOverride.waterL, 'L', 1.0);
+        }
+        if (suppliesOverride.foodPacks !== undefined) {
+          updateOrAddLine('food', 'Food packs', suppliesOverride.foodPacks, 'packs', 0.6);
+        }
+        const shelterQty = suppliesOverride.shelterMaterials !== undefined ? suppliesOverride.shelterMaterials : suppliesOverride.shelterKits;
+        if (shelterQty !== undefined) {
+          updateOrAddLine('shelter', 'Tarpaulins / Shelter kits', shelterQty, 'units', 5.0);
+        }
+        if (suppliesOverride.blankets !== undefined) {
+          updateOrAddLine('blankets', 'Blankets', suppliesOverride.blankets, 'pcs', 1.5);
+        }
+        if (suppliesOverride.hygieneKits !== undefined) {
+          updateOrAddLine('hygiene', 'Hygiene kits', suppliesOverride.hygieneKits, 'kits', 3.0);
+        }
+        if (suppliesOverride.medicalSupplies !== undefined) {
+          updateOrAddLine('medical', 'Medical supplies', suppliesOverride.medicalSupplies, 'packs', 2.0);
+        }
+
+        breakdown.total_weight_kg = breakdown.lines.reduce((sum: number, l: any) => sum + (l.weight_kg || 0), 0);
+
+        const water_l = suppliesOverride.waterL !== undefined ? suppliesOverride.waterL : (existing?.water_l ?? 0);
+        const food_packs = suppliesOverride.foodPacks !== undefined ? suppliesOverride.foodPacks : (existing?.food_packs ?? 0);
+        const shelter_kits = shelterQty !== undefined ? shelterQty : (existing?.shelter_kits ?? 0);
+        const blankets = suppliesOverride.blankets !== undefined ? suppliesOverride.blankets : (existing?.blankets ?? 0);
+
+        const { error: manifestError } = await supabase
+          .from('supply_manifests')
+          .upsert({
+            barangay_id: barangayId,
+            days,
+            access_modifier,
+            water_l,
+            food_packs,
+            shelter_kits,
+            blankets,
+            breakdown,
+            overridden: true
+          }, { onConflict: 'barangay_id' });
+
+        if (manifestError) {
+          console.error('Failed to save manifest override:', manifestError);
+          addActivityLog(`OVERRIDE ERROR: Failed to save manifest override.`, 'alert');
+        }
+      } else {
+        const { error: manifestError } = await supabase
+          .from('supply_manifests')
+          .update({ overridden: false })
+          .eq('barangay_id', barangayId);
+
+        if (manifestError) {
+          console.error('Failed to clear manifest override:', manifestError);
+        }
+      }
+
+      // Re-run pipeline to propagate parameters downstream
+      addActivityLog(`PIPELINE: Recalculating routes with overridden values…`, 'info');
+      const res = await fetch('/api/pipeline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ barangayId }),
+      });
+      if (!res.ok) {
+        throw new Error(`pipeline responded ${res.status}`);
+      }
+      const out = await res.json();
+      addActivityLog(`PIPELINE: Overrides propagated. Generated ${out.predictions ?? 0} predictions, ${out.routes ?? 0} routes.`, 'success');
+    } catch (err) {
+      console.error('Failed to save override or run pipeline:', err);
+      addActivityLog('PIPELINE: failed to run downstream (AI service unreachable).', 'alert');
+    }
   };
 
-  // Lazily fill a report's English translation. App reports never hit /parse, so
-  // their translation is produced on demand — on first view (pending) or at confirm
-  // time. /api/translate is idempotent, skips already-English/already-translated
-  // text, and persists the result; we mirror it into local state. Tracks in-flight
-  // ids so a report is only requested once (SEA-LION free tier is rate-limited).
   const translateRequested = useRef<Set<string>>(new Set());
   const translateReport = async (reportId: string) => {
     const report = reports.find(r => r.id === reportId);
@@ -204,23 +316,18 @@ export default function CommandDashboard() {
       const { translated_text } = await tr.json();
       if (translated_text) {
         setReports(prev => prev.map(r => r.id === reportId ? { ...r, translatedText: translated_text } : r));
-        // Keep the selected snapshot fresh so the map detail card re-renders translated.
         setSelectedReport(prev => prev && prev.id === reportId ? { ...prev, translatedText: translated_text } : prev);
       }
     } catch {
-      translateRequested.current.delete(reportId); // allow a retry on a later view
+      translateRequested.current.delete(reportId);
       addActivityLog(`TRANSLATION: unavailable for ${report.barangayName}.`, 'warn');
     }
   };
 
-  // Confirm a pending field report: persist the status, then fire the end-to-end pipeline
-  // (rescore -> TabPFN impact -> Sphere manifest -> OR-Tools route). Realtime streams the
-  // results back into useLivePlan, so the map/panels update within seconds.
   const handleConfirmReport = async (reportId: string) => {
     const report = reports.find(r => r.id === reportId);
     if (!report) return;
 
-    // Optimistic UI: mark confirmed + reset the barangay's contact time to "now".
     setReports(prev => prev.map(r => r.id === reportId ? { ...r, status: 'confirmed' } : r));
     if (report.barangayId) {
       setBarangays(prev => prev.map(b =>
@@ -236,9 +343,6 @@ export default function CommandDashboard() {
     await supabase.from('field_reports').update({ status: 'confirmed' }).eq('id', reportId);
     addActivityLog(`REPORT CONFIRMED: ${report.barangayName}. Running pipeline…`, 'success');
 
-    // Backstop translation: app reports never hit /parse, so fill the English
-    // translation here. (Pending reports are also translated on first view via
-    // translateReport, so by confirm time this is usually already populated.)
     await translateReport(reportId);
 
     try {
@@ -253,7 +357,6 @@ export default function CommandDashboard() {
     }
   };
 
-  // Flag a report as unreliable — persist so it drops out of pipeline_targets.
   const handleFlagReport = async (reportId: string) => {
     setReports(prev => prev.map(r => r.id === reportId ? { ...r, status: 'flagged' } : r));
     setSelectedReport(null);
@@ -262,16 +365,13 @@ export default function CommandDashboard() {
     addActivityLog(`REPORT FLAGGED: #${reportId} flagged as unreliable.`, 'warn');
   };
 
-  // Re-run the pipeline so OR-Tools redraws routes on the current road graph (avoiding
-  // any blocked edge), refresh the blocked-edge overlay, and surface a transient banner.
-  // Reuses /api/pipeline (DevPlan 4.5); routes redraw via useLivePlan Realtime.
   const runReroute = async (reasonLabel: string) => {
     try {
       const res = await fetch('/api/pipeline', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
       });
       const out = await res.json().catch(() => ({}));
-      try { setEdges(await fetchRoadStatus()); } catch { /* overlay refresh is best-effort */ }
+      try { setEdges(await fetchRoadStatus()); } catch { /* best-effort */ }
       setRerouteNotice(`Re-routed: ${reasonLabel}`);
       addActivityLog(`RE-ROUTE: ${reasonLabel} — ${out.routes ?? 0} route(s) redrawn on real roads.`, 'warn');
       window.setTimeout(() => setRerouteNotice(null), 8000);
@@ -280,15 +380,12 @@ export default function CommandDashboard() {
     }
   };
 
-  // Update Road Edge status (EOC accessibility). 'slow' is advisory (no graph change);
-  // 'blocked'/'damaged' block the edge and 'open' restores it — each attributed to the
-  // coordinator via /api/road-status, then a re-route redraws the affected routes.
   const handleUpdateRoadStatus = async (edgeId: string, status: 'open' | 'slow' | 'blocked' | 'damaged', notes?: string) => {
     const edgeName = edges.find(e => e.id === edgeId)?.name ?? `Edge ${edgeId}`;
     setEdges(prev => prev.map(e => e.id === edgeId ? { ...e, status, notes } : e));
 
     const req = roadBlockRequest(status, notes);
-    if (!req) { // advisory only
+    if (!req) {
       addActivityLog(`ROAD NETWORK: ${edgeName} marked [SLOW] (advisory — graph unchanged).`, 'warn');
       return;
     }
@@ -310,8 +407,6 @@ export default function CommandDashboard() {
     }
   };
 
-  // Coordinator click-to-block: snap the clicked point to the nearest road edge, block it
-  // (attributed via /api/road-status), then re-route around it.
   const handleBlockRoadAt = async (lat: number, lng: number) => {
     addActivityLog('ROAD NETWORK: blocking nearest road to the clicked point…', 'warn');
     try {
@@ -330,10 +425,6 @@ export default function CommandDashboard() {
     }
   };
 
-  // Volunteer-driven live re-route: when a NEW impassable report streams in (Realtime),
-  // the DB trigger has already snapped+blocked the matching edge — re-route once and
-  // annotate. Pre-existing reports (created before mount) are skipped so the map doesn't
-  // re-route on load.
   useEffect(() => {
     const fresh = reports.filter(
       (r) => isLiveImpassableReport(r, mountedAtRef.current) && !reroutedReportsRef.current.has(r.id),
@@ -345,7 +436,6 @@ export default function CommandDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reports]);
 
-  // Update supply manifest status (Approve, Reject)
   const handleUpdateManifestStatus = (barangayId: string, status: 'approved' | 'modified' | 'rejected') => {
     setManifests(prev => {
       const current = prev[barangayId];
@@ -363,11 +453,8 @@ export default function CommandDashboard() {
     addActivityLog(`SUPPLY PLANNING: Relief manifest for ${bName} was [${status.toUpperCase()}] by coordinator.`, status === 'approved' ? 'success' : 'alert');
   };
 
-  // Dispatch response team (OR-Tools routes activation)
   const handleDispatchTeam = (teamId: string, barangayId: string) => {
     setTeams(prev => prev.map(t => t.id === teamId ? { ...t, status: 'dispatched', currentAssignment: `Relief Delivery to ${barangays.find(b => b.id === barangayId)?.name}` } : t));
-    
-    // Simulate routes updating
     setRoutes(prev => prev.map(r => r.teamId === teamId ? { ...r, status: 'active' } : r));
 
     const tName = teams.find(t => t.id === teamId)?.name;
@@ -376,7 +463,6 @@ export default function CommandDashboard() {
     addActivityLog(`TEAM DISPATCH: Deployed ${tName} to ${bName} with humanitarian cargo.`, 'success');
   };
 
-  // Helper to append log item
   const addActivityLog = (event: string, type: 'info' | 'warn' | 'success' | 'alert' = 'info') => {
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     setActivityLogs(prev => [
@@ -385,8 +471,6 @@ export default function CommandDashboard() {
     ]);
   };
 
-  // Reset / Clear to scratch — wipe reports + derived plans + GPS and restore the
-  // map to a clean demo state (accounts + base data kept). Confirmed via a modal.
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
   const handleReset = () => setShowResetConfirm(true);
@@ -399,7 +483,6 @@ export default function CommandDashboard() {
         const detail = await res.json().catch(() => null);
         throw new Error(`reset ${res.status}: ${detail?.error ?? 'unknown'}`);
       }
-      // Clear operational state locally; base map data is refetched (rescore changed it).
       setReports([]);
       setRoutes([]);
       setPredictions({});
@@ -419,9 +502,6 @@ export default function CommandDashboard() {
     }
   };
 
-  // Day-0 forecast — run TabPFN impact + Sphere manifests across communities BEFORE any
-  // field report exists, for a coordinator-chosen storm scenario. Results stream back via
-  // useLivePlan (Realtime) labelled "Predicted — Unconfirmed (Day 0)" and stay override-able.
   const [showDay0Modal, setShowDay0Modal] = useState(false);
   const [day0Running, setDay0Running] = useState(false);
   const [day0Category, setDay0Category] = useState(4); // PAGASA intensity; 4 = super typhoon
@@ -482,40 +562,38 @@ export default function CommandDashboard() {
     setSelectedReport(null);
   };
 
-  // Global telemetry counters
   const reportsCount = reports.filter(r => r.status === 'pending').length;
   const highPriorityCount = scores.filter(s => s.score >= 0.5).length;
-// Console resize state
-const [consoleHeight, setConsoleHeight] = useState(240);
-const [isResizing, setIsResizing] = useState(false);
-const startYRef = React.useRef(0);
-const startHeightRef = React.useRef(240);
+  const [consoleHeight, setConsoleHeight] = useState(240);
+  const [isResizing, setIsResizing] = useState(false);
+  const startYRef = React.useRef(0);
+  const startHeightRef = React.useRef(240);
 
-const handleMouseDown = (e: React.MouseEvent) => {
-  setIsResizing(true);
-  startYRef.current = e.clientY;
-  startHeightRef.current = consoleHeight;
-};
-
-React.useEffect(() => {
-  if (!isResizing) return;
-  const onMouseMove = (e: MouseEvent) => {
-    const delta = startYRef.current - e.clientY; // moving up increases height
-    const newHeight = Math.max(120, startHeightRef.current + delta);
-    setConsoleHeight(newHeight);
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsResizing(true);
+    startYRef.current = e.clientY;
+    startHeightRef.current = consoleHeight;
   };
-  const onMouseUp = () => setIsResizing(false);
-  window.addEventListener('mousemove', onMouseMove);
-  window.addEventListener('mouseup', onMouseUp);
-  return () => {
-    window.removeEventListener('mousemove', onMouseMove);
-    window.removeEventListener('mouseup', onMouseUp);
-  };
-}, [isResizing]);
 
-const ResizeHandle = () => (
-  <div className="h-2 cursor-ns-resize bg-line" onMouseDown={handleMouseDown} />
-);
+  React.useEffect(() => {
+    if (!isResizing) return;
+    const onMouseMove = (e: MouseEvent) => {
+      const delta = startYRef.current - e.clientY;
+      const newHeight = Math.max(120, startHeightRef.current + delta);
+      setConsoleHeight(newHeight);
+    };
+    const onMouseUp = () => setIsResizing(false);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [isResizing]);
+
+  const ResizeHandle = () => (
+    <div className="h-2 cursor-ns-resize bg-line" onMouseDown={handleMouseDown} />
+  );
 
   return (
     <div className="flex h-screen w-screen bg-bg text-fg font-sans overflow-hidden">
@@ -528,16 +606,11 @@ const ResizeHandle = () => (
         onReset={handleReset}
         onRunDay0={handleRunDay0}
         day0Running={day0Running}
-        // onBroadcastAlert={() => {}}
-        // onExportReport={() => {}}
       />
 
-      {/* Main workspace — switches based on currentView */}
+      {/* Main workspace */}
       <div className="flex-1 flex min-w-0 min-h-0 overflow-hidden">
-
-        {/* ── VIEW: Live Map (3-column EOC layout) ──
-            Kept mounted across tabs (hidden, not unmounted) so MapLibre is
-            created once — re-mounting it left the canvas blank on return. */}
+        {/* VIEW: Live Map */}
         <div className={`flex-1 min-w-0 min-h-0 ${currentView === 'map' ? 'flex' : 'hidden'}`}>
           <div className="flex-1 flex flex-col min-w-0">
             <div className="relative flex-1 min-h-0 p-4">
@@ -571,8 +644,6 @@ const ResizeHandle = () => (
             </div>
             <BottomOperationsConsole activityLogs={activityLogs} />
           </div>
-          {/* Persistent right rail: Operations (triage) by default,
-              entity detail when a barangay/report is selected. */}
           {selectedBarangay ? (
             <RightIntelligencePanel
               selectedBarangay={selectedBarangay}
@@ -603,7 +674,7 @@ const ResizeHandle = () => (
           )}
         </div>
 
-        {/* ── VIEW: Field Reports ── */}
+        {/* VIEW: Field Reports */}
         {currentView === 'reports' && (
           <ReportsView
             reports={reports}
@@ -613,7 +684,7 @@ const ResizeHandle = () => (
           />
         )}
 
-        {/* ── VIEW: Teams & Dispatch ── */}
+        {/* VIEW: Teams & Dispatch */}
         {currentView === 'teams' && (
           <TeamsView
             teams={teams}
@@ -623,7 +694,7 @@ const ResizeHandle = () => (
           />
         )}
 
-        {/* ── VIEW: Supply Manifests ── */}
+        {/* VIEW: Supply Manifests */}
         {currentView === 'manifests' && (
           <ManifestsView
             barangays={barangays}
@@ -632,10 +703,9 @@ const ResizeHandle = () => (
             onUpdateManifestStatus={handleUpdateManifestStatus}
           />
         )}
-
       </div>
 
-      {/* Reset confirmation — destructive, irreversible without reseeding. */}
+      {/* Reset confirmation */}
       {showResetConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-surface border border-line rounded-card max-w-md w-full mx-4 overflow-hidden">
@@ -667,7 +737,7 @@ const ResizeHandle = () => (
         </div>
       )}
 
-      {/* Day-0 forecast — scenario picker. Additive: never auto-dispatches. */}
+      {/* Day-0 forecast */}
       {showDay0Modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-surface border border-line rounded-card max-w-md w-full mx-4 overflow-hidden">
@@ -732,8 +802,7 @@ const ResizeHandle = () => (
               </div>
               <p className="text-[12px] text-muted leading-relaxed">
                 Runs TabPFN over static vulnerability features for the chosen storm category, then
-                builds Sphere manifests. The hazard signal is a single uniform category (not a
-                per-barangay wind footprint), so estimates are scenario-based. Results appear as
+                builds Sphere manifests. The hazard signal is a single uniform category, so estimates are scenario-based. Results appear as
                 <span className="text-fg"> Predicted — Unconfirmed (Day 0)</span> and stay override-able;
                 nothing is dispatched.
               </p>
@@ -759,4 +828,4 @@ const ResizeHandle = () => (
       )}
     </div>
   );
-}
+} 
