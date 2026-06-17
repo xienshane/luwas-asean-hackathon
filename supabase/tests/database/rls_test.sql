@@ -4,7 +4,8 @@
 -- (or execute against a database that has the pgtap extension enabled).
 --
 -- Acceptance criteria proven here:
---   * RLS blocks a volunteer from reading another volunteer's PII.
+--   * RLS blocks a volunteer from reading another volunteer's PII — both phone
+--     AND precise GPS (last_location), the most sensitive PII we hold (Phase 6.2).
 --   * A volunteer CAN read their own PII.
 --   * The coordinator can read aggregates (all volunteer rows).
 --   * The role helpers (is_coordinator / current_app_role) resolve correctly.
@@ -15,7 +16,7 @@
 begin;
 set search_path = public, extensions, pg_temp;
 
-select plan(6);
+select plan(7);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures: three auth users -> profiles created by the handle_new_user
@@ -30,9 +31,11 @@ update public.profiles
    set role = 'coordinator'
  where id = '00000000-0000-0000-0000-000000000001';
 
-insert into public.volunteers (id, full_name, phone) values
-  ('00000000-0000-0000-0000-000000000002', 'Volunteer A', '+639170000002'),
-  ('00000000-0000-0000-0000-000000000003', 'Volunteer B', '+639170000003');
+insert into public.volunteers (id, full_name, phone, last_location, last_location_at) values
+  ('00000000-0000-0000-0000-000000000002', 'Volunteer A', '+639170000002',
+     st_setsrid(st_makepoint(123.88, 10.31), 4326), now()),
+  ('00000000-0000-0000-0000-000000000003', 'Volunteer B', '+639170000003',
+     st_setsrid(st_makepoint(123.90, 10.32), 4326), now());
 
 -- ---------------------------------------------------------------------------
 -- Role helpers, evaluated as the coordinator.
@@ -67,7 +70,12 @@ select is( public.is_coordinator(), false,
 select is_empty(
   $$ select phone from public.volunteers
        where id = '00000000-0000-0000-0000-000000000003' $$,
-  'volunteer A is blocked from reading volunteer B PII' );
+  'volunteer A is blocked from reading volunteer B PII (phone)' );
+
+select is_empty(
+  $$ select last_location from public.volunteers
+       where id = '00000000-0000-0000-0000-000000000003' $$,
+  'volunteer A is blocked from reading volunteer B precise GPS (last_location)' );
 
 select isnt_empty(
   $$ select phone from public.volunteers
