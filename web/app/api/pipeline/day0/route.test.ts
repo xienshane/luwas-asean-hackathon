@@ -14,6 +14,9 @@ const rpc = vi.fn(async (fn: string) => {
 });
 const fromFn = vi.fn((table: string) => ({
   upsert: vi.fn(async (rows: any[]) => { calls.push(`upsert:${table}`); upserts[table] = rows; return { error: null }; }),
+  select: () => ({
+    in: async () => ({ data: [], error: null }),
+  })
 }));
 
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => ({ rpc, from: fromFn }) }));

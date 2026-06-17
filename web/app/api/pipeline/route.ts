@@ -45,6 +45,36 @@ export async function POST(request: Request) {
     return Response.json({ rescored: true, predictions: 0, manifests: 0, routes: 0, note: 'no active targets' });
   }
 
+  // Fetch existing predictions to get any override_value
+  const { data: existingPreds } = await admin
+    .from('impact_predictions')
+    .select('barangay_id, override_value')
+    .in('barangay_id', targets.map((t) => t.barangay_id));
+  const existingPredsMap = new Map<string, number | null>(
+    (existingPreds ?? []).map((p) => [p.barangay_id, p.override_value])
+  );
+
+  interface ExistingManifest {
+    barangay_id: string;
+    water_l: number | null;
+    food_packs: number | null;
+    shelter_kits: number | null;
+    blankets: number | null;
+    breakdown: { total_weight_kg?: number; lines?: unknown[] } | null;
+    overridden: boolean;
+    days: number;
+    access_modifier: number;
+  }
+
+  // Fetch existing supply manifests to see if any are overridden
+  const { data: existingManifests } = await admin
+    .from('supply_manifests')
+    .select('barangay_id, water_l, food_packs, shelter_kits, blankets, breakdown, overridden, days, access_modifier')
+    .in('barangay_id', targets.map((t) => t.barangay_id));
+  const existingManifestsMap = new Map<string, ExistingManifest>(
+    (existingManifests ?? []).map((m) => [m.barangay_id, m as unknown as ExistingManifest])
+  );
+
   // 4) Impact prediction (one batched call) -> upsert (preserve override_value).
   const features = targets.map((t) => toFeatures(t, categoryOrdinal));
   const impact = await predictImpact(features);
@@ -70,21 +100,49 @@ export async function POST(request: Request) {
   const demandByBrgy = new Map<string, number>();
   const manifestRows = [];
   for (const t of targets) {
-    const affected = boundedAffected(predByBrgy.get(t.barangay_id)!, t.population);
-    const m = await buildManifest({ predicted_affected: affected, days: DAYS, id: t.barangay_id });
-    demandByBrgy.set(t.barangay_id, m.total_weight_kg);
-    const qty = (cat: string) => m.lines.find((l) => l.category === cat)?.quantity ?? 0;
-    manifestRows.push({
-      barangay_id: t.barangay_id,
-      days: DAYS,
-      access_modifier: m.access_modifier,
-      water_l: qty('water'),
-      food_packs: qty('food'),
-      shelter_kits: m.lines.find((l) => l.item.toLowerCase().includes('tarp'))?.quantity ?? 0,
-      blankets: m.lines.find((l) => l.item.toLowerCase().includes('blanket'))?.quantity ?? 0,
-      breakdown: m,
-      overridden: false,
-    });
+    const existingPred = existingPredsMap.get(t.barangay_id);
+    const affected = (existingPred !== null && existingPred !== undefined)
+      ? existingPred
+      : boundedAffected(predByBrgy.get(t.barangay_id)!, t.population);
+
+    const existingManifest = existingManifestsMap.get(t.barangay_id);
+    if (existingManifest && existingManifest.overridden) {
+      // Use the existing overridden manifest!
+      const totalWeight = existingManifest.breakdown?.total_weight_kg ?? (
+        Number(existingManifest.water_l ?? 0) * 1.0 +
+        Number(existingManifest.food_packs ?? 0) * 0.6 +
+        Number(existingManifest.shelter_kits ?? 0) * 5.0 +
+        Number(existingManifest.blankets ?? 0) * 1.5
+      );
+      demandByBrgy.set(t.barangay_id, totalWeight);
+      manifestRows.push({
+        barangay_id: t.barangay_id,
+        days: existingManifest.days,
+        access_modifier: Number(existingManifest.access_modifier ?? 1.0),
+        water_l: Number(existingManifest.water_l ?? 0),
+        food_packs: Number(existingManifest.food_packs ?? 0),
+        shelter_kits: Number(existingManifest.shelter_kits ?? 0),
+        blankets: Number(existingManifest.blankets ?? 0),
+        breakdown: existingManifest.breakdown,
+        overridden: true,
+      });
+    } else {
+      // Generate standard Sphere manifest using (possibly overridden) affected count
+      const m = await buildManifest({ predicted_affected: affected, days: DAYS, id: t.barangay_id });
+      demandByBrgy.set(t.barangay_id, m.total_weight_kg);
+      const qty = (cat: string) => m.lines.find((l) => l.category === cat)?.quantity ?? 0;
+      manifestRows.push({
+        barangay_id: t.barangay_id,
+        days: DAYS,
+        access_modifier: m.access_modifier,
+        water_l: qty('water'),
+        food_packs: qty('food'),
+        shelter_kits: m.lines.find((l) => l.item.toLowerCase().includes('tarp'))?.quantity ?? 0,
+        blankets: m.lines.find((l) => l.item.toLowerCase().includes('blanket'))?.quantity ?? 0,
+        breakdown: m,
+        overridden: false,
+      });
+    }
   }
   {
     const { error } = await admin.from('supply_manifests').upsert(manifestRows, { onConflict: 'barangay_id' });
