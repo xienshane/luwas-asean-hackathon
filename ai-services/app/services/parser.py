@@ -50,6 +50,59 @@ SYSTEM_PROMPT = (
     "else 'unknown'. "
     "Set each confidence by how explicitly the field is stated; do not invent values."
 )
+
+# Phase 4.6 — few-shot disaster lexicon. Field reports arrive in informal Bisaya/Tagalog
+# with disaster slang, SMS abbreviations, and misspellings the base model mishandles. This
+# block teaches the mapping by glossary + worked examples (no fine-tuning; SEA-LION is a
+# free API). It is appended to the system prompt, so it adds prompt tokens but NO extra
+# API calls — the 10-calls/min rate limit is unaffected.
+FEW_SHOT_BLOCK = (
+    "\n\nDISASTER LEXICON (Bisaya/Cebuano + Tagalog field slang — map these to the fields):\n"
+    "- 'baha' = flood; 'gibaha'/'nalunopan' = flooded; 'lubog'/'naglutaw' = submerged/houses "
+    "underwater (=> road_status often 'impassable', severity high+).\n"
+    "- 'lawom'/'taas ang tubig' = deep/high water; 'abot sa abaga/atop' = up to the "
+    "shoulder/roof (=> critical).\n"
+    "- 'naa mi sa atop' / 'sa atop mi' / 'stranded sa rooftop' = people trapped on the roof by "
+    "floodwater (=> severity 'critical', road_status 'impassable').\n"
+    "- 'dili maagian' / 'imposible maagian' / 'barado' / 'naputol ang tulay' / 'naputol ang "
+    "dalan' = road blocked or bridge cut (=> road_status 'impassable').\n"
+    "- 'maagian' / 'klaro ang dalan' / 'open ang dalan' = road passable.\n"
+    "- 'walay' = no/without: 'walay tubig' = no water, 'walay kuryente'/'naputol ang kuryente' "
+    "= no power, 'walay pagkaon' = no food.\n"
+    "- 'tabang' = help; 'tabang dayon' / 'wala pa'y tabang nakaabot' = no aid has arrived yet "
+    "(=> urgent, severity high+).\n"
+    "- 'kusog ang hangin' = strong wind; 'surge'/'daluyong' = storm surge.\n"
+    "- People counts: 'ka tawo'/'katawo'/'katao'/'ka residente'/'pax' = persons; "
+    "'k'/'K' after a number = thousand (e.g. '2k' = 2000). "
+    "'pamilya'/'ka pamilya'/'fam'/'household' = families => multiply by ~5 for people.\n"
+    "- Vague quantities ('gatosan' = hundreds, 'libo-libo'/'liboan' = thousands, 'daghan' = "
+    "many): do NOT invent an exact number — set population_estimate null and give it low "
+    "confidence.\n"
+    "- 'Brgy'/'Bgy'/'Brngy' = Barangay; expect misspellings (e.g. 'bah a', 'gwadalupe').\n"
+    "- Severity cues: 'gamay ra'/'minor'/'kalma ra' = low; 'grabe'/'malala' = high; "
+    "'kritikal'/'critical'/'daghang samaron' (many injured) = critical.\n"
+    "\nEXAMPLES (report => JSON):\n"
+    'Report: "Naa mi sa atop sa Brgy Tisa, lubog na ang tibuok dalan, ~8 ka pamilya stranded."\n'
+    'JSON: {"location": "Barangay Tisa", "population_estimate": 40, "needs_severity": "critical", '
+    '"road_status": "impassable", "confidence": {"location": 0.9, "population_estimate": 0.6, '
+    '"needs_severity": 0.85, "road_status": 0.9}, "overall_confidence": 0.81, '
+    '"translated_text": "We are on the roof in Barangay Tisa, the whole road is submerged, '
+    'about 8 families stranded."}\n'
+    'Report: "Gamay ra ang baha sa Mabolo, mga 40 ka tawo, naa pa silay supply, klaro ang dalan."\n'
+    'JSON: {"location": "Mabolo", "population_estimate": 40, "needs_severity": "low", '
+    '"road_status": "passable", "confidence": {"location": 0.9, "population_estimate": 0.8, '
+    '"needs_severity": 0.8, "road_status": 0.85}, "overall_confidence": 0.84, '
+    '"translated_text": "Only minor flooding in Mabolo, about 40 people, they still have '
+    'supplies, the road is clear."}\n'
+    'Report: "Baha sa Inayawan, gatosan ka tawo apektado, naputol ang tulay sa highway."\n'
+    'JSON: {"location": "Inayawan", "population_estimate": null, "needs_severity": "high", '
+    '"road_status": "impassable", "confidence": {"location": 0.9, "population_estimate": 0.2, '
+    '"needs_severity": 0.75, "road_status": 0.85}, "overall_confidence": 0.68, '
+    '"translated_text": "Flooding in Inayawan, hundreds of people affected, the bridge to the '
+    'highway is cut."}'
+)
+SYSTEM_PROMPT = SYSTEM_PROMPT + FEW_SHOT_BLOCK
+
 USER_TEMPLATE = 'Field report:\n"""\n{text}\n"""\nReturn the JSON now.'
 
 # Standalone translation (the /translate endpoint, used for app reports that never hit

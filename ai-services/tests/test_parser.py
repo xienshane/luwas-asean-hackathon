@@ -52,6 +52,51 @@ HIGH_CONF = """{
 }"""
 
 
+# --- gold-set corpus structure (Phase 4.6) ----------------------------------
+
+def test_goldset_has_about_20_scorable_items():
+    """Every gold item must expose >= MIN_FIELDS applicable fields, else the >=3-of-N bar
+    is unreachable and the item is silently un-passable. Offline structural guard."""
+    from tests.goldset_parse import GOLD_SET, MIN_FIELDS_PER_SAMPLE, score_sample
+
+    assert 18 <= len(GOLD_SET) <= 22, f"gold-set should be ~20 items, got {len(GOLD_SET)}"
+    for text, exp in GOLD_SET:
+        # applicable count == matched when the field report mirrors the expectation exactly
+        sev = next(iter(exp["sev"])) if exp["sev"] else None
+
+        class _FR:
+            location_text = exp["loc"]
+            population_estimate = exp["pop"]
+            needs_severity = sev
+            road_status = exp["road"]
+
+        matched, applicable = score_sample(_FR(), exp)
+        assert applicable >= MIN_FIELDS_PER_SAMPLE, (
+            f"item has only {applicable} applicable fields (need >= "
+            f"{MIN_FIELDS_PER_SAMPLE}): {text[:50]!r}"
+        )
+        assert matched == applicable, "exact-mirror oracle should match every applicable field"
+
+
+# --- few-shot disaster lexicon (Phase 4.6) ----------------------------------
+
+def test_system_prompt_teaches_disaster_lexicon():
+    """The prompt must teach authentic Bisaya/Filipino disaster slang & abbreviations."""
+    from app.services.parser import FEW_SHOT_BLOCK, SYSTEM_PROMPT
+
+    assert FEW_SHOT_BLOCK in SYSTEM_PROMPT
+    lex = FEW_SHOT_BLOCK.lower()
+    for term in ["baha", "lubog", "naa mi sa atop", "brgy", "naputol", "tabang", "walay"]:
+        assert term in lex, f"disaster-lexicon term missing from prompt: {term!r}"
+
+
+def test_few_shot_block_shows_worked_examples():
+    """At least two input->JSON examples so the model sees the field mapping."""
+    from app.services.parser import FEW_SHOT_BLOCK
+
+    assert FEW_SHOT_BLOCK.count('"road_status"') >= 2
+
+
 # --- JSON extraction --------------------------------------------------------
 
 def test_extract_json_from_plain_object():
@@ -192,6 +237,29 @@ def test_raises_when_both_providers_fail():
     parser = make_parser(primary, fallback)
     with pytest.raises(LLMError):
         parser.parse("anything")
+
+
+def test_few_shot_lexicon_reaches_backend_with_no_extra_calls():
+    """Phase 4.6: the lexicon is sent to the model, and one parse still costs exactly one
+    primary call — the few-shot block adds prompt tokens, not API calls (rate-limit safe)."""
+
+    class RecordingBackend:
+        name = "sea-lion"
+
+        def __init__(self):
+            self.systems: list[str] = []
+
+        def complete(self, system: str, user: str) -> str:
+            self.systems.append(system)
+            return HIGH_CONF
+
+    backend = RecordingBackend()
+    parser = make_parser(backend)
+    parser.parse("Naa mi sa atop sa Brgy Tisa, lubog ang dalan")
+
+    assert len(backend.systems) == 1  # no extra calls introduced by the few-shot block
+    assert "naa mi sa atop" in backend.systems[0].lower()
+    assert "lubog" in backend.systems[0].lower()
 
 
 def test_rate_limiter_gates_sea_lion_calls():
