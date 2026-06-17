@@ -17,6 +17,22 @@ it('converts a prediction row to the UI ImpactPrediction', () => {
   expect(p.isDay0).toBe(false); // report-driven rows are not Day-0
 });
 
+it('carries the affected interval bounds onto the UI prediction', () => {
+  const p = predictionRowToUi({ barangay_id: 'b1', model: 'tabpfn', predicted_affected: 1200,
+    damage_severity: 'high', confidence: 0.8, override_value: null, inputs: {},
+    affected_low: 820, affected_high: 1740 });
+  expect(p.affectedLow).toBe(820);
+  expect(p.affectedHigh).toBe(1740);
+});
+
+it('leaves interval bounds null for heuristic rows (no interval persisted)', () => {
+  const p = predictionRowToUi({ barangay_id: 'b1', model: 'heuristic', predicted_affected: 500,
+    damage_severity: 'moderate', confidence: 0.25, override_value: null, inputs: {},
+    affected_low: null, affected_high: null });
+  expect(p.affectedLow).toBeNull();
+  expect(p.affectedHigh).toBeNull();
+});
+
 it('flags Day-0 predictions via is_day0', () => {
   const p = predictionRowToUi({ barangay_id: 'b1', model: 'tabpfn', predicted_affected: 500,
     damage_severity: 'high', confidence: 0.8, override_value: null, inputs: {}, is_day0: true });

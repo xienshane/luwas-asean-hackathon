@@ -29,9 +29,16 @@ export interface PredictImpactRequest {
 export interface ImpactPrediction {
   affected: number;
   affected_confidence: number;
+  /** 80% predictive interval for `affected` (0.1/0.9 quantiles). Null on the heuristic
+   *  path (no interval). Decision support, not a guarantee. */
+  affected_low: number | null;
+  affected_high: number | null;
   /** Set in regressor framing; null in classifier framing. */
   damage_rate: number | null;
   damage_rate_confidence: number | null;
+  /** 80% predictive interval for `damage_rate`; regressor framing only. */
+  damage_rate_low: number | null;
+  damage_rate_high: number | null;
   /** Set in classifier framing; null in regressor framing. */
   severity_class: SeverityClass | null;
   severity_confidence: number | null;

@@ -148,6 +148,7 @@ class ImpactPredictor:
                 self._build(
                     affected=round(float(aff_mean[i])),
                     aff_conf=self._interval_conf(aff_lo[i], aff_hi[i], self._affected_scale),
+                    aff_lo=float(aff_lo[i]), aff_hi=float(aff_hi[i]),
                     severity=str(classes[sev_idx[i]]),
                     sev_conf=float(sev_conf[i]),
                     source="tabpfn",
@@ -164,8 +165,11 @@ class ImpactPredictor:
             self._build(
                 affected=round(float(aff_mean[i])),
                 aff_conf=self._interval_conf(aff_lo[i], aff_hi[i], self._affected_scale),
+                aff_lo=float(aff_lo[i]), aff_hi=float(aff_hi[i]),
                 damage_rate=round(_clip01(float(dmg_mean[i])), 4),
                 dmg_conf=self._interval_conf(dmg_lo[i], dmg_hi[i], 1.0),
+                dmg_lo=round(_clip01(float(dmg_lo[i])), 4),
+                dmg_hi=round(_clip01(float(dmg_hi[i])), 4),
                 source="tabpfn",
                 id=f.id,
             )
@@ -207,21 +211,37 @@ class ImpactPredictor:
         aff_conf: float,
         source: str,
         id: str | None,
+        aff_lo: float | None = None,
+        aff_hi: float | None = None,
         damage_rate: float | None = None,
         dmg_conf: float | None = None,
+        dmg_lo: float | None = None,
+        dmg_hi: float | None = None,
         severity: str | None = None,
         sev_conf: float | None = None,
     ) -> ImpactPrediction:
-        """Assemble a prediction reporting only the severity head for the active framing."""
+        """Assemble a prediction reporting only the severity head for the active framing.
+
+        `affected` is always regressed, so its 80% interval (`aff_lo`/`aff_hi`) flows
+        through both framings; `damage_rate` bounds are regressor-framing only. Bounds are
+        None on the heuristic path (no predictive interval) — the `source` flag marks it.
+        """
         affected = max(0, affected)
+        # Clamp interval ends to the (non-negative) point estimate ordering.
+        affected_low = max(0, round(aff_lo)) if aff_lo is not None else None
+        affected_high = max(affected_low or 0, round(aff_hi)) if aff_hi is not None else None
         if self.settings.model_framing == "classifier":
             return ImpactPrediction(
                 affected=affected, affected_confidence=aff_conf,
+                affected_low=affected_low, affected_high=affected_high,
                 severity_class=severity, severity_confidence=sev_conf,
                 confidence=min(aff_conf, sev_conf), source=source, id=id,
             )
         return ImpactPrediction(
             affected=affected, affected_confidence=aff_conf,
+            affected_low=affected_low, affected_high=affected_high,
             damage_rate=damage_rate, damage_rate_confidence=dmg_conf,
+            damage_rate_low=_clip01(dmg_lo) if dmg_lo is not None else None,
+            damage_rate_high=_clip01(dmg_hi) if dmg_hi is not None else None,
             confidence=min(aff_conf, dmg_conf), source=source, id=id,
         )

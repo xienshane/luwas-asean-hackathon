@@ -24,6 +24,7 @@ const CONF_TO_UI = (c: number): ImpactPrediction['confidence'] => (c >= 0.66 ? '
 
 interface PredictionRow {
   barangay_id: string; model: string; predicted_affected: number | null;
+  affected_low?: number | null; affected_high?: number | null;
   damage_severity: string | null; confidence: number | null; override_value: number | null; inputs: any;
   is_day0?: boolean | null;
 }
@@ -31,6 +32,8 @@ export function predictionRowToUi(r: PredictionRow): ImpactPrediction {
   return {
     barangayId: r.barangay_id, model: r.model === 'tabpfn' ? 'TabPFN v2' : 'Heuristic',
     predictedAffected: Number(r.predicted_affected ?? 0),
+    affectedLow: r.affected_low ?? null,
+    affectedHigh: r.affected_high ?? null,
     damageSeverity: SEV_DB_TO_UI[r.damage_severity ?? 'moderate'] ?? 'minor',
     confidence: CONF_TO_UI(Number(r.confidence ?? 0)),
     overrideValue: r.override_value, contributors: [],

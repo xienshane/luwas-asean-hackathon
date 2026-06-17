@@ -64,3 +64,22 @@ export function boundedAffected(
   if (rate == null) return Math.min(Math.max(0, Math.round(p.affected)), pop);
   return Math.min(pop, Math.max(0, Math.round(rate * pop)));
 }
+
+// Operational 80% interval for the bounded affected estimate (Phase 4.3).
+//
+// The point estimate (boundedAffected) derives affected from `damage_rate * population`,
+// so its interval comes from the same mapping applied to the damage_rate quantiles —
+// NOT the model's province-scale `affected_low`/`affected_high`, which would overshoot a
+// single barangay. Returns null when no continuous damage_rate interval exists (heuristic
+// path or classifier framing); the UI then shows the point estimate without a range.
+export function boundedAffectedRange(
+  p: Pick<ImpactPrediction, 'damage_rate_low' | 'damage_rate_high' | 'affected_low' | 'affected_high' | 'severity_class'>,
+  population: number | null | undefined,
+): { low: number; high: number } | null {
+  const lo = p.damage_rate_low, hi = p.damage_rate_high;
+  if (lo == null || hi == null) return null;
+  const pop = Math.max(0, Math.round(population ?? 0));
+  const bound = (rate: number) => Math.min(pop, Math.max(0, Math.round(rate * pop)));
+  const low = bound(lo);
+  return { low, high: Math.max(low, bound(hi)) };
+}

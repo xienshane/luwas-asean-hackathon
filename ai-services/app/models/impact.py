@@ -35,10 +35,17 @@ class ImpactPrediction(BaseModel):
 
     affected: int = Field(..., ge=0, description="predicted affected population")
     affected_confidence: float = Field(..., ge=0.0, le=1.0)
+    # 80% predictive interval for `affected` (0.1/0.9 quantiles). Populated by TabPFN;
+    # None on the heuristic path (no interval available). Decision support, not a guarantee.
+    affected_low: Optional[int] = Field(None, ge=0, description="affected 10th percentile")
+    affected_high: Optional[int] = Field(None, ge=0, description="affected 90th percentile")
 
     # Reported in regressor framing; None in classifier framing.
     damage_rate: Optional[float] = Field(None, ge=0.0, le=1.0)
     damage_rate_confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
+    # 80% predictive interval for `damage_rate`; TabPFN regressor framing only.
+    damage_rate_low: Optional[float] = Field(None, ge=0.0, le=1.0)
+    damage_rate_high: Optional[float] = Field(None, ge=0.0, le=1.0)
 
     # Reported in classifier framing; None in regressor framing.
     severity_class: Optional[Literal["low", "moderate", "high", "severe"]] = None

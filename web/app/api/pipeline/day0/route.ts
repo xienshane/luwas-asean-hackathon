@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { predictImpact } from '@/lib/ai/impact';
 import { buildManifest } from '@/lib/ai/supply';
-import { toFeatures, severityFromDamageRate, boundedAffected, type TargetRow } from '@/lib/pipeline/features';
+import { toFeatures, severityFromDamageRate, boundedAffected, boundedAffectedRange, type TargetRow } from '@/lib/pipeline/features';
 
 const DAYS = 3;
 const MAX_TARGETS = 50;
@@ -80,10 +80,13 @@ export async function POST(request: Request) {
 
   const predictionRows = targets.map((t) => {
     const p = predByBrgy.get(t.barangay_id)!;
+    const range = boundedAffectedRange(p, t.population);
     return {
       barangay_id: t.barangay_id,
       model: p.source === 'tabpfn' ? 'tabpfn' : 'heuristic',
       predicted_affected: boundedAffected(p, t.population),
+      affected_low: range?.low ?? null,
+      affected_high: range?.high ?? null,
       damage_severity: p.severity_class ?? severityFromDamageRate(p.damage_rate),
       confidence: Number(p.confidence.toFixed(3)),
       inputs: features.find((f) => f.id === t.barangay_id) ?? {},
