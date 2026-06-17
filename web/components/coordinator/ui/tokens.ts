@@ -19,11 +19,17 @@ export type Tone = 'critical' | 'warning' | 'active' | 'neutral';
 
 // ── Silent Area state: the three pin states from Phase 3.1 ──────────────────
 //   reached (neutral/light) · escalating (amber) · critical (red)
+// Thresholds calibrated to the Phase 4.4 COMPOSITE priority distribution, which is
+// an additive blend (no longer a near-zero-able product). With the always-on
+// baseline (silence + province vulnerability), scores cluster ~0.29–0.43 with a
+// high tail to ~0.75 driven by predicted impact, so the cut points sit higher and
+// tighter than the old multiplicative scale: critical ≈ the predicted-impact tail,
+// escalating ≈ the upper-middle, reached ≈ the low-priority lower half.
 export type SilentAreaState = 'reached' | 'escalating' | 'critical';
 
 export function silentAreaState(score: number): SilentAreaState {
-  if (score >= 0.5) return 'critical';
-  if (score >= 0.2) return 'escalating';
+  if (score >= 0.45) return 'critical';
+  if (score >= 0.34) return 'escalating';
   return 'reached';
 }
 

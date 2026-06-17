@@ -463,6 +463,9 @@ export default function InteractiveCommandMap({
       closeButton: false,
       closeOnClick: false,
       offset: 15,
+      // Default maxWidth is 240px, which clipped the wider breakdown content; the
+      // tooltip width is owned by .command-map-tooltip .maplibregl-popup-content CSS.
+      maxWidth: 'none',
       className: 'command-map-tooltip'
     });
 
@@ -727,38 +730,46 @@ export default function InteractiveCommandMap({
         const stateLabel = STATE_LABEL[state];
         const stateColor = STATE_COLOR[state];
 
-        // One breakdown row: label, raw context, weight × component contribution.
-        const row = (label: string, ctx: string, w: number, c: number) => `
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="text-muted">${label}</span>
-                    <span class="text-muted">${ctx} · <span class="text-fg font-mono tabular-nums">${w.toFixed(2)}×${c.toFixed(2)}</span></span>
-                  </div>`;
-        const recon = `${(wPop * popN).toFixed(2)} + ${(wHaz * hazN).toFixed(2)} + ${(wVuln * vulnN).toFixed(2)} + `
-          + `${(wImp * impactN).toFixed(2)} + ${(wSil * timeN).toFixed(2)} + ${(wNear * nearN).toFixed(2)}`;
+        // One breakdown row: label · weight (left), a 0–1 fill bar (middle), and the
+        // component value (right). The fixed 3-column grid + a fill bar that scales by
+        // percentage means nothing can push past the bubble. `title` shows the raw
+        // context and the weighted contribution on hover.
+        const row = (label: string, w: number, c: number, ctx: string) => {
+          const pct = Math.max(2, Math.round(c * 100));
+          return `
+                  <span class="text-muted whitespace-nowrap" title="${ctx} · weight ${Math.round(w * 100)}% → +${(w * c).toFixed(2)}">${label}<span class="opacity-50"> ·${Math.round(w * 100)}%</span></span>
+                  <span class="h-1 rounded-full self-center" style="background:rgba(255,255,255,0.07)"><span class="block h-1 rounded-full" style="width:${pct}%;background:var(--color-muted)"></span></span>
+                  <span class="text-right font-mono tabular-nums text-fg">${c.toFixed(2)}</span>`;
+        };
+        const recon = [wPop * popN, wHaz * hazN, wVuln * vulnN, wImp * impactN, wSil * timeN, wNear * nearN]
+          .map((v) => v.toFixed(2)).join(' + ');
 
         hoverPopupRef.current.remove();
         hoverPopupRef.current
           .setLngLat(lngLat)
           .setHTML(`
-              <div class="px-3 py-2 text-[13px] font-sans w-[250px]">
-                <div class="flex items-center justify-between gap-2 border-b border-line pb-1.5 mb-1.5">
-                  <span class="font-medium text-fg">${p.name}</span>
-                  <span class="flex items-center gap-1.5 text-[12px] text-muted">
+              <div class="px-3 py-2.5 text-[13px] font-sans">
+                <div class="flex items-center justify-between gap-2 border-b border-line pb-1.5 mb-2">
+                  <span class="font-medium text-fg truncate">${p.name}</span>
+                  <span class="flex items-center gap-1.5 text-[12px] text-muted shrink-0">
                     <span style="width:6px;height:6px;border-radius:9999px;background:${stateColor}"></span>
                     ${stateLabel}
                   </span>
                 </div>
-                <div class="text-[11px] text-muted mb-1.5">Composite priority · ${scorePct}%</div>
-                <div class="space-y-1 text-[12px]">
-                  ${row('Pop density', `${density}/km²`, wPop, popN)}
-                  ${row('Hazard exposure', hazard, wHaz, hazN)}
-                  ${row('Structural vuln.', `${Math.round(vulnN * 100)}%`, wVuln, vulnN)}
-                  ${row('Predicted impact', `${Math.round(impactN * 100)}%`, wImp, impactN)}
-                  ${row('Silence', contactStr, wSil, timeN)}
-                  ${row('Nearby reports', nearN > 0 ? 'active' : 'none', wNear, nearN)}
+                <div class="grid grid-cols-[auto_1fr_auto] gap-x-2 gap-y-2 items-center text-[12px]">
+                  ${row('Pop density', wPop, popN, `${density}/km²`)}
+                  ${row('Hazard', wHaz, hazN, hazard)}
+                  ${row('Structural vuln.', wVuln, vulnN, `${Math.round(vulnN * 100)}% of housing`)}
+                  ${row('Predicted impact', wImp, impactN, `${Math.round(impactN * 100)}% of pop`)}
+                  ${row('Silence', wSil, timeN, contactStr)}
+                  ${row('Nearby reports', wNear, nearN, nearN > 0 ? 'active' : 'none')}
                 </div>
-                <div class="mt-1.5 pt-1.5 border-t border-line text-[11px] text-muted text-center font-mono tabular-nums leading-relaxed">
-                  ${recon}<br/>= <span class="text-fg">${Number(p.score).toFixed(2)}</span>
+                <div class="mt-2 pt-1.5 border-t border-line flex items-baseline justify-between gap-2">
+                  <span class="text-[11px] text-muted">Composite priority</span>
+                  <span class="font-mono tabular-nums text-[15px] text-fg">${scorePct}%</span>
+                </div>
+                <div class="mt-0.5 text-[9.5px] text-muted/80 font-mono tabular-nums leading-snug break-words whitespace-normal">
+                  ${recon} = ${Number(p.score).toFixed(2)}
                 </div>
               </div>
             `)
@@ -1557,8 +1568,13 @@ export default function InteractiveCommandMap({
           will-change: transform !important;
           display: flex !important;
         }
-        /* Tooltip styling — calm surface; inner HTML controls padding */
+        /* Tooltip styling — calm surface; inner HTML controls padding. Width is fixed
+           here (box-sizing: border-box) so content can never spill past the bubble. */
         .command-map-tooltip .maplibregl-popup-content {
+          width: 264px !important;
+          max-width: 264px !important;
+          box-sizing: border-box !important;
+          overflow: hidden !important;
           background-color: var(--color-raised) !important;
           color: var(--color-fg) !important;
           border: 1px solid var(--color-line) !important;
