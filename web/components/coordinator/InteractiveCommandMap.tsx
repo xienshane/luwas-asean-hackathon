@@ -33,7 +33,12 @@ interface InteractiveCommandMapProps {
   onSelectBarangay: (b: Barangay) => void;
   selectedReport: FieldReport | null;
   onSelectReport: (r: FieldReport) => void;
-  scores: { barangayId: string; score: number; hoursSinceContact: number | null; timeFactor?: number; popDensityNorm?: number; hazardNorm?: number }[];
+  scores: {
+    barangayId: string; score: number; hoursSinceContact: number | null;
+    timeFactor?: number; popDensityNorm?: number; hazardNorm?: number;
+    structuralVulnFrac?: number; impactFrac?: number; nearbyNorm?: number;
+    weights?: { pop: number; hazard: number; vuln: number; impact: number; silence: number; nearby: number };
+  }[];
   onUpdateRoadStatus: (edgeId: string, status: 'open' | 'slow' | 'blocked' | 'damaged', notes?: string) => void;
   /** Phase 4.5: coordinator click-to-block — snaps the clicked point to the nearest road edge. */
   onBlockRoadAt?: (lat: number, lng: number) => void;
@@ -171,7 +176,11 @@ export default function InteractiveCommandMap({
   const getScoreData = useCallback(
     (barangayId: string) =>
       scores.find((s) => s.barangayId === barangayId) ??
-      { barangayId, score: 0, hoursSinceContact: null, timeFactor: 1, popDensityNorm: 0, hazardNorm: 0 },
+      {
+        barangayId, score: 0, hoursSinceContact: null, timeFactor: 1,
+        popDensityNorm: 0, hazardNorm: 0, structuralVulnFrac: 0, impactFrac: 0, nearbyNorm: 0,
+        weights: { pop: 0.15, hazard: 0.2, vuln: 0.15, impact: 0.25, silence: 0.15, nearby: 0.1 },
+      },
     [scores],
   );
 
@@ -701,9 +710,15 @@ export default function InteractiveCommandMap({
         const scorePct = Math.round(p.score * 100);
         const density = Number(p.popDensity).toLocaleString();
         const hazard = Number(p.hazardComposite).toFixed(2);
-        const popN = Number(p.popDensityNorm).toFixed(2);
-        const hazN = Number(p.hazardNorm).toFixed(2);
-        const timeN = Number(p.timeFactor).toFixed(2);
+        // Phase 4.4 composite priority: six weighted components, each ∈ [0,1].
+        const popN = Number(p.popDensityNorm);
+        const hazN = Number(p.hazardNorm);
+        const vulnN = Number(p.structuralVulnFrac);
+        const impactN = Number(p.impactFrac);
+        const timeN = Number(p.timeFactor);
+        const nearN = Number(p.nearbyNorm);
+        const wPop = Number(p.wPop), wHaz = Number(p.wHazard), wVuln = Number(p.wVuln);
+        const wImp = Number(p.wImpact), wSil = Number(p.wSilence), wNear = Number(p.wNearby);
         const contactStr =
           p.hoursSinceContact === null || p.hoursSinceContact === undefined || p.hoursSinceContact === ''
             ? 'No contact'
@@ -712,11 +727,20 @@ export default function InteractiveCommandMap({
         const stateLabel = STATE_LABEL[state];
         const stateColor = STATE_COLOR[state];
 
+        // One breakdown row: label, raw context, weight × component contribution.
+        const row = (label: string, ctx: string, w: number, c: number) => `
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-muted">${label}</span>
+                    <span class="text-muted">${ctx} · <span class="text-fg font-mono tabular-nums">${w.toFixed(2)}×${c.toFixed(2)}</span></span>
+                  </div>`;
+        const recon = `${(wPop * popN).toFixed(2)} + ${(wHaz * hazN).toFixed(2)} + ${(wVuln * vulnN).toFixed(2)} + `
+          + `${(wImp * impactN).toFixed(2)} + ${(wSil * timeN).toFixed(2)} + ${(wNear * nearN).toFixed(2)}`;
+
         hoverPopupRef.current.remove();
         hoverPopupRef.current
           .setLngLat(lngLat)
           .setHTML(`
-              <div class="px-3 py-2 text-[13px] font-sans w-[220px]">
+              <div class="px-3 py-2 text-[13px] font-sans w-[250px]">
                 <div class="flex items-center justify-between gap-2 border-b border-line pb-1.5 mb-1.5">
                   <span class="font-medium text-fg">${p.name}</span>
                   <span class="flex items-center gap-1.5 text-[12px] text-muted">
@@ -724,23 +748,17 @@ export default function InteractiveCommandMap({
                     ${stateLabel}
                   </span>
                 </div>
-                <div class="text-[11px] text-muted mb-1.5">Silent Area score · ${scorePct}%</div>
+                <div class="text-[11px] text-muted mb-1.5">Composite priority · ${scorePct}%</div>
                 <div class="space-y-1 text-[12px]">
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="text-muted">Pop density</span>
-                    <span class="text-muted">${density}/km² · <span class="text-fg font-mono tabular-nums">${popN}</span></span>
-                  </div>
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="text-muted">Hazard exposure</span>
-                    <span class="text-muted">${hazard} · <span class="text-fg font-mono tabular-nums">${hazN}</span></span>
-                  </div>
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="text-muted">Since contact</span>
-                    <span class="text-muted">${contactStr} · <span class="text-fg font-mono tabular-nums">${timeN}</span></span>
-                  </div>
+                  ${row('Pop density', `${density}/km²`, wPop, popN)}
+                  ${row('Hazard exposure', hazard, wHaz, hazN)}
+                  ${row('Structural vuln.', `${Math.round(vulnN * 100)}%`, wVuln, vulnN)}
+                  ${row('Predicted impact', `${Math.round(impactN * 100)}%`, wImp, impactN)}
+                  ${row('Silence', contactStr, wSil, timeN)}
+                  ${row('Nearby reports', nearN > 0 ? 'active' : 'none', wNear, nearN)}
                 </div>
-                <div class="mt-1.5 pt-1.5 border-t border-line text-[12px] text-muted text-center font-mono tabular-nums">
-                  ${popN} × ${hazN} × ${timeN} = <span class="text-fg">${Number(p.score).toFixed(2)}</span>
+                <div class="mt-1.5 pt-1.5 border-t border-line text-[11px] text-muted text-center font-mono tabular-nums leading-relaxed">
+                  ${recon}<br/>= <span class="text-fg">${Number(p.score).toFixed(2)}</span>
                 </div>
               </div>
             `)
@@ -849,12 +867,23 @@ export default function InteractiveCommandMap({
             score: sd.score,
             hoursSinceContact: sd.hoursSinceContact,
             color: color,
-            // Silent Area score components (for the hover breakdown tooltip)
+            // Composite-priority components for the hover breakdown tooltip (Phase 4.4).
+            // MapLibre flattens feature properties to scalars, so the weights are passed
+            // as individual numbers rather than a nested object.
             popDensity: barangay.popDensity,
             hazardComposite: barangay.hazardComposite,
             popDensityNorm: sd.popDensityNorm ?? 0,
             hazardNorm: sd.hazardNorm ?? 0,
             timeFactor: sd.timeFactor ?? 1,
+            structuralVulnFrac: sd.structuralVulnFrac ?? 0,
+            impactFrac: sd.impactFrac ?? 0,
+            nearbyNorm: sd.nearbyNorm ?? 0,
+            wPop: sd.weights?.pop ?? 0.15,
+            wHazard: sd.weights?.hazard ?? 0.2,
+            wVuln: sd.weights?.vuln ?? 0.15,
+            wImpact: sd.weights?.impact ?? 0.25,
+            wSilence: sd.weights?.silence ?? 0.15,
+            wNearby: sd.weights?.nearby ?? 0.1,
           },
           // Real PostGIS boundary (from the coordinator_barangay_scores view) when present;
           // fall back to a centroid hexagon for any barangay missing geometry.
