@@ -25,15 +25,7 @@ import ManifestsView from './ManifestsView';
 import { useLiveReports } from '@/lib/live/useLiveReports';
 import { useLiveVolunteers } from '@/lib/live/useLiveVolunteers';
 import { roadBlockRequest, isLiveImpassableReport } from '@/lib/coordinator/roadStatus';
-
-const PAGASA_CATEGORIES = [
-  'Tropical Depression',
-  'Tropical Storm',
-  'Severe Tropical Storm',
-  'Typhoon',
-  'Super Typhoon',
-  'Violent Typhoon',
-];
+import { PAGASA_CATEGORY_LABELS, type LiveConditions } from '@/lib/live/conditions';
 
 export default function CommandDashboard() {
   const [currentView, setCurrentView] = useState('map');
@@ -512,12 +504,37 @@ export default function CommandDashboard() {
 
   const [showDay0Modal, setShowDay0Modal] = useState(false);
   const [day0Running, setDay0Running] = useState(false);
-  const [day0Category, setDay0Category] = useState(4);
-  const handleRunDay0 = () => setShowDay0Modal(true);
+  const [day0Category, setDay0Category] = useState(4); // PAGASA intensity; 4 = super typhoon
+
+  // Phase 4.7 — live storm signal for the Day-0 scenario. Assistive: it pre-fills the
+  // category picker (still coordinator-override-able); a down feed leaves the manual pick.
+  const [liveConditions, setLiveConditions] = useState<LiveConditions | null>(null);
+  const [liveStatus, setLiveStatus] = useState<'idle' | 'loading' | 'unavailable'>('idle');
+
+  const fetchLiveConditions = async (): Promise<LiveConditions | null> => {
+    setLiveStatus('loading');
+    try {
+      const res = await fetch('/api/live-conditions');
+      const out = await res.json();
+      if (out?.available && out.conditions) {
+        setLiveConditions(out.conditions as LiveConditions);
+        setLiveStatus('idle');
+        return out.conditions as LiveConditions;
+      }
+    } catch { /* fall through to unavailable */ }
+    setLiveConditions(null);
+    setLiveStatus('unavailable');
+    return null;
+  };
+
+  const handleRunDay0 = () => {
+    setShowDay0Modal(true);
+    void fetchLiveConditions(); // pre-load the live reading; never blocks opening the modal
+  };
 
   const confirmDay0 = async () => {
     setDay0Running(true);
-    addActivityLog(`DAY 0 FORECAST: running ${PAGASA_CATEGORIES[day0Category]} scenario…`, 'info');
+    addActivityLog(`DAY 0 FORECAST: running ${PAGASA_CATEGORY_LABELS[day0Category]} scenario…`, 'info');
     try {
       const res = await fetch('/api/pipeline/day0', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -738,10 +755,51 @@ export default function CommandDashboard() {
                 disabled={day0Running}
                 className="w-full px-3 py-2 text-[14px] text-fg bg-raised border border-line rounded-control cursor-pointer disabled:opacity-50"
               >
-                {PAGASA_CATEGORIES.map((label, i) => (
+                {PAGASA_CATEGORY_LABELS.map((label, i) => (
                   <option key={i} value={i}>{`Cat ${i} — ${label}`}</option>
                 ))}
               </select>
+              {/* Phase 4.7 — live environmental signal (assistive; overrides the manual pick) */}
+              <div className="rounded-control border border-line bg-raised px-3 py-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[12px] font-medium text-muted">Live conditions (Open-Meteo, worst across Cebu)</span>
+                  <button
+                    type="button"
+                    onClick={() => void fetchLiveConditions()}
+                    disabled={day0Running || liveStatus === 'loading'}
+                    className="text-[11px] text-muted hover:text-fg underline disabled:opacity-50 cursor-pointer"
+                  >
+                    {liveStatus === 'loading' ? 'Fetching…' : 'Refresh'}
+                  </button>
+                </div>
+                {liveConditions ? (
+                  <div className="mt-1.5 space-y-1">
+                    <div className="text-[13px] text-fg">
+                      {Math.round(liveConditions.wind_kmh)} km/h wind
+                      {liveConditions.gust_kmh != null && <span className="text-muted"> · gusts {Math.round(liveConditions.gust_kmh)}</span>}
+                      {liveConditions.precip_mm != null && <span className="text-muted"> · rain {liveConditions.precip_mm} mm</span>}
+                    </div>
+                    <div className="text-[12px] text-muted">
+                      → Cat {liveConditions.category_ordinal} ({liveConditions.category_label})
+                      {liveConditions.stale && <span className="text-warning"> · cached (feed unreachable)</span>}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setDay0Category(liveConditions.category_ordinal)}
+                      disabled={day0Running || day0Category === liveConditions.category_ordinal}
+                      className="mt-1 px-2.5 py-1 text-[12px] text-active bg-active/10 hover:bg-active/20 border border-active/30 rounded-control disabled:opacity-50 cursor-pointer"
+                    >
+                      {day0Category === liveConditions.category_ordinal ? 'Live category applied' : 'Apply live category'}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="mt-1 text-[12px] text-muted">
+                    {liveStatus === 'loading'
+                      ? 'Fetching current conditions…'
+                      : 'Live feed unavailable — using the manual scenario above.'}
+                  </p>
+                )}
+              </div>
               <p className="text-[12px] text-muted leading-relaxed">
                 Runs TabPFN over static vulnerability features for the chosen storm category, then
                 builds Sphere manifests. The hazard signal is a single uniform category, so estimates are scenario-based. Results appear as
