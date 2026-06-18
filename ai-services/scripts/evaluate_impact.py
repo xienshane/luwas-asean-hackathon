@@ -50,6 +50,14 @@ from scripts.eval.metrics import (
     severity_metrics,
 )
 from scripts.eval.loto import predicted_severity
+from scripts.eval.segmented import segmented_report
+
+
+# Community-type features used for segmented (fairness) error monitoring.
+# These are the social-vulnerability proxies already present in the training
+# table; segmenting error by them surfaces systematic under-prediction for
+# more-vulnerable communities (Phase 6.2 / fairness framework 6.3).
+SEGMENT_FEATURES = ("structural_vuln_frac", "unimproved_water_frac")
 
 
 # ---------------------------------------------------------------------------
@@ -301,11 +309,21 @@ def _collect_fold(
         "pred_damage_rate": np.array(heur_dr_list, dtype=float),
     }
 
+    # Carry the community-type feature values for the held-out rows so the
+    # segmented (fairness) report can reuse these exact predictions — no extra
+    # inference. Row-aligned with the tabpfn true/pred arrays above.
+    segment_values = {
+        col: test_df[col].to_numpy(dtype=float)
+        for col in SEGMENT_FEATURES
+        if col in test_df.columns
+    }
+
     return {
         "storm":          storm,
         "tabpfn":         tabpfn,
         "population_only": pop,
         "heuristic":       heur,
+        "segment_values":  segment_values,
     }
 
 
@@ -338,6 +356,13 @@ def _concat_pooled(fold_results: list[dict]) -> dict:
             "pred_affected":    _cat("pred_affected",    "heuristic"),
             "pred_damage_rate": _cat("pred_damage_rate", "heuristic"),
         },
+    }
+
+    # Pool the community-type feature columns row-for-row with the predictions.
+    seg_cols = fold_results[0].get("segment_values", {}) if fold_results else {}
+    pooled["segment_values"] = {
+        col: np.concatenate([f["segment_values"][col] for f in fold_results])
+        for col in seg_cols
     }
     return pooled
 
@@ -382,7 +407,19 @@ def run_loto(
         fold_results.append(fold_raw)
 
     pooled = _concat_pooled(fold_results)
-    return aggregate(pooled, fold_results)
+    result = aggregate(pooled, fold_results)
+
+    # Segmented (fairness) error: reuse the pooled TabPFN damage_rate predictions,
+    # bucketed by each community-type feature. Headline target is damage_rate
+    # (bounded [0,1]); see evaluate_impact docstring on why affected is log-scaled.
+    seg_features = pooled.get("segment_values", {})
+    if seg_features:
+        t = pooled["tabpfn"]
+        result["segmented"] = segmented_report(
+            t["true_damage_rate"], t["pred_damage_rate_mean"],
+            seg_features, target="damage_rate",
+        )
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -569,6 +606,17 @@ def main() -> None:
     to_json(results, json_path)
     to_markdown(results, md_path)
     print(f"\nReports written to:\n  {json_path}\n  {md_path}")
+
+    # Write the segmented (fairness) error report alongside, if available.
+    segmented = loto_result.get("segmented")
+    if segmented:
+        import json as _json
+        from scripts.eval.segmented import render_segmented_markdown
+        seg_json = out_dir / "impact_segmented_error.json"
+        seg_md   = out_dir / "impact_segmented_error.md"
+        seg_json.write_text(_json.dumps(segmented, indent=2), encoding="utf-8")
+        seg_md.write_text(render_segmented_markdown(segmented), encoding="utf-8")
+        print(f"Segmented error report written to:\n  {seg_json}\n  {seg_md}")
 
     # Print headline summary to stdout
     overall  = results["overall"]
