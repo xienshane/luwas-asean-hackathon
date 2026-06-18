@@ -35,33 +35,53 @@ export function useLiveReports(
       if (!cancelled && data) applyRow(data as CoordinatorFieldReport);
     };
 
-    (async () => {
+    const fetchRecent = async () => {
       const { data: rows } = await supabase
         .from('coordinator_field_reports')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(100);
-      if (cancelled) return;
-      (rows ?? []).reverse().forEach((row) => applyRow(row as CoordinatorFieldReport));
-    })();
+      if (cancelled || !rows) return;
+      [...rows].reverse().forEach((row) => applyRow(row as CoordinatorFieldReport));
+    };
 
-    const channel = supabase
-      .channel('live-field-reports')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'field_reports' },
-        (payload) => fetchOne((payload.new as { id: string }).id),
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'field_reports' },
-        (payload) => fetchOne((payload.new as { id: string }).id),
-      )
-      .subscribe();
+    // Realtime evaluates RLS as the socket's own identity. field_reports SELECT is
+    // coordinator-only (no anon), so the websocket MUST carry the coordinator JWT or
+    // every change event is silently dropped. Push the token before subscribing and
+    // refresh it whenever the session changes.
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    const start = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) supabase.realtime.setAuth(session.access_token);
+      if (cancelled) return;
+
+      await fetchRecent();
+      if (cancelled) return;
+
+      channel = supabase
+        .channel('live-field-reports')
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'field_reports' },
+          (payload) => fetchOne((payload.new as { id: string }).id),
+        )
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'field_reports' },
+          (payload) => fetchOne((payload.new as { id: string }).id),
+        )
+        .subscribe();
+    };
+    void start();
+
+    const { data: authSub } = supabase.auth.onAuthStateChange((_event, session) => {
+      supabase.realtime.setAuth(session?.access_token ?? '');
+    });
 
     return () => {
       cancelled = true;
-      supabase.removeChannel(channel);
+      authSub.subscription.unsubscribe();
+      if (channel) supabase.removeChannel(channel);
     };
   }, [setReports]);
 }
