@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Capture the service-role RPC so we can assert the block/restore call + attribution.
-const rpcCalls: Array<{ fn: string; args: any }> = [];
-const rpc = vi.fn(async (fn: string, args: any) => {
+const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
+const rpc = vi.fn(async (fn: string, args: Record<string, unknown>) => {
   rpcCalls.push({ fn, args });
   if (fn === 'nearest_road_edge_at') return { data: 99, error: null };
   return { data: null, error: null };

@@ -184,7 +184,11 @@ export async function fetchVolunteerRoster(): Promise<Volunteer[]> {
   const { data, error } = await supabase.from('coordinator_volunteers')
     .select('id,full_name,team_id,status,last_location_at');
   if (error) throw error;
-  return (data ?? []).map((r: any) => ({
+  type RosterRow = {
+    id: string; full_name: string | null; team_id: string | null;
+    status: string | null; last_location_at: string | null;
+  };
+  return ((data ?? []) as RosterRow[]).map((r) => ({
     id: r.id, name: r.full_name ?? 'Volunteer', phone: '',
     teamId: r.team_id, teamName: null,
     availability: r.status === 'active' ? 'available' : 'offline',

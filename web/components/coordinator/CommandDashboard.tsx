@@ -156,7 +156,7 @@ export default function CommandDashboard() {
         [barangayId]: {
           ...current,
           status: 'modified',
-          overrides: formattedOverrides as any,
+          overrides: formattedOverrides,
           overridden: !!suppliesOverride
         }
       };
@@ -208,7 +208,12 @@ export default function CommandDashboard() {
 
         const days = existing?.days ?? 3;
         const access_modifier = Number(existing?.access_modifier ?? 1.0);
-        let breakdown = existing?.breakdown || { lines: [] };
+        type ManifestLine = {
+          item?: string; category?: string; quantity?: number; weight_kg?: number;
+          unit?: string; unit_weight_kg?: number; basis?: string; inputs?: unknown;
+        };
+        const breakdown: { lines: ManifestLine[]; total_weight_kg?: number } =
+          existing?.breakdown || { lines: [] };
 
         if (!breakdown.lines || breakdown.lines.length === 0) {
           breakdown.lines = [];
@@ -216,7 +221,7 @@ export default function CommandDashboard() {
 
         // Helper to cleanly find and update, or push a newly structured manifest line
         const updateOrAddLine = (category: string, itemDefaultName: string, quantity: number, unit: string, unitWeight: number) => {
-          const idx = breakdown.lines.findIndex((line: any) => 
+          const idx = breakdown.lines.findIndex((line) =>
             line.category === category || line.item?.toLowerCase().includes(itemDefaultName.toLowerCase())
           );
           const newLine = {
@@ -256,7 +261,7 @@ export default function CommandDashboard() {
           updateOrAddLine('medical', 'Medical supplies', suppliesOverride.medicalSupplies, 'packs', 2.0);
         }
 
-        breakdown.total_weight_kg = breakdown.lines.reduce((sum: number, l: any) => sum + (l.weight_kg || 0), 0);
+        breakdown.total_weight_kg = breakdown.lines.reduce((sum: number, l) => sum + (l.weight_kg || 0), 0);
 
         const water_l = suppliesOverride.waterL !== undefined ? suppliesOverride.waterL : (existing?.water_l ?? 0);
         const food_packs = suppliesOverride.foodPacks !== undefined ? suppliesOverride.foodPacks : (existing?.food_packs ?? 0);

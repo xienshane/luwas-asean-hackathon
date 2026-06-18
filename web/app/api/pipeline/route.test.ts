@@ -43,7 +43,7 @@ vi.mock('@/lib/supabase/server', () => ({ createClient: async () => ({
 vi.mock('@/lib/ai/impact', () => ({ predictImpact: async () => ({
   predictions: [{ affected: 500, affected_confidence: 0.8, damage_rate: 0.3, confidence: 0.8, source: 'tabpfn', id: 'b1' }],
   model_framing: 'regressor', latency_ms: 1 }) }));
-vi.mock('@/lib/ai/supply', () => ({ buildManifest: async (req: any) => {
+vi.mock('@/lib/ai/supply', () => ({ buildManifest: async (req: { predicted_affected: number }) => {
   calls.push(`buildManifest:${req.predicted_affected}`);
   return {
     predicted_affected: req.predicted_affected, days: 3, access_modifier: 1, households: 100,

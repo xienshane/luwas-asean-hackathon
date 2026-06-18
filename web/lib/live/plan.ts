@@ -1,8 +1,11 @@
 import type { Route, ImpactPrediction, SupplyManifest } from '@/lib/types/coordinator';
 
-interface RouteRow {
+interface RouteStopRow {
+  sequence: number; barangayId: string; barangayName: string; action: string;
+}
+export interface RouteRow {
   id: string; team_id: string | null; team_name: string | null; status: string;
-  total_distance_m: number | null; stops: any[] | null;
+  total_distance_m: number | null; stops: RouteStopRow[] | null;
   geometry: { type: string; coordinates: number[][] } | null;
 }
 export function routeRowToUi(r: RouteRow): Route {
@@ -22,10 +25,11 @@ const SEV_DB_TO_UI: Record<string, ImpactPrediction['damageSeverity']> = {
 };
 const CONF_TO_UI = (c: number): ImpactPrediction['confidence'] => (c >= 0.66 ? 'high' : c >= 0.33 ? 'moderate' : 'low');
 
-interface PredictionRow {
+export interface PredictionRow {
   barangay_id: string; model: string; predicted_affected: number | null;
   affected_low?: number | null; affected_high?: number | null;
-  damage_severity: string | null; confidence: number | null; override_value: number | null; inputs: any;
+  damage_severity: string | null; confidence: number | null; override_value: number | null;
+  inputs: Record<string, unknown> | null;
   reported_affected?: number | null;
   is_day0?: boolean | null;
 }
@@ -44,14 +48,16 @@ export function predictionRowToUi(r: PredictionRow): ImpactPrediction {
   };
 }
 
-interface ManifestRow {
+interface ManifestLine { item?: string; quantity?: number }
+export interface ManifestRow {
   barangay_id: string; days: number; water_l: number | null; food_packs: number | null;
-  shelter_kits: number | null; blankets: number | null; breakdown: any; overridden: boolean;
+  shelter_kits: number | null; blankets: number | null;
+  breakdown: { lines?: ManifestLine[] } | null; overridden: boolean;
 }
 export function manifestRowToUi(r: ManifestRow): SupplyManifest {
   const item = (recommended: number) => ({ recommended, inventory: 0, shortfall: recommended });
   const water = Number(r.water_l ?? 0), food = Number(r.food_packs ?? 0);
-  const hygiene = (r.breakdown?.lines ?? []).find((l: any) => l.item?.toLowerCase().includes('hygiene'))?.quantity ?? 0;
+  const hygiene = (r.breakdown?.lines ?? []).find((l) => l.item?.toLowerCase().includes('hygiene'))?.quantity ?? 0;
   return {
     barangayId: r.barangay_id, days: r.days, status: r.overridden ? 'modified' : 'pending',
     waterL: item(water), foodPacks: item(food),
