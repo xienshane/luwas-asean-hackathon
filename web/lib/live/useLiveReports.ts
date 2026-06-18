@@ -78,8 +78,13 @@ export function useLiveReports(
       supabase.realtime.setAuth(session?.access_token ?? '');
     });
 
+    // Safety net: realtime is best-effort. Poll the enriched view every 20s and merge;
+    // mergeReport is idempotent so this never duplicates a row that realtime already added.
+    const pollId = setInterval(() => { void fetchRecent(); }, 20_000);
+
     return () => {
       cancelled = true;
+      clearInterval(pollId);
       authSub.subscription.unsubscribe();
       if (channel) supabase.removeChannel(channel);
     };
