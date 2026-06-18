@@ -38,8 +38,11 @@ export async function POST(request: Request) {
   }
 
   let translated: string | null = null;
+  let provider: string | null = null;
   try {
-    translated = (await translateText(report.raw_text, reportId)).translated_text;
+    const tr = await translateText(report.raw_text, reportId);
+    translated = tr.translated_text;
+    provider = tr.provider; // "sea-lion" | "gemini" — surfaced so the UI can flag fallback
   } catch {
     // Service down — leave the original; the coordinator still sees raw_text.
     return Response.json({ translated_text: null, error: 'translate_unavailable' });
@@ -48,5 +51,5 @@ export async function POST(request: Request) {
   if (translated) {
     await admin.from('field_reports').update({ translated_text: translated }).eq('id', reportId);
   }
-  return Response.json({ translated_text: translated });
+  return Response.json({ translated_text: translated, provider });
 }

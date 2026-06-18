@@ -13,6 +13,9 @@ import type {
 import { fetchCoordinatorMapData, fetchTeams, fetchRoadStatus, fetchFacilities } from '@/lib/supabase/coordinator';
 import { createClient } from '@/lib/supabase/client';
 import { useLivePlan } from '@/lib/live/useLivePlan';
+import { useConnectivity } from '@/lib/live/connectivity';
+import { useRealtimeHealth } from '@/lib/live/useRealtimeHealth';
+import ConnectivityBanner from './ConnectivityBanner';
 import type { LocationHub } from '@/lib/types/coordinator';
 import LeftSidebar from './LeftSidebar';
 import InteractiveCommandMap from './InteractiveCommandMap';
@@ -29,6 +32,10 @@ import { PAGASA_CATEGORY_LABELS, type LiveConditions } from '@/lib/live/conditio
 
 export default function CommandDashboard() {
   const [currentView, setCurrentView] = useState('map');
+
+  // Phase 6.1 — connectivity tier drives the degradation banner + action gating.
+  const realtimeHealthy = useRealtimeHealth();
+  const connectivity = useConnectivity({ realtimeHealthy });
 
   const [barangays, setBarangays] = useState<Barangay[]>([]);
   const [reports, setReports] = useState<FieldReport[]>([]);
@@ -313,7 +320,10 @@ export default function CommandDashboard() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reportId }),
       });
-      const { translated_text } = await tr.json();
+      const { translated_text, provider } = await tr.json();
+      if (provider === 'gemini') {
+        addActivityLog(`NLP: SEA-LION unavailable — used Gemini fallback for ${report.barangayName}.`, 'warn');
+      }
       if (translated_text) {
         setReports(prev => prev.map(r => r.id === reportId ? { ...r, translatedText: translated_text } : r));
         setSelectedReport(prev => prev && prev.id === reportId ? { ...prev, translatedText: translated_text } : prev);
@@ -597,6 +607,7 @@ export default function CommandDashboard() {
 
   return (
     <div className="flex h-screen w-screen bg-bg text-fg font-sans overflow-hidden">
+      <ConnectivityBanner tier={connectivity} />
       {/* Left Sidebar */}
       <LeftSidebar
         currentView={currentView}
@@ -606,6 +617,7 @@ export default function CommandDashboard() {
         onReset={handleReset}
         onRunDay0={handleRunDay0}
         day0Running={day0Running}
+        online={connectivity !== 'offline'}
       />
 
       {/* Main workspace */}

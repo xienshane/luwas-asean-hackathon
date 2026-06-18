@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import type { Barangay, ImpactPrediction, SupplyManifest, Team, Route, LocationHub } from '@/lib/types/coordinator';
 import { DetailPanel, silentAreaState, STATE_LABEL, STATE_COLOR } from './ui';
+import { lowConfidenceReason } from '@/lib/coordinator/confidence';
 
 interface RightIntelligencePanelProps {
   selectedBarangay: Barangay | null;
@@ -76,13 +77,7 @@ export default function RightIntelligencePanel({
   // confidence, or the interval is wide (spread exceeds the point estimate).
   const hasInterval =
     prediction?.affectedLow != null && prediction?.affectedHigh != null;
-  const intervalWide =
-    hasInterval &&
-    prediction!.predictedAffected > 0 &&
-    prediction!.affectedHigh! - prediction!.affectedLow! > prediction!.predictedAffected;
-  const isLowConfidence =
-    !!prediction &&
-    (prediction.model === 'Heuristic' || prediction.confidence === 'low' || !!intervalWide);
+  const lowConfReason = lowConfidenceReason(prediction);
 
   // Read overrides from legacy manifest.overridden object structure (ensure it's an object)
   const manifestOverrides =
@@ -223,16 +218,10 @@ export default function RightIntelligencePanel({
                       </span>
                     </div>
                   )}
-                  {isLowConfidence && (
+                  {lowConfReason && (
                     <div
                       className="mt-1.5 inline-flex items-center gap-1.5 rounded-control border border-warning/30 bg-warning/10 px-2 py-1 text-[11px] font-medium text-warning"
-                      title={
-                        prediction.model === 'Heuristic'
-                          ? 'Heuristic fallback (no model interval). Treat as rough decision support, not fact.'
-                          : intervalWide
-                            ? 'Wide predictive interval — high uncertainty. Treat as decision support, not fact.'
-                            : 'Low model confidence. Treat as decision support, not fact.'
-                      }
+                      title={lowConfReason}
                     >
                       <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-warning" />
                       Low confidence — decision support
