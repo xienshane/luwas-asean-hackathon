@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import type { Barangay, ImpactPrediction, SupplyManifest, Team, Route, LocationHub } from '@/lib/types/coordinator';
 import { DetailPanel, silentAreaState, STATE_LABEL, STATE_COLOR } from './ui';
 import { lowConfidenceReason } from '@/lib/coordinator/confidence';
+import { pickAffected, affectedSource } from '@/lib/pipeline/affected';
 
 interface RightIntelligencePanelProps {
   selectedBarangay: Barangay | null;
@@ -70,6 +71,14 @@ export default function RightIntelligencePanel({
   const state = silentAreaState(selectedScore.score);
 
   const isAffectedOverridden = prediction?.overrideValue !== null && prediction?.overrideValue !== undefined;
+
+  const affectedInputs = {
+    override: prediction?.overrideValue,
+    reported: prediction?.reportedAffected,
+    predicted: prediction?.predictedAffected,
+  };
+  const effectiveAffected = prediction ? pickAffected(affectedInputs) : 0;
+  const affectedFrom = prediction ? affectedSource(affectedInputs) : 'none';
 
   // Phase 4.3 — uncertainty as decision support, not fact.
   // A range is shown when the model carries an 80% interval; a prediction is flagged
@@ -205,11 +214,21 @@ export default function RightIntelligencePanel({
               {prediction ? (
                 <>
                   <div className="flex items-baseline gap-2">
-                    <span className={`text-2xl font-mono tabular-nums ${isAffectedOverridden ? 'text-muted line-through' : 'text-fg'}`}>
-                      {prediction.predictedAffected.toLocaleString()}
+                    <span className="text-2xl font-mono tabular-nums text-fg">
+                      {effectiveAffected.toLocaleString()}
                     </span>
-                    <span className="text-[12px] text-muted">est. affected</span>
+                    <span className="text-[12px] text-muted">
+                      {affectedFrom === 'reported' ? 'reported affected' : affectedFrom === 'override' ? 'overridden affected' : 'est. affected'}
+                    </span>
                   </div>
+                  {(affectedFrom === 'reported' || affectedFrom === 'override') && (
+                    <div className="mt-0.5 text-[12px] text-muted">
+                      Model predicted{' '}
+                      <span className="font-mono tabular-nums line-through">
+                        {prediction.predictedAffected.toLocaleString()}
+                      </span>
+                    </div>
+                  )}
                   {hasInterval && (
                     <div className="mt-0.5 text-[12px] text-muted">
                       80% range{' '}
