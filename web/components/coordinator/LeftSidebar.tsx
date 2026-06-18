@@ -25,6 +25,7 @@ interface LeftSidebarProps {
   onReset: () => void;
   onRunDay0?: () => void;
   day0Running?: boolean;
+  online?: boolean;
   onLogout?: () => void;
 }
 
@@ -44,6 +45,7 @@ export default function LeftSidebar({
   onReset,
   onRunDay0,
   day0Running,
+  online = true,
   onLogout,
 }: LeftSidebarProps) {
   // Icon rail by default — the map is the product; chrome stays out of the way.
@@ -137,8 +139,12 @@ export default function LeftSidebar({
           {onRunDay0 && (
             <button
               onClick={onRunDay0}
-              disabled={day0Running}
-              title="Run Day 0 Predictions — forecast impact before any field report"
+              disabled={day0Running || !online}
+              title={
+                online
+                  ? 'Run Day 0 Predictions — forecast impact before any field report'
+                  : 'Offline — reconnect to run AI forecasting'
+              }
               className={`w-full flex items-center rounded-control border border-active/30 text-active hover:bg-active/10 transition-colors duration-100 cursor-pointer disabled:opacity-50 disabled:cursor-default ${
                 collapsed ? 'justify-center py-2.5' : 'gap-2 px-2.5 py-2 text-[13px] font-medium'
               }`}
