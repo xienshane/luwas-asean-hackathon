@@ -1,8 +1,21 @@
 import { createClient } from './client';
 import type { Barangay, BoundaryGeometry, Team, RoadEdge, LocationHub, Volunteer } from '@/lib/types/coordinator';
 
-// Silent Area score components for one barangay — mirrors what the map tooltip and the
-// intelligence panel read. Matches the shape CommandDashboard previously computed locally.
+// Phase 4.4 composite-priority weights (Σ = 1.0). The score is an additive blend, so the
+// tooltip can reconcile it as Σ weightᵢ × componentᵢ.
+export interface ScoreWeights {
+  pop: number;
+  hazard: number;
+  vuln: number;
+  impact: number;
+  silence: number;
+  nearby: number;
+}
+
+// Composite priority components for one barangay — mirrors what the map tooltip and the
+// intelligence panel read. Phase 4.4 widened this from the silence-only product to the
+// six-component weighted blend (population, hazard, structural vulnerability, predicted
+// impact, silence, nearby confirmed activity).
 export interface BarangayScore {
   barangayId: string;
   score: number;
@@ -10,7 +23,17 @@ export interface BarangayScore {
   timeFactor: number;
   popDensityNorm: number;
   hazardNorm: number;
+  structuralVulnFrac: number;
+  impactFrac: number;
+  nearbyNorm: number;
+  weights: ScoreWeights;
 }
+
+// Default blend weights, mirroring the SQL (silent_area_score, Phase 4.4) for the rare
+// case a row predates the migration and has no stored weights.
+const DEFAULT_WEIGHTS: ScoreWeights = {
+  pop: 0.15, hazard: 0.2, vuln: 0.15, impact: 0.25, silence: 0.15, nearby: 0.1,
+};
 
 export interface CoordinatorMapData {
   barangays: Barangay[];
@@ -35,12 +58,19 @@ interface ScoreViewRow {
   hours_since_contact: number | null;
   last_confirmed_contact: string | null;
   time_factor: number | null;
+  structural_vuln_frac: number | null;
+  impact_affected: number | null;
+  impact_frac: number | null;
+  nearby_report_km: number | null;
+  nearby_norm: number | null;
+  inputs: { weights?: Partial<ScoreWeights> } | null;
 }
 
 const COLUMNS =
   'id,name,city_municipality,province,population,latitude,longitude,boundary,' +
   'score,pop_density,pop_density_norm,hazard_composite,hazard_norm,' +
-  'hours_since_contact,last_confirmed_contact,time_factor';
+  'hours_since_contact,last_confirmed_contact,time_factor,' +
+  'structural_vuln_frac,impact_affected,impact_frac,nearby_report_km,nearby_norm,inputs';
 
 // Fetch the live Silent Area scores joined to barangay identity + boundary for the
 // coordinator map. RLS (via the security_invoker view) returns rows only to a signed-in
@@ -76,6 +106,10 @@ export async function fetchCoordinatorMapData(): Promise<CoordinatorMapData> {
     timeFactor: r.time_factor ?? 1,
     popDensityNorm: r.pop_density_norm ?? 0,
     hazardNorm: r.hazard_norm ?? 0,
+    structuralVulnFrac: r.structural_vuln_frac ?? 0,
+    impactFrac: r.impact_frac ?? 0,
+    nearbyNorm: r.nearby_norm ?? 0,
+    weights: { ...DEFAULT_WEIGHTS, ...(r.inputs?.weights ?? {}) },
   }));
 
   return { barangays, scores };
