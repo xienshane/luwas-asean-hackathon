@@ -110,6 +110,10 @@ export interface ImpactPrediction {
   barangayId: string;
   model: string;
   predictedAffected: number;
+  // 80% predictive interval for predictedAffected (Phase 4.3), at the same barangay-bounded
+  // scale. Null on the heuristic path (no interval) — render the point estimate alone.
+  affectedLow: number | null;
+  affectedHigh: number | null;
   damageSeverity: 'severe' | 'moderate' | 'minor';
   confidence: 'high' | 'moderate' | 'low';
   overrideValue: number | null;

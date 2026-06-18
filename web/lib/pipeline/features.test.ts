@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toFeatures, severityFromDamageRate, boundedAffected, AVG_HOUSEHOLD_SIZE, type TargetRow } from './features';
+import { toFeatures, severityFromDamageRate, boundedAffected, boundedAffectedRange, AVG_HOUSEHOLD_SIZE, type TargetRow } from './features';
 
 const row: TargetRow = {
   barangay_id: 'b1', name: 'Lahug', province: 'Cebu', population: 25000,
@@ -46,5 +46,32 @@ describe('boundedAffected', () => {
 
   it('treats missing population as zero', () => {
     expect(boundedAffected({ affected: 500, damage_rate: 0.3, severity_class: null }, null)).toBe(0);
+  });
+});
+
+describe('boundedAffectedRange', () => {
+  it('maps the damage_rate interval to a population-bounded affected range', () => {
+    // [0.09, 0.31] * 25000 = [2250, 7750], consistent with boundedAffected on the mean.
+    expect(
+      boundedAffectedRange({ damage_rate_low: 0.09, damage_rate_high: 0.31, affected_low: null, affected_high: null, severity_class: null }, 25000),
+    ).toEqual({ low: 2250, high: 7750 });
+  });
+
+  it('clamps the high end to the barangay population', () => {
+    expect(
+      boundedAffectedRange({ damage_rate_low: 0.5, damage_rate_high: 1.4, affected_low: null, affected_high: null, severity_class: null }, 10000),
+    ).toEqual({ low: 5000, high: 10000 });
+  });
+
+  it('returns null when no damage_rate interval is available (heuristic / classifier)', () => {
+    expect(
+      boundedAffectedRange({ damage_rate_low: null, damage_rate_high: null, affected_low: 600, affected_high: 1300, severity_class: 'high' }, 10000),
+    ).toBeNull();
+  });
+
+  it('returns null when bounds are undefined (back-compat response)', () => {
+    expect(
+      boundedAffectedRange({ severity_class: null } as Parameters<typeof boundedAffectedRange>[0], 10000),
+    ).toBeNull();
   });
 });

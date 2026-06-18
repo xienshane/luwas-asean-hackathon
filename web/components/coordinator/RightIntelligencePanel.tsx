@@ -70,6 +70,20 @@ export default function RightIntelligencePanel({
 
   const isAffectedOverridden = prediction?.overrideValue !== null && prediction?.overrideValue !== undefined;
 
+  // Phase 4.3 — uncertainty as decision support, not fact.
+  // A range is shown when the model carries an 80% interval; a prediction is flagged
+  // low-confidence when it came from the heuristic fallback, the model self-reported low
+  // confidence, or the interval is wide (spread exceeds the point estimate).
+  const hasInterval =
+    prediction?.affectedLow != null && prediction?.affectedHigh != null;
+  const intervalWide =
+    hasInterval &&
+    prediction!.predictedAffected > 0 &&
+    prediction!.affectedHigh! - prediction!.affectedLow! > prediction!.predictedAffected;
+  const isLowConfidence =
+    !!prediction &&
+    (prediction.model === 'Heuristic' || prediction.confidence === 'low' || !!intervalWide);
+
   // Read overrides from legacy manifest.overridden object structure (ensure it's an object)
   const manifestOverrides =
     typeof manifest?.overridden === 'object' && manifest?.overridden !== null
@@ -190,10 +204,8 @@ export default function RightIntelligencePanel({
 
             <div className="border-t border-line pt-3">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-[12px] text-muted">TabPFN impact prediction</span>
-                {prediction && (
-                  <span className="text-[12px] text-muted capitalize">Conf · {prediction.confidence}</span>
-                )}
+                <span className="text-[12px] text-muted">Impact prediction · {prediction?.model ?? 'TabPFN'}</span>
+                {prediction && <SeverityBadge severity={prediction.damageSeverity} />}
               </div>
               {prediction ? (
                 <>
@@ -203,6 +215,29 @@ export default function RightIntelligencePanel({
                     </span>
                     <span className="text-[12px] text-muted">est. affected</span>
                   </div>
+                  {hasInterval && (
+                    <div className="mt-0.5 text-[12px] text-muted">
+                      80% range{' '}
+                      <span className="font-mono tabular-nums text-fg">
+                        {prediction.affectedLow!.toLocaleString()}–{prediction.affectedHigh!.toLocaleString()}
+                      </span>
+                    </div>
+                  )}
+                  {isLowConfidence && (
+                    <div
+                      className="mt-1.5 inline-flex items-center gap-1.5 rounded-control border border-warning/30 bg-warning/10 px-2 py-1 text-[11px] font-medium text-warning"
+                      title={
+                        prediction.model === 'Heuristic'
+                          ? 'Heuristic fallback (no model interval). Treat as rough decision support, not fact.'
+                          : intervalWide
+                            ? 'Wide predictive interval — high uncertainty. Treat as decision support, not fact.'
+                            : 'Low model confidence. Treat as decision support, not fact.'
+                      }
+                    >
+                      <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-warning" />
+                      Low confidence — decision support
+                    </div>
+                  )}
                   {prediction.isDay0 && (
                     <div
                       className="mt-1.5 inline-flex items-center gap-1.5 rounded-control border border-warning/30 bg-warning/10 px-2 py-1 text-[11px] font-medium text-warning"
@@ -359,6 +394,22 @@ export default function RightIntelligencePanel({
         )}
       </div>
     </DetailPanel>
+  );
+}
+
+// Risk badge for the predicted damage severity. Color tracks the silent-area palette:
+// severe -> critical, moderate -> warning, minor -> muted.
+function SeverityBadge({ severity }: { severity: 'severe' | 'moderate' | 'minor' }) {
+  const style: Record<typeof severity, { cls: string; label: string }> = {
+    severe: { cls: 'border-critical/40 bg-critical/10 text-critical', label: 'Severe' },
+    moderate: { cls: 'border-warning/30 bg-warning/10 text-warning', label: 'Moderate' },
+    minor: { cls: 'border-line bg-raised/30 text-muted', label: 'Minor' },
+  };
+  const { cls, label } = style[severity];
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-control border px-2 py-0.5 text-[11px] font-medium ${cls}`}>
+      {label} damage
+    </span>
   );
 }
 

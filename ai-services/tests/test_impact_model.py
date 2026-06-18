@@ -112,3 +112,43 @@ def test_overall_confidence_is_min_of_reported_heads():
                              province_households=51000, structural_vuln_frac=0.20, unimproved_water_frac=0.10)
     [pred] = heuristic_predictor().predict([feats])
     assert pred.confidence == min(pred.affected_confidence, pred.damage_rate_confidence)
+
+
+# --- uncertainty interval bounds (Phase 4.3) --------------------------------
+
+def test_heuristic_leaves_interval_bounds_none():
+    """The heuristic path has no predictive interval — bounds stay None, and the
+    `source = heuristic` flag (not the interval) marks it as low-confidence."""
+    feats = BarangayFeatures(category_ordinal=3, total_houses=1000, province_housing_units=50000,
+                             province_households=51000, structural_vuln_frac=0.20, unimproved_water_frac=0.10)
+    [pred] = heuristic_predictor("regressor").predict([feats])
+    assert pred.source == "heuristic"
+    assert pred.affected_low is None and pred.affected_high is None
+    assert pred.damage_rate_low is None and pred.damage_rate_high is None
+
+
+def test_build_carries_interval_bounds_when_provided():
+    """When the TabPFN path supplies quantile bounds, `_build` surfaces them on the
+    prediction with low <= point <= high and damage-rate bounds in regressor framing."""
+    predictor = heuristic_predictor("regressor")
+    pred = predictor._build(
+        affected=1200, aff_conf=0.7, aff_lo=820, aff_hi=1740,
+        damage_rate=0.18, dmg_conf=0.6, dmg_lo=0.09, dmg_hi=0.31,
+        source="tabpfn", id="brgy-Z",
+    )
+    assert pred.affected_low == 820 and pred.affected_high == 1740
+    assert pred.affected_low <= pred.affected <= pred.affected_high
+    assert pred.damage_rate_low == 0.09 and pred.damage_rate_high == 0.31
+
+
+def test_build_classifier_framing_carries_affected_bounds_only():
+    """Classifier framing still regresses `affected`, so affected bounds flow through;
+    there is no continuous damage_rate, so its bounds stay None."""
+    predictor = heuristic_predictor("classifier")
+    pred = predictor._build(
+        affected=900, aff_conf=0.7, aff_lo=600, aff_hi=1300,
+        severity="high", sev_conf=0.8, source="tabpfn", id="brgy-Y",
+    )
+    assert pred.affected_low == 600 and pred.affected_high == 1300
+    assert pred.damage_rate_low is None and pred.damage_rate_high is None
+    assert pred.severity_class == "high"
