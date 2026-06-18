@@ -195,7 +195,7 @@ export default function LeftSidebar({
           <div className="bg-surface border border-line rounded-card max-w-md w-full mx-4 overflow-hidden">
             <div className="px-5 py-4 border-b border-line">
               <h3 className="text-[17px] font-medium text-fg">Sign out</h3>
-              <p className="text-[13px] text-muted mt-1">You'll need to sign in again to access the command center.</p>
+              <p className="text-[13px] text-muted mt-1">You&apos;ll need to sign in again to access the command center.</p>
             </div>
             <div className="px-5 py-4 text-[14px] text-muted">
               Any unsaved changes will be lost.

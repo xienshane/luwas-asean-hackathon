@@ -9,9 +9,13 @@ import {
   AlertOctagon,
   X,
 } from 'lucide-react';
+import type { Marker, Popup, MapMouseEvent, MapLayerMouseEvent, MapGeoJSONFeature, LngLat } from 'maplibre-gl';
 import type { Barangay, FieldReport, Team, RoadEdge, Route, Volunteer, LocationHub } from '@/lib/types/coordinator';
 import { COLOR, silentAreaState, STATE_COLOR, STATE_LABEL } from './ui';
 import 'maplibre-gl/dist/maplibre-gl.css';
+
+// MapLibre erases GeoJSON feature properties to an untyped scalar bag; alias it once.
+type FeatureProps = NonNullable<MapGeoJSONFeature['properties']>;
 
 // Neutral linework tones for the calm basemap (roads default off).
 const ROAD_OPEN = '#52607a';
@@ -113,13 +117,15 @@ export default function InteractiveCommandMap({
   const maplibreglRef = useRef<any>(null); // npm maplibre-gl module (client-only dynamic import)
 
   // Separate, isolated refs for markers
-  const reportMarkersRef = useRef<any[]>([]);
-  const teamMarkersRef = useRef<any[]>([]);
-  const volunteerMarkersRef = useRef<any[]>([]);
-  const hubMarkersRef = useRef<any[]>([]);
+  const reportMarkersRef = useRef<Marker[]>([]);
+  const teamMarkersRef = useRef<Marker[]>([]);
+  const volunteerMarkersRef = useRef<Marker[]>([]);
+  const hubMarkersRef = useRef<Marker[]>([]);
 
   // Tooltip popup reference
-  const hoverPopupRef = useRef<any>(null);
+  // Always assigned before any hover handler reads it (see map 'load'); typed non-null to
+  // preserve the existing call sites without scattering guards.
+  const hoverPopupRef = useRef<Popup>(null!);
 
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -247,7 +253,7 @@ export default function InteractiveCommandMap({
             const data = await res.json();
             const geometry = data.routes?.[0]?.geometry?.coordinates;
             if (geometry?.length) {
-              const simplified = geometry.filter((_: any, i: number) => i % 2 === 0 || i === geometry.length - 1);
+              const simplified = geometry.filter((_: number[], i: number) => i % 2 === 0 || i === geometry.length - 1);
               roadCache.set(cacheKey, simplified);
               setRoadGeometries(prev => ({ ...prev, [edge.id]: simplified }));
             } else {
@@ -396,7 +402,7 @@ export default function InteractiveCommandMap({
 
   // ── Map click handlers ──
   // Block-road mode: any click snaps to the nearest edge via the parent handler.
-  const handleMapBlockClick = useCallback((e: any) => {
+  const handleMapBlockClick = useCallback((e: MapMouseEvent) => {
     if (!blockModeRef.current) return;
     const { lat, lng } = e.lngLat ?? {};
     if (typeof lat === 'number' && typeof lng === 'number') {
@@ -405,11 +411,11 @@ export default function InteractiveCommandMap({
     setBlockMode(false);
   }, []);
 
-  const handleRoadClick = useCallback((e: any) => {
+  const handleRoadClick = useCallback((e: MapLayerMouseEvent) => {
     if (blockModeRef.current) return; // block mode handles the click
     if (!e.features?.length) return;
     const feat = e.features[0];
-    const edgeId = feat.properties.id;
+    const edgeId = feat.properties?.id;
     const edge = edgesRef.current.find((ed) => ed.id === edgeId);
     if (edge) {
       setSelectedEdge(edge);
@@ -418,11 +424,11 @@ export default function InteractiveCommandMap({
     }
   }, [onSelectReport]);
 
-  const handleBarangayClick = useCallback((e: any) => {
+  const handleBarangayClick = useCallback((e: MapLayerMouseEvent) => {
     if (blockModeRef.current) return; // block mode handles the click
     if (!e.features?.length) return;
     const feat = e.features[0];
-    const barangayId = feat.properties.id;
+    const barangayId = feat.properties?.id;
     const barangay = barangaysRef.current.find(b => b.id === barangayId);
     if (barangay) {
       onSelectBarangay(barangay);
@@ -662,7 +668,7 @@ export default function InteractiveCommandMap({
       });
 
       // Per-team route hover: ETA + cargo summary + ordered stops popover
-      const onTeamRouteHover = (e: any) => {
+      const onTeamRouteHover = (e: MapLayerMouseEvent) => {
         map.getCanvas().style.cursor = 'pointer';
         const p = e.features?.[0]?.properties;
         if (!p) return;
@@ -694,7 +700,7 @@ export default function InteractiveCommandMap({
       };
       ['team-routes-line', 'team-routes-line-planned'].forEach((lid) => {
         map.on('mouseenter', lid, onTeamRouteHover);
-        map.on('mousemove', lid, (e: any) => hoverPopupRef.current.setLngLat(e.lngLat));
+        map.on('mousemove', lid, (e: MapLayerMouseEvent) => hoverPopupRef.current.setLngLat(e.lngLat));
         map.on('mouseleave', lid, onTeamRouteLeave);
       });
 
@@ -709,7 +715,7 @@ export default function InteractiveCommandMap({
       // as the cursor crosses between adjacent barangays. Real boundaries touch, so
       // 'mouseenter' alone wouldn't refire when moving straight from one barangay into the
       // next — we update on 'mousemove' and only rebuild the tooltip when the id changes.
-      const showBarangayTooltip = (p: any, lngLat: any) => {
+      const showBarangayTooltip = (p: FeatureProps, lngLat: LngLat) => {
         const scorePct = Math.round(p.score * 100);
         const density = Number(p.popDensity).toLocaleString();
         const hazard = Number(p.hazardComposite).toFixed(2);
@@ -776,7 +782,7 @@ export default function InteractiveCommandMap({
           .addTo(map);
       };
 
-      const onBarangayHover = (e: any) => {
+      const onBarangayHover = (e: MapLayerMouseEvent) => {
         const feat = e.features?.[0];
         if (!feat?.properties?.id) return;
         map.getCanvas().style.cursor = 'pointer';
@@ -805,7 +811,7 @@ export default function InteractiveCommandMap({
       });
 
       // Road hover interactive swell effect + tooltip
-      const onRoadHover = (e: any) => {
+      const onRoadHover = (e: MapLayerMouseEvent) => {
         map.getCanvas().style.cursor = 'pointer';
         const props = e.features?.[0]?.properties;
         if (props) {
@@ -846,11 +852,11 @@ export default function InteractiveCommandMap({
       };
 
       map.on('mouseenter', 'roads-layer-solid', onRoadHover);
-      map.on('mousemove', 'roads-layer-solid', (e: { lngLat: any; }) => hoverPopupRef.current.setLngLat(e.lngLat));
+      map.on('mousemove', 'roads-layer-solid', (e: MapLayerMouseEvent) => hoverPopupRef.current.setLngLat(e.lngLat));
       map.on('mouseleave', 'roads-layer-solid', onRoadLeave);
 
       map.on('mouseenter', 'roads-layer-blocked', onRoadHover);
-      map.on('mousemove', 'roads-layer-blocked', (e: { lngLat: any; }) => hoverPopupRef.current.setLngLat(e.lngLat));
+      map.on('mousemove', 'roads-layer-blocked', (e: MapLayerMouseEvent) => hoverPopupRef.current.setLngLat(e.lngLat));
       map.on('mouseleave', 'roads-layer-blocked', onRoadLeave);
 
       setIsMapLoaded(true);
@@ -1597,7 +1603,7 @@ export default function InteractiveCommandMap({
             <button
               onClick={() => {
                 onResetReports();
-                onSelectReport(null as any);
+                onSelectReport(null as unknown as FieldReport);
                 setSelectedEdge(null);
               }}
               className="ml-2 px-2 py-1 text-[12px] text-muted hover:text-fg hover:bg-raised rounded-control transition-colors duration-100 cursor-pointer"

@@ -13,6 +13,7 @@ import {
   TD,
 } from './ui';
 import type { Tone } from './ui';
+import { pickAffected } from '@/lib/pipeline/affected';
 
 interface ManifestsViewProps {
   barangays: Barangay[];
@@ -169,8 +170,13 @@ export default function ManifestsView({ barangays, manifests, predictions, onUpd
   const pending = barangays.filter((b) => manifests[b.id]?.status === 'pending');
   const approved = barangays.filter((b) => manifests[b.id]?.status === 'approved');
 
+  // Approved manifests float to the top of the "all" view; affected count is the tiebreaker.
+  // (The "pending" filter only contains pending, so the rank is a no-op there.)
+  const approvedRank = (id: string) => (manifests[id]?.status === 'approved' ? 0 : 1);
   const listBarangays = (filterStatus === 'pending' ? pending : barangays.filter((b) => manifests[b.id])).sort(
-    (a, b) => (predictions[b.id]?.predictedAffected ?? 0) - (predictions[a.id]?.predictedAffected ?? 0)
+    (a, b) =>
+      approvedRank(a.id) - approvedRank(b.id) ||
+      (predictions[b.id]?.predictedAffected ?? 0) - (predictions[a.id]?.predictedAffected ?? 0)
   );
 
   const selectedBarangay = barangays.find((b) => b.id === selectedId);
@@ -289,7 +295,8 @@ export default function ManifestsView({ barangays, manifests, predictions, onUpd
                 listBarangays.map((b) => {
                   const m = manifests[b.id];
                   if (!m) return null;
-                  const affected = predictions[b.id]?.overrideValue ?? predictions[b.id]?.predictedAffected ?? 0;
+                  const p = predictions[b.id];
+                  const affected = pickAffected({ override: p?.overrideValue, reported: p?.reportedAffected, predicted: p?.predictedAffected });
                   const isSelected = selectedId === b.id;
                   return (
                     <button
@@ -335,7 +342,7 @@ export default function ManifestsView({ barangays, manifests, predictions, onUpd
                         <>
                           {' · '}
                           <span className="font-mono tabular-nums">
-                            {(selectedPred.overrideValue ?? selectedPred.predictedAffected ?? 0).toLocaleString()}
+                            {pickAffected({ override: selectedPred.overrideValue, reported: selectedPred.reportedAffected, predicted: selectedPred.predictedAffected }).toLocaleString()}
                           </span>{' '}
                           affected
                         </>

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock the auth/admin clients and AI wrappers so we test Day-0 orchestration, not I/O.
 const calls: string[] = [];
-const upserts: Record<string, any[]> = {};
+const upserts: Record<string, Record<string, unknown>[]> = {};
 const rpc = vi.fn(async (fn: string) => {
   calls.push(`rpc:${fn}`);
   if (fn === 'pipeline_targets_day0') return { data: [{
@@ -13,7 +13,7 @@ const rpc = vi.fn(async (fn: string) => {
   return { data: null, error: null };
 });
 const fromFn = vi.fn((table: string) => ({
-  upsert: vi.fn(async (rows: any[]) => { calls.push(`upsert:${table}`); upserts[table] = rows; return { error: null }; }),
+  upsert: vi.fn(async (rows: Record<string, unknown>[]) => { calls.push(`upsert:${table}`); upserts[table] = rows; return { error: null }; }),
   select: () => ({
     in: async () => ({ data: [], error: null }),
   })

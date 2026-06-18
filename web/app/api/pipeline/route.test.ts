@@ -15,11 +15,16 @@ const rpc = vi.fn(async (fn: string) => {
 });
 
 let mockOverrideValue: number | null = null;
+let mockConfirmedReports: { barangay_id: string; population_estimate: number; created_at: string }[] = [];
 
 const upsert = vi.fn(async () => { calls.push('upsert'); return { error: null }; });
 const fromFn = vi.fn((table: string) => ({ upsert, delete: () => ({ eq: async () => ({ error: null }) }),
   select: () => ({
-    eq: () => ({ maybeSingle: async () => ({ data: { latitude: 10.31, longitude: 123.89 }, error: null }) }),
+    eq: () => ({
+      maybeSingle: async () => ({ data: { latitude: 10.31, longitude: 123.89 }, error: null }),
+      // field_reports confirmed-affected lookup: .eq('status','confirmed').in(...).order(...)
+      in: () => ({ order: async () => ({ data: mockConfirmedReports, error: null }) }),
+    }),
     in: async () => {
       if (table === 'impact_predictions' && mockOverrideValue !== null) {
         return { data: [{ barangay_id: 'b1', override_value: mockOverrideValue }], error: null };
@@ -38,7 +43,7 @@ vi.mock('@/lib/supabase/server', () => ({ createClient: async () => ({
 vi.mock('@/lib/ai/impact', () => ({ predictImpact: async () => ({
   predictions: [{ affected: 500, affected_confidence: 0.8, damage_rate: 0.3, confidence: 0.8, source: 'tabpfn', id: 'b1' }],
   model_framing: 'regressor', latency_ms: 1 }) }));
-vi.mock('@/lib/ai/supply', () => ({ buildManifest: async (req: any) => {
+vi.mock('@/lib/ai/supply', () => ({ buildManifest: async (req: { predicted_affected: number }) => {
   calls.push(`buildManifest:${req.predicted_affected}`);
   return {
     predicted_affected: req.predicted_affected, days: 3, access_modifier: 1, households: 100,
@@ -54,6 +59,7 @@ vi.mock('@/lib/ai/routing', () => ({ optimizeRoutes: async () => ({
 beforeEach(() => {
   calls.length = 0;
   mockOverrideValue = null;
+  mockConfirmedReports = [];
 });
 
 describe('POST /api/pipeline', () => {
@@ -85,5 +91,28 @@ describe('POST /api/pipeline', () => {
     expect(body.predictions).toBe(1);
     expect(body.routes).toBe(1);
     expect(calls).toContain('buildManifest:999'); // uses the override!
+  });
+
+  it('uses the latest confirmed report affected over the model prediction', async () => {
+    mockConfirmedReports = [{ barangay_id: 'b1', population_estimate: 1234, created_at: '2026-06-18T00:00:00Z' }];
+    const { POST } = await import('./route');
+    const res = await POST(new Request('http://x/api/pipeline?', {
+      method: 'POST', body: JSON.stringify({ barangayId: 'b1', categoryOrdinal: 4 }),
+      headers: { 'content-type': 'application/json' },
+    }));
+    expect(res.status).toBe(200);
+    expect(calls).toContain('buildManifest:1234'); // reported affected outranks the 7500 prediction
+  });
+
+  it('lets a coordinator override outrank even a confirmed report', async () => {
+    mockOverrideValue = 999;
+    mockConfirmedReports = [{ barangay_id: 'b1', population_estimate: 1234, created_at: '2026-06-18T00:00:00Z' }];
+    const { POST } = await import('./route');
+    const res = await POST(new Request('http://x/api/pipeline?', {
+      method: 'POST', body: JSON.stringify({ barangayId: 'b1', categoryOrdinal: 4 }),
+      headers: { 'content-type': 'application/json' },
+    }));
+    expect(res.status).toBe(200);
+    expect(calls).toContain('buildManifest:999'); // override beats report
   });
 });

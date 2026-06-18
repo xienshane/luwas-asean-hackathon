@@ -4,6 +4,7 @@ import { predictImpact } from '@/lib/ai/impact';
 import { buildManifest } from '@/lib/ai/supply';
 import { optimizeRoutes } from '@/lib/ai/routing';
 import { toFeatures, severityFromDamageRate, boundedAffected, boundedAffectedRange, type TargetRow } from '@/lib/pipeline/features';
+import { pickAffected } from '@/lib/pipeline/affected';
 import type { RouteStop, Vehicle } from '@/lib/types/routing';
 
 const DAYS = 3;
@@ -54,6 +55,22 @@ export async function POST(request: Request) {
     (existingPreds ?? []).map((p) => [p.barangay_id, p.override_value])
   );
 
+  // Latest CONFIRMED field report per target barangay → its population_estimate is the
+  // ground-truth affected count, ranked above the model prediction (below a coordinator
+  // override). Rows are ordered newest-first so the first seen per barangay is the latest.
+  const { data: confirmedReports } = await admin
+    .from('field_reports')
+    .select('barangay_id, population_estimate, created_at')
+    .eq('status', 'confirmed')
+    .in('barangay_id', targets.map((t) => t.barangay_id))
+    .order('created_at', { ascending: false });
+  const reportedByBrgy = new Map<string, number>();
+  for (const r of confirmedReports ?? []) {
+    if (r.barangay_id && r.population_estimate != null && !reportedByBrgy.has(r.barangay_id)) {
+      reportedByBrgy.set(r.barangay_id, Number(r.population_estimate));
+    }
+  }
+
   interface ExistingManifest {
     barangay_id: string;
     water_l: number | null;
@@ -92,6 +109,7 @@ export async function POST(request: Request) {
       damage_severity: p.severity_class ?? severityFromDamageRate(p.damage_rate),
       confidence: Number(p.confidence.toFixed(3)),
       inputs: features.find((f) => f.id === t.barangay_id) ?? {},
+      reported_affected: reportedByBrgy.get(t.barangay_id) ?? null,
     };
   });
   {
@@ -103,10 +121,11 @@ export async function POST(request: Request) {
   const demandByBrgy = new Map<string, number>();
   const manifestRows = [];
   for (const t of targets) {
-    const existingPred = existingPredsMap.get(t.barangay_id);
-    const affected = (existingPred !== null && existingPred !== undefined)
-      ? existingPred
-      : boundedAffected(predByBrgy.get(t.barangay_id)!, t.population);
+    const affected = pickAffected({
+      override: existingPredsMap.get(t.barangay_id),
+      reported: reportedByBrgy.get(t.barangay_id),
+      predicted: boundedAffected(predByBrgy.get(t.barangay_id)!, t.population),
+    });
 
     const existingManifest = existingManifestsMap.get(t.barangay_id);
     if (existingManifest && existingManifest.overridden) {

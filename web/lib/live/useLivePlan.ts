@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Route, ImpactPrediction, SupplyManifest } from '@/lib/types/coordinator';
 import { routeRowToUi, predictionRowToUi, manifestRowToUi } from './plan';
+import type { RouteRow, PredictionRow, ManifestRow } from './plan';
 
 export interface LivePlan {
   routes: Route[];
@@ -28,12 +29,12 @@ export function useLivePlan(): LivePlan {
       ]);
       if (cancelled) return;
       setPlan({
-        routes: (routes.data ?? []).map((r) => routeRowToUi(r as any)),
+        routes: (routes.data ?? []).map((r) => routeRowToUi(r as unknown as RouteRow)),
         predictions: Object.fromEntries((preds.data ?? []).map((p) => {
-          const ui = predictionRowToUi(p as any); return [ui.barangayId, ui];
+          const ui = predictionRowToUi(p as unknown as PredictionRow); return [ui.barangayId, ui];
         })),
         manifests: Object.fromEntries((mans.data ?? []).map((m) => {
-          const ui = manifestRowToUi(m as any); return [ui.barangayId, ui];
+          const ui = manifestRowToUi(m as unknown as ManifestRow); return [ui.barangayId, ui];
         })),
       });
     };
