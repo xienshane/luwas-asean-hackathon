@@ -169,8 +169,13 @@ export default function ManifestsView({ barangays, manifests, predictions, onUpd
   const pending = barangays.filter((b) => manifests[b.id]?.status === 'pending');
   const approved = barangays.filter((b) => manifests[b.id]?.status === 'approved');
 
+  // Approved manifests float to the top of the "all" view; affected count is the tiebreaker.
+  // (The "pending" filter only contains pending, so the rank is a no-op there.)
+  const approvedRank = (id: string) => (manifests[id]?.status === 'approved' ? 0 : 1);
   const listBarangays = (filterStatus === 'pending' ? pending : barangays.filter((b) => manifests[b.id])).sort(
-    (a, b) => (predictions[b.id]?.predictedAffected ?? 0) - (predictions[a.id]?.predictedAffected ?? 0)
+    (a, b) =>
+      approvedRank(a.id) - approvedRank(b.id) ||
+      (predictions[b.id]?.predictedAffected ?? 0) - (predictions[a.id]?.predictedAffected ?? 0)
   );
 
   const selectedBarangay = barangays.find((b) => b.id === selectedId);
