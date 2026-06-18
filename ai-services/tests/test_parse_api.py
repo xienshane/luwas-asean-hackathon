@@ -40,6 +40,26 @@ def install_parser(reply: str) -> None:
     )
 
 
+class FailingBackend:
+    """A backend whose every call raises — used to force the fallback path."""
+
+    def __init__(self, name: str, error: Exception):
+        self.name = name
+        self._error = error
+
+    def complete(self, system: str, user: str) -> str:
+        raise self._error
+
+
+def install_parser_with_fallback(primary_error: Exception, fallback_reply: str) -> None:
+    app.state.parser = Parser(
+        Settings(),
+        primary=FailingBackend("sea-lion", primary_error),
+        fallback=FakeBackend("gemini", fallback_reply),
+        rate_limiter=RateLimiter(10, 60, now=lambda: 0.0, sleep=lambda dt: None),
+    )
+
+
 @pytest.fixture()
 def client():
     with TestClient(app) as c:  # lifespan builds the real parser; we override it below
@@ -71,6 +91,16 @@ def test_parse_low_confidence_flagged(client):
     body = r.json()
     assert body["needs_review"] is True
     assert body["field_report"]["status"] == "flagged"
+
+
+def test_parse_falls_back_to_gemini_through_the_route(client):
+    install_parser_with_fallback(RuntimeError("sea-lion 503"), REPLY_HIGH)
+    r = client.post("/parse", json={"text": "Grabe ang baha sa Apas, 500 katawo"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["provider"] == "gemini"
+    assert body["field_report"]["needs_severity"] == "high"
+    assert body["needs_review"] is False
 
 
 def test_parse_rejects_empty_text(client):

@@ -320,7 +320,10 @@ export default function CommandDashboard() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reportId }),
       });
-      const { translated_text } = await tr.json();
+      const { translated_text, provider } = await tr.json();
+      if (provider === 'gemini') {
+        addActivityLog(`NLP: SEA-LION unavailable — used Gemini fallback for ${report.barangayName}.`, 'warn');
+      }
       if (translated_text) {
         setReports(prev => prev.map(r => r.id === reportId ? { ...r, translatedText: translated_text } : r));
         setSelectedReport(prev => prev && prev.id === reportId ? { ...prev, translatedText: translated_text } : prev);
