@@ -26,6 +26,7 @@ interface PredictionRow {
   barangay_id: string; model: string; predicted_affected: number | null;
   affected_low?: number | null; affected_high?: number | null;
   damage_severity: string | null; confidence: number | null; override_value: number | null; inputs: any;
+  reported_affected?: number | null;
   is_day0?: boolean | null;
 }
 export function predictionRowToUi(r: PredictionRow): ImpactPrediction {
@@ -36,7 +37,9 @@ export function predictionRowToUi(r: PredictionRow): ImpactPrediction {
     affectedHigh: r.affected_high ?? null,
     damageSeverity: SEV_DB_TO_UI[r.damage_severity ?? 'moderate'] ?? 'minor',
     confidence: CONF_TO_UI(Number(r.confidence ?? 0)),
-    overrideValue: r.override_value, contributors: [],
+    overrideValue: r.override_value,
+    reportedAffected: r.reported_affected ?? null,
+    contributors: [],
     isDay0: r.is_day0 === true,
   };
 }

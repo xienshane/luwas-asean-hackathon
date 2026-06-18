@@ -117,6 +117,9 @@ export interface ImpactPrediction {
   damageSeverity: 'severe' | 'moderate' | 'minor';
   confidence: 'high' | 'moderate' | 'low';
   overrideValue: number | null;
+  // Affected count from the latest confirmed field report (null if none). Ranks above the
+  // model prediction, below a coordinator override — see lib/pipeline/affected.ts.
+  reportedAffected: number | null;
   contributors: string[];
   isDay0: boolean; // produced by the Day-0 forecast (no field report yet) — render as unconfirmed
 }

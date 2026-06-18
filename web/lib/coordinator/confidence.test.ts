@@ -11,6 +11,7 @@ const base: ImpactPrediction = {
   damageSeverity: 'moderate',
   confidence: 'high',
   overrideValue: null,
+  reportedAffected: null,
   contributors: [],
   isDay0: false,
 };
