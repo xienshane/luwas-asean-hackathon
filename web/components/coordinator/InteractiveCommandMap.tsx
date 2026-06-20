@@ -13,7 +13,7 @@ import type { Marker, Popup, MapMouseEvent, MapLayerMouseEvent, MapGeoJSONFeatur
 import type { Barangay, FieldReport, Team, RoadEdge, Route, Volunteer, LocationHub } from '@/lib/types/coordinator';
 import { routeLineCoords } from '@/lib/coordinator/routeGeometry';
 import { pointAtFraction, stopFraction } from '@/lib/coordinator/pathInterpolate';
-import { nextGhostState, emptyGhostState } from '@/lib/coordinator/ghostRoutes';
+import { nextGhostState, emptyGhostState, ghostDivergentSegments } from '@/lib/coordinator/ghostRoutes';
 import { COLOR, silentAreaState, STATE_COLOR, STATE_LABEL } from './ui';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -32,7 +32,7 @@ const BARANGAY_OUTLINE = '#3a4660';
 // along the real-road route geometry and parks short of the destination. DEMO_CONVOY is the
 // one-line kill switch; CONVOY_MS is the ease duration before it parks at stopFraction.
 const DEMO_CONVOY = true;
-const CONVOY_MS = 7000;
+const CONVOY_MS = 14000;
 
 // Convoy chip icon in the team-type language, dark stroke for contrast on the active-green chip.
 function convoyIcon(type?: string): string {
@@ -1148,17 +1148,27 @@ export default function InteractiveCommandMap({
     // Capture/keep ghosts by teamId (survives the route-id change a reroute causes) and publish.
     ghostStateRef.current = nextGhostState(ghostStateRef.current, activeByTeam, completedTeamIds);
     const ghostSrc = map.getSource('team-routes-ghost-source') as { setData: (d: unknown) => void } | undefined;
-    const ghostLines = Object.values(ghostStateRef.current.ghostByTeam).filter((c) => c.length >= 2);
+    // Draw ONLY the parts of each team's old path the new active path doesn't cover, so the ghost
+    // (and its label) never sits on top of road shared with the new route. See ghostDivergentSegments.
+    const ghostSegmentsByTeam = Object.entries(ghostStateRef.current.ghostByTeam)
+      .map(([teamId, ghost]) => ({
+        segments: ghostDivergentSegments(ghost, activeByTeam[teamId] ?? []),
+      }))
+      .filter((g) => g.segments.length > 0);
     ghostSrc?.setData({
       type: 'FeatureCollection',
-      features: ghostLines.map((c) => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: c } })),
+      features: ghostSegmentsByTeam.flatMap((g) =>
+        g.segments.map((c) => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: c } })),
+      ),
     });
 
-    // One "Original route" chip per ghost line (color-not-only: the faded line + an explicit label).
+    // One "Original route" chip per team, on the midpoint of its longest divergent segment
+    // (color-not-only: the faded line + an explicit label).
     ghostLabelMarkersRef.current.forEach((m) => m.remove());
     ghostLabelMarkersRef.current = [];
     if (maplibreglRef.current) {
-      for (const c of ghostLines) {
+      for (const g of ghostSegmentsByTeam) {
+        const c = g.segments.reduce((a, b) => (b.length > a.length ? b : a));
         const mid = c[Math.floor(c.length / 2)] as [number, number];
         const el = document.createElement('div');
         el.className = 'luwas-endpoint';
@@ -1353,9 +1363,10 @@ export default function InteractiveCommandMap({
 
     // One shared rAF loop drives ALL convoys (mirror the flow loop). Each parks — stops updating —
     // once it reaches its stopFraction, so there is no per-frame work for a parked convoy.
-    // ease-in-out cubic: slow start -> glide -> gentle settle. (ease-out front-loaded the motion,
-    // which read as the convoy snapping to the middle on dispatch; this advances it deliberately.)
-    const ease = (t: number) => (t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2);
+    // ease-in-out quadratic: gentle start -> steady cruise -> gentle settle. (Cubic peaked at ~3x
+    // average speed mid-route, which read as the convoy racing to the middle; quadratic peaks at ~2x
+    // and, paired with the longer CONVOY_MS, keeps the advance slow and deliberate throughout.)
+    const ease = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
     const tick = () => {
       const now = performance.now();
       for (const [id, entry] of state) {

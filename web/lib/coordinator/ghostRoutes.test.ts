@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { coordsChanged, nextGhostState, emptyGhostState } from './ghostRoutes';
+import { coordsChanged, nextGhostState, emptyGhostState, ghostDivergentSegments } from './ghostRoutes';
 
 const a: [number, number][] = [[123.9, 10.3], [123.91, 10.31]];
 
@@ -35,6 +35,28 @@ describe('nextGhostState (keyed by teamId, survives route-id churn)', () => {
     s = nextGhostState(s, { t1: A2 });   // ghost = A
     s = nextGhostState(s, { t1: A2 });   // unchanged
     expect(s.ghostByTeam.t1).toEqual(A);
+  });
+});
+
+describe('ghostDivergentSegments (only the parts the new route does not cover)', () => {
+  it('returns the whole ghost when there is no active path to compare', () => {
+    const ghost = [[0, 0], [1, 1], [2, 2]] as [number, number][];
+    expect(ghostDivergentSegments(ghost, [])).toEqual([ghost]);
+  });
+  it('trims a shared HQ prefix, keeping the divergent tail bridged to the branch point', () => {
+    const ghost = [[0, 0], [1, 0], [2, 0], [3, 0]] as [number, number][];
+    const active = [[0, 0], [1, 0], [2, 1], [3, 1]] as [number, number][]; // shares [0,0],[1,0]
+    // divergent run starts after the last shared vertex [1,0], bridged back to it
+    expect(ghostDivergentSegments(ghost, active)).toEqual([[[1, 0], [2, 0], [3, 0]]]);
+  });
+  it('keeps a divergent MIDDLE bridged to the shared vertex on both sides', () => {
+    const ghost = [[0, 0], [1, 0], [2, 0], [5, 0]] as [number, number][];
+    const active = [[0, 0], [1, 0], [9, 9], [5, 0]] as [number, number][]; // shares ends, differs middle
+    expect(ghostDivergentSegments(ghost, active)).toEqual([[[1, 0], [2, 0], [5, 0]]]);
+  });
+  it('returns nothing when the paths are identical (no divergence to mark)', () => {
+    const p = [[0, 0], [1, 0], [2, 0]] as [number, number][];
+    expect(ghostDivergentSegments(p, p)).toEqual([]);
   });
 });
 
