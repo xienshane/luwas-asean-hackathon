@@ -1073,8 +1073,21 @@ export default function InteractiveCommandMap({
     routes.filter((r) => r.status === 'active' || r.status === 'planned').forEach((route) => {
       const coords = routeLineCoords(route, teamRouteGeometries[route.id]);
       if (coords.length < 2) return;
-      const start = coords[0];
-      const end = coords[coords.length - 1];
+      // Geometry direction is not guaranteed (pgRouting / reroute can emit either order), so
+      // anchor HQ to whichever line end is nearest the team base; the other end is the destination.
+      const team = teams.find((t) => t.id === route.teamId);
+      const c0 = coords[0];
+      const cN = coords[coords.length - 1];
+      let start = c0;
+      let end = cN;
+      if (team) {
+        const d2 = (c: [number, number]) =>
+          (c[0] - team.baseLocation.lng) ** 2 + (c[1] - team.baseLocation.lat) ** 2;
+        if (d2(cN) < d2(c0)) {
+          start = cN;
+          end = c0;
+        }
+      }
       const destName = route.stops?.[route.stops.length - 1]?.barangayName ?? 'Destination';
       const active = route.status === 'active';
 
@@ -1101,7 +1114,7 @@ export default function InteractiveCommandMap({
       routeEndpointMarkersRef.current.push(new M({ element: startEl }).setLngLat(start).addTo(map));
       routeEndpointMarkersRef.current.push(new M({ element: endEl }).setLngLat(end).addTo(map));
     });
-  }, [isMapLoaded, routes, mapLayers.routes, teamRouteGeometries]);
+  }, [isMapLoaded, routes, teams, mapLayers.routes, teamRouteGeometries]);
 
   // Directional "flow" on active routes (motion-meaning). Steps a dash pattern so the highlight
   // travels depot -> destination. Skipped entirely under prefers-reduced-motion (the static
