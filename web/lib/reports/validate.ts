@@ -13,6 +13,8 @@ export interface ReportSubmission {
   road_status: RoadStatus;
   /** Derived: road_status === 'impassable'. */
   road_impassable: boolean;
+  /** Volunteer-picked blocked road edges (road_edges.id), [] when not impassable. */
+  impassable_edge_ids: number[];
   lat: number | null;
   lng: number | null;
   /** Device time at submit (ISO). Compared with server time for offline_synced. */
@@ -66,6 +68,11 @@ export function validateReportSubmission(input: unknown): ValidationResult {
   if (typeof o.captured_at !== 'string' || Number.isNaN(Date.parse(o.captured_at))) {
     return { ok: false, error: 'captured_at must be an ISO timestamp' };
   }
+  const rawEdges = Array.isArray(o.impassable_edge_ids) ? o.impassable_edge_ids : [];
+  if (rawEdges.length > 25) return { ok: false, error: 'impassable_edge_ids: too many (max 25)' };
+  for (const id of rawEdges) {
+    if (!Number.isInteger(id) || (id as number) < 0) return { ok: false, error: 'impassable_edge_ids must be non-negative integers' };
+  }
 
   return {
     ok: true,
@@ -77,6 +84,7 @@ export function validateReportSubmission(input: unknown): ValidationResult {
       needs_severity: o.needs_severity as NeedsSeverity,
       road_status: o.road_status as RoadStatus,
       road_impassable: o.road_status === 'impassable',
+      impassable_edge_ids: rawEdges as number[],
       lat: lat as number | null,
       lng: lng as number | null,
       captured_at: o.captured_at,
