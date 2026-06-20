@@ -13,7 +13,7 @@ import type { Marker, Popup, MapMouseEvent, MapLayerMouseEvent, MapGeoJSONFeatur
 import type { Barangay, FieldReport, Team, RoadEdge, Route, Volunteer, LocationHub } from '@/lib/types/coordinator';
 import { routeLineCoords } from '@/lib/coordinator/routeGeometry';
 import { pointAtFraction, stopFraction } from '@/lib/coordinator/pathInterpolate';
-import { coordsChanged } from '@/lib/coordinator/ghostRoutes';
+import { nextGhostState, emptyGhostState } from '@/lib/coordinator/ghostRoutes';
 import { COLOR, silentAreaState, STATE_COLOR, STATE_LABEL } from './ui';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -134,8 +134,7 @@ export default function InteractiveCommandMap({
     coords: [number, number][]; stop: number; start: number; parked: boolean; iconEl: HTMLElement | null;
   }>>(new Map());
   const convoyRafRef = useRef<number>(0);
-  const prevRenderedRef = useRef<Map<string, [number, number][]>>(new Map());
-  const ghostPathsRef = useRef<Map<string, [number, number][]>>(new Map());
+  const ghostStateRef = useRef(emptyGhostState());
 
   // Tooltip popup reference
   // Always assigned before any hover handler reads it (see map 'load'); typed non-null to
@@ -1009,6 +1008,11 @@ export default function InteractiveCommandMap({
 
     const AVG_SPEED_KMH = 25; // disaster-response convoy avg over degraded roads
 
+    // Per-team active/completed geometry for the ghost capture (keyed by stable teamId — survives
+    // the route-id change a reroute causes; see nextGhostState).
+    const activeByTeam: Record<string, [number, number][]> = {};
+    const completedTeamIds: string[] = [];
+
     const features = routes.map((route) => {
       const team = teams.find((t) => t.id === route.teamId);
       const distanceKm = route.totalDistanceM / 1000;
@@ -1025,14 +1029,9 @@ export default function InteractiveCommandMap({
       // pgRouting path first (block-aware); OSRM snap only as a degenerate-path fallback.
       const coordinates = routeLineCoords(route, teamRouteGeometries[route.id]);
 
-      // Ghost capture: if an ACTIVE route's geometry changed vs last render, keep the old path
-      // as a ghost (persists until reached or the next reroute). coordsChanged is unit-tested.
-      const prevCoords = prevRenderedRef.current.get(route.id) ?? [];
-      if (route.status === 'active' && coordsChanged(prevCoords, coordinates)) {
-        ghostPathsRef.current.set(route.id, prevCoords);
-      }
-      if (route.status === 'completed') ghostPathsRef.current.delete(route.id);
-      prevRenderedRef.current.set(route.id, coordinates);
+      // Collect per-team geometry for the ghost capture below (by teamId, not route.id).
+      if (route.teamId && route.status === 'active') activeByTeam[route.teamId] = coordinates;
+      if (route.teamId && route.status === 'completed') completedTeamIds.push(route.teamId);
 
       return {
         type: 'Feature',
@@ -1051,13 +1050,13 @@ export default function InteractiveCommandMap({
 
     src.setData({ type: 'FeatureCollection', features });
 
-    // Drop ghosts for routes that no longer exist, then publish the ghost geometry.
-    const liveIds = new Set(routes.map((r) => r.id));
-    for (const id of [...ghostPathsRef.current.keys()]) if (!liveIds.has(id)) ghostPathsRef.current.delete(id);
+    // Capture/keep ghosts by teamId (survives the route-id change a reroute causes) and publish.
+    ghostStateRef.current = nextGhostState(ghostStateRef.current, activeByTeam, completedTeamIds);
     const ghostSrc = map.getSource('team-routes-ghost-source') as { setData: (d: unknown) => void } | undefined;
     ghostSrc?.setData({
       type: 'FeatureCollection',
-      features: [...ghostPathsRef.current.values()].filter((c) => c.length >= 2)
+      features: Object.values(ghostStateRef.current.ghostByTeam)
+        .filter((c) => c.length >= 2)
         .map((c) => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: c } })),
     });
   }, [isMapLoaded, mapLayers.routes, routes, teams, teamRouteGeometries]);
