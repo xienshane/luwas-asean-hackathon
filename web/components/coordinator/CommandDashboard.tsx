@@ -47,6 +47,16 @@ export default function CommandDashboard() {
 
   const live = useLivePlan();
   const [routes, setRoutes] = useState<Route[]>([]);
+  const [dispatchPreview, setDispatchPreview] = useState<
+    { teamId: string; from: { lat: number; lng: number }; to: { lat: number; lng: number } } | null
+  >(null);
+
+  // Drop the provisional hub->area line once the real pgRouting route for that team lands.
+  useEffect(() => {
+    if (dispatchPreview && routes.some((r) => r.teamId === dispatchPreview.teamId && r.status === 'active')) {
+      setDispatchPreview(null);
+    }
+  }, [routes, dispatchPreview]);
   const [predictions, setPredictions] = useState<Record<string, ImpactPrediction>>({});
   const [manifests, setManifests] = useState<Record<string, SupplyManifest>>({});
   useEffect(() => { setRoutes(live.routes); }, [live.routes]);
@@ -468,14 +478,35 @@ export default function CommandDashboard() {
     addActivityLog(`SUPPLY PLANNING: Relief manifest for ${bName} was [${status.toUpperCase()}] by coordinator.`, status === 'approved' ? 'success' : 'alert');
   };
 
-  const handleDispatchTeam = (teamId: string, barangayId: string) => {
-    setTeams(prev => prev.map(t => t.id === teamId ? { ...t, status: 'dispatched', currentAssignment: `Relief Delivery to ${barangays.find(b => b.id === barangayId)?.name}` } : t));
-    setRoutes(prev => prev.map(r => r.teamId === teamId ? { ...r, status: 'active' } : r));
-
+  const handleDispatchTeam = async (teamId: string, barangayId: string) => {
     const tName = teams.find(t => t.id === teamId)?.name;
-    const bName = barangays.find(b => b.id === barangayId)?.name;
-    
-    addActivityLog(`TEAM DISPATCH: Deployed ${tName} to ${bName} with humanitarian cargo.`, 'success');
+    const brgy = barangays.find(b => b.id === barangayId);
+
+    setTeams(prev => prev.map(t => t.id === teamId
+      ? { ...t, status: 'dispatched', currentAssignment: `Relief Delivery to ${brgy?.name}` } : t));
+
+    // Instant provisional hub->area line while the real road route is computed. dispatch_route
+    // uses the authoritative depot server-side; the client preview uses the loaded hub.
+    const hub = facilities[0];
+    if (hub && brgy) {
+      setDispatchPreview({ teamId, from: { lat: hub.latitude, lng: hub.longitude }, to: { lat: brgy.latitude, lng: brgy.longitude } });
+    }
+    addActivityLog(`TEAM DISPATCH: Deployed ${tName} to ${brgy?.name} with humanitarian cargo.`, 'success');
+
+    try {
+      const res = await fetch('/api/dispatch', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teamId, barangayId }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.error ?? `dispatch ${res.status}`);
+      }
+      addActivityLog(`ROUTING: real-road route generated for ${tName} → ${brgy?.name}.`, 'info');
+    } catch (err) {
+      setDispatchPreview(null);
+      addActivityLog(`ROUTING: route generation failed — ${err instanceof Error ? err.message : 'service unreachable'}.`, 'alert');
+    }
   };
 
   const addActivityLog = (event: string, type: 'info' | 'warn' | 'success' | 'alert' = 'info') => {
@@ -647,6 +678,7 @@ export default function CommandDashboard() {
                 edges={edges}
                 routes={routes}
                 facilities={facilities}
+                dispatchPreview={dispatchPreview}
                 volunteers={liveVolunteers}
                 selectedBarangay={selectedBarangay}
                 onSelectBarangay={handleSelectBarangay}
