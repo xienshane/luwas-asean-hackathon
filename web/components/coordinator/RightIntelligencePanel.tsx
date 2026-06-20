@@ -456,10 +456,10 @@ export default function RightIntelligencePanel({
                           {isRec && <Chip tone="active">Recommended</Chip>}
                         </div>
                         <div className="mt-2 flex items-center justify-between gap-2">
-                          <span className="flex items-center gap-2 text-[12px] text-muted">
-                            <span className="font-mono tabular-nums">~{km.toFixed(1)}</span> km est.
+                          <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted min-w-0">
+                            <span><span className="font-mono tabular-nums">~{km.toFixed(1)}</span> km est.</span>
                             <span aria-hidden>·</span>
-                            <span className="font-mono tabular-nums">{team.capacityKg.toLocaleString()}</span> kg
+                            <span><span className="font-mono tabular-nums">{team.capacityKg.toLocaleString()}</span> kg</span>
                             <Chip tone={meta.tone}>{meta.label}</Chip>
                           </span>
                           <button
