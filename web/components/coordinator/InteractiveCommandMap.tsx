@@ -583,12 +583,12 @@ export default function InteractiveCommandMap({
         paint: { 'line-color': ROUTE_CASING, 'line-width': 6, 'line-opacity': 0.55 },
       });
       // The ghost is a LOW-OPACITY version of the active route color — unmistakably "a route",
-      // just faded as the old one. Dashed + the on-map "Original route" chip keep it distinct
-      // from the live active line.
+      // just faded as the old one. The low opacity + the on-map "Original route" chip keep it
+      // distinct from the live active line.
       map.addLayer({
         id: 'team-routes-ghost', type: 'line', source: 'team-routes-ghost-source',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': ROUTE_ACTIVE, 'line-width': 3.5, 'line-opacity': 0.5, 'line-dasharray': [2, 2] },
+        paint: { 'line-color': ROUTE_ACTIVE, 'line-width': 3.5, 'line-opacity': 0.5 },
       });
 
       map.addLayer({
@@ -1166,7 +1166,7 @@ export default function InteractiveCommandMap({
           `<span style="display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border-radius:7px;
              font-size:10px;font-weight:600;white-space:nowrap;
              background:rgba(11,18,32,0.85);color:${ROUTE_ACTIVE};border:1px solid ${ROUTE_ACTIVE}66">
-             <span style="width:12px;border-top:2px dashed ${ROUTE_ACTIVE};opacity:0.8"></span>Original route</span>`;
+             <span style="width:12px;border-top:2px solid ${ROUTE_ACTIVE};opacity:0.8"></span>Original route</span>`;
         ghostLabelMarkersRef.current.push(
           new maplibreglRef.current.Marker({ element: el }).setLngLat(mid).addTo(map),
         );
@@ -2240,7 +2240,7 @@ export default function InteractiveCommandMap({
                     <span className="text-fg">Completed</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="w-4 border-t-2 border-dashed inline-block shrink-0" style={{ borderColor: ROUTE_ACTIVE, opacity: 0.5 }} />
+                    <span className="w-4 h-0.5 inline-block shrink-0" style={{ background: ROUTE_ACTIVE, opacity: 0.5 }} />
                     <span className="text-fg">Original (rerouted)</span>
                   </div>
                 </div>

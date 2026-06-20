@@ -45,14 +45,16 @@ export interface UseConnectivityOptions {
 export function useConnectivity(opts: UseConnectivityOptions = {}): ConnectivityTier {
   const { probeUrl = '/api/health', intervalMs = 10_000, realtimeHealthy = null } = opts;
 
-  const [navigatorOnline, setNavigatorOnline] = useState(() =>
-    typeof navigator !== 'undefined' ? navigator.onLine : true,
-  );
+  // Seed `true` to match SSR (navigator is undefined on the server); the mount effect below
+  // reconciles to the real navigator.onLine. Reading navigator.onLine in the initializer would
+  // diverge from the server's render and cause a hydration mismatch.
+  const [navigatorOnline, setNavigatorOnline] = useState(true);
   const [probeOk, setProbeOk] = useState<boolean | null>(null);
 
   useEffect(() => {
     const goOnline = () => setNavigatorOnline(true);
     const goOffline = () => setNavigatorOnline(false);
+    if (typeof navigator !== 'undefined') setNavigatorOnline(navigator.onLine);
     window.addEventListener('online', goOnline);
     window.addEventListener('offline', goOffline);
     return () => {
