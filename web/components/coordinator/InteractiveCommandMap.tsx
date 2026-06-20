@@ -32,7 +32,7 @@ const BARANGAY_OUTLINE = '#3a4660';
 // along the real-road route geometry and parks short of the destination. DEMO_CONVOY is the
 // one-line kill switch; CONVOY_MS is the ease duration before it parks at stopFraction.
 const DEMO_CONVOY = true;
-const CONVOY_MS = 5000;
+const CONVOY_MS = 7000;
 
 // Convoy chip icon in the team-type language, dark stroke for contrast on the active-green chip.
 function convoyIcon(type?: string): string {
@@ -130,6 +130,7 @@ export default function InteractiveCommandMap({
   const hubMarkersRef = useRef<Marker[]>([]);
   const routeEndpointMarkersRef = useRef<Marker[]>([]);
   const blockedMarkersRef = useRef<Marker[]>([]);
+  const ghostLabelMarkersRef = useRef<Marker[]>([]);
   const vehicleMarkersRef = useRef<Map<string, Marker>>(new Map());
   const convoyStateRef = useRef<Map<string, {
     coords: [number, number][]; stop: number; start: number; parked: boolean; iconEl: HTMLElement | null;
@@ -575,10 +576,19 @@ export default function InteractiveCommandMap({
       // Ghost of a route's PREVIOUS path, kept at low opacity after a reroute until the area is
       // reached or it reroutes again. Added before the live layers so it renders underneath.
       map.addSource('team-routes-ghost-source', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      // Dark casing first so a faded line still reads against the dark basemap.
+      map.addLayer({
+        id: 'team-routes-ghost-casing', type: 'line', source: 'team-routes-ghost-source',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': ROUTE_CASING, 'line-width': 6, 'line-opacity': 0.55 },
+      });
+      // The ghost is a LOW-OPACITY version of the active route color — unmistakably "a route",
+      // just faded as the old one. Dashed + the on-map "Original route" chip keep it distinct
+      // from the live active line.
       map.addLayer({
         id: 'team-routes-ghost', type: 'line', source: 'team-routes-ghost-source',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': '#64748b', 'line-width': 3, 'line-opacity': 0.3, 'line-dasharray': [2, 2] },
+        paint: { 'line-color': ROUTE_ACTIVE, 'line-width': 3.5, 'line-opacity': 0.5, 'line-dasharray': [2, 2] },
       });
 
       map.addLayer({
@@ -966,19 +976,49 @@ export default function InteractiveCommandMap({
     const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     const blocked = edges.filter((e) => e.status === 'blocked');
 
-    for (const edge of blocked) {
-      const line = roadGeometries[edge.id] ?? [
-        [edge.sourceCoords.lng, edge.sourceCoords.lat],
-        [edge.targetCoords.lng, edge.targetCoords.lat],
+    // Cluster connected closures into ONE chip (a multi-edge closure otherwise stacks chips at every
+    // segment midpoint = clutter). Union-find over shared nodes: edges that touch at a sourceNode/
+    // targetNode belong to the same closure. Each cluster then gets a single chip.
+    const parent = new Map<string, string>();
+    const find = (x: string): string => {
+      let r = x;
+      while (parent.get(r) !== r) r = parent.get(r)!;
+      while (parent.get(x) !== r) { const n = parent.get(x)!; parent.set(x, r); x = n; }
+      return r;
+    };
+    const union = (a: string, b: string) => { parent.set(find(a), find(b)); };
+    for (const e of blocked) {
+      if (!parent.has(e.sourceNode)) parent.set(e.sourceNode, e.sourceNode);
+      if (!parent.has(e.targetNode)) parent.set(e.targetNode, e.targetNode);
+      union(e.sourceNode, e.targetNode);
+    }
+    const clusters = new Map<string, typeof blocked>();
+    for (const e of blocked) {
+      const root = find(e.sourceNode);
+      (clusters.get(root) ?? clusters.set(root, []).get(root)!).push(e);
+    }
+
+    for (const group of clusters.values()) {
+      // Anchor + label come from the longest edge in the cluster (stable, sits on a real road).
+      const anchor = group.reduce((a, b) => (b.lengthM > a.lengthM ? b : a));
+      const line = roadGeometries[anchor.id] ?? [
+        [anchor.sourceCoords.lng, anchor.sourceCoords.lat],
+        [anchor.targetCoords.lng, anchor.targetCoords.lat],
       ];
       if (!line || line.length < 2) continue;
       const mid = line[Math.floor(line.length / 2)] as [number, number];
-      const name = edge.name || 'Road closed';
+
+      const name = anchor.name || 'Road closed';
+      const otherNames = new Set(group.map((e) => e.name).filter((n) => n && n !== anchor.name));
+      const badge = otherNames.size > 0
+        ? `<span style="margin-left:5px;padding:1px 5px;border-radius:6px;font-size:10px;font-weight:700;
+             background:rgba(11,18,32,0.85);color:#fecaca;border:1px solid rgba(254,202,202,0.4)">+${otherNames.size}</span>`
+        : '';
 
       const el = document.createElement('div');
       el.className = `luwas-endpoint luwas-block ${reduce ? '' : 'luwas-block--pulse'}`;
       el.innerHTML =
-        `<span class="luwas-endpoint__label" style="color:#fecaca">${name}</span>
+        `<span class="luwas-endpoint__label" style="color:#fecaca">${name}${badge}</span>
          <span style="display:flex;width:26px;height:26px;border-radius:7px;align-items:center;justify-content:center;
            background:${COLOR.critical};box-shadow:0 0 0 3px rgba(11,18,32,0.9),0 2px 8px rgba(0,0,0,0.55)">
            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6"
@@ -1054,6 +1094,10 @@ export default function InteractiveCommandMap({
 
     if (!mapLayers.routes) {
       src.setData({ type: 'FeatureCollection', features: [] });
+      const ghostSrc = map.getSource('team-routes-ghost-source') as { setData: (d: unknown) => void } | undefined;
+      ghostSrc?.setData({ type: 'FeatureCollection', features: [] });
+      ghostLabelMarkersRef.current.forEach((m) => m.remove());
+      ghostLabelMarkersRef.current = [];
       return;
     }
 
@@ -1104,12 +1148,30 @@ export default function InteractiveCommandMap({
     // Capture/keep ghosts by teamId (survives the route-id change a reroute causes) and publish.
     ghostStateRef.current = nextGhostState(ghostStateRef.current, activeByTeam, completedTeamIds);
     const ghostSrc = map.getSource('team-routes-ghost-source') as { setData: (d: unknown) => void } | undefined;
+    const ghostLines = Object.values(ghostStateRef.current.ghostByTeam).filter((c) => c.length >= 2);
     ghostSrc?.setData({
       type: 'FeatureCollection',
-      features: Object.values(ghostStateRef.current.ghostByTeam)
-        .filter((c) => c.length >= 2)
-        .map((c) => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: c } })),
+      features: ghostLines.map((c) => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: c } })),
     });
+
+    // One "Original route" chip per ghost line (color-not-only: the faded line + an explicit label).
+    ghostLabelMarkersRef.current.forEach((m) => m.remove());
+    ghostLabelMarkersRef.current = [];
+    if (maplibreglRef.current) {
+      for (const c of ghostLines) {
+        const mid = c[Math.floor(c.length / 2)] as [number, number];
+        const el = document.createElement('div');
+        el.className = 'luwas-endpoint';
+        el.innerHTML =
+          `<span style="display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border-radius:7px;
+             font-size:10px;font-weight:600;white-space:nowrap;
+             background:rgba(11,18,32,0.85);color:${ROUTE_ACTIVE};border:1px solid ${ROUTE_ACTIVE}66">
+             <span style="width:12px;border-top:2px dashed ${ROUTE_ACTIVE};opacity:0.8"></span>Original route</span>`;
+        ghostLabelMarkersRef.current.push(
+          new maplibreglRef.current.Marker({ element: el }).setLngLat(mid).addTo(map),
+        );
+      }
+    }
   }, [isMapLoaded, mapLayers.routes, routes, teams, teamRouteGeometries]);
 
   // Provisional dispatch preview: OSRM-snap hub -> area for a responsive line until the real
@@ -1291,7 +1353,9 @@ export default function InteractiveCommandMap({
 
     // One shared rAF loop drives ALL convoys (mirror the flow loop). Each parks — stops updating —
     // once it reaches its stopFraction, so there is no per-frame work for a parked convoy.
-    const ease = (t: number) => 1 - (1 - t) ** 3; // ease-out cubic
+    // ease-in-out cubic: slow start -> glide -> gentle settle. (ease-out front-loaded the motion,
+    // which read as the convoy snapping to the middle on dispatch; this advances it deliberately.)
+    const ease = (t: number) => (t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2);
     const tick = () => {
       const now = performance.now();
       for (const [id, entry] of state) {
@@ -2174,6 +2238,10 @@ export default function InteractiveCommandMap({
                   <div className="flex items-center gap-2">
                     <span className="w-4 h-0.5 inline-block shrink-0" style={{ background: ROUTE_DONE }} />
                     <span className="text-fg">Completed</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 border-t-2 border-dashed inline-block shrink-0" style={{ borderColor: ROUTE_ACTIVE, opacity: 0.5 }} />
+                    <span className="text-fg">Original (rerouted)</span>
                   </div>
                 </div>
               </div>
