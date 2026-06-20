@@ -4,7 +4,23 @@ import React, { useState, useEffect } from 'react';
 import type { Barangay, ImpactPrediction, SupplyManifest, Team, Route, LocationHub } from '@/lib/types/coordinator';
 import { DetailPanel, Segmented, Stat, Chip, CoverageBar, Section, silentAreaState, STATE_LABEL, STATE_COLOR } from './ui';
 import type { ChipTone } from './ui';
-import { Activity, Info, PackageOpen } from 'lucide-react';
+import { Activity, Info, PackageOpen, Truck, Ship, Ambulance, Car } from 'lucide-react';
+import { estDistanceKm, capacityFit, recommendTeam, type Fit } from '@/lib/coordinator/dispatchMatch';
+
+// Team-type icon in the same language as the map markers.
+function TeamIcon({ type }: { type: Team['type'] }) {
+  const cls = 'w-4 h-4 text-muted shrink-0';
+  if (type === 'boat') return <Ship className={cls} aria-hidden />;
+  if (type === 'ambulance') return <Ambulance className={cls} aria-hidden />;
+  if (type === '4x4') return <Car className={cls} aria-hidden />;
+  return <Truck className={cls} aria-hidden />;
+}
+
+const FIT_META: Record<Fit, { tone: ChipTone; label: string }> = {
+  fits: { tone: 'active', label: 'Fits' },
+  tight: { tone: 'warning', label: 'Tight' },
+  short: { tone: 'critical', label: 'Short' },
+};
 
 // Manifest review status → chip tone.
 const MANIFEST_TONE: Record<string, ChipTone> = {
@@ -176,6 +192,12 @@ export default function RightIntelligencePanel({
   ];
 
   const dispatchableTeams = teams.filter((t) => t.status === 'active' || t.status === 'idle');
+
+  // Estimated cargo mass for the capacity-fit signal. Water (1 L ≈ 1 kg) is the dominant mass of
+  // a relief load, so we use the manifest's water requirement as the estimate — clearly "est."
+  // in the UI (the manifest carries no per-unit weights to sum exactly; honest + free-tier).
+  const estCargoKg = finalWater;
+  const recommendedTeam = recommendTeam(dispatchableTeams, selectedBarangay, estCargoKg);
 
   return (
     <DetailPanel
@@ -370,71 +392,101 @@ export default function RightIntelligencePanel({
           </>
         )}
 
-        {/* ── Dispatch ── */}
+        {/* ── Dispatch: match-quality-first ── */}
         {drawerTab === 'dispatch' && (
-          <div className="p-4 space-y-4">
+          <>
             {(() => {
               const activeRoute = routes.find(
                 (r) => r.status === 'active' && r.stops.some((s) => s.barangayId === selectedBarangay.id),
               );
               if (!activeRoute) return null;
               return (
-                <div className="rounded-control border border-active/30 bg-active/10 px-3 py-2.5">
-                  <div className="flex items-center gap-2 text-[12px] text-active font-medium">
-                    <span className="relative flex h-2 w-2">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-active/60" />
-                      <span className="relative inline-flex h-2 w-2 rounded-full bg-active" />
-                    </span>
-                    {activeRoute.teamName} en route — {(activeRoute.totalDistanceM / 1000).toFixed(1)} km
-                  </div>
-                  <button
-                    onClick={() => onMarkReached(activeRoute.id)}
-                    className="mt-2 w-full min-h-[44px] py-2 border border-active/40 bg-active/10 text-active hover:bg-active/20 rounded-control font-medium transition-colors duration-100 cursor-pointer"
-                  >
-                    Mark area reached
-                  </button>
-                </div>
-              );
-            })()}
-            <div>
-              <div className="text-[12px] text-muted mb-2">Nearest logistics hubs</div>
-              <div className="space-y-1.5">
-                {(facilities ?? []).slice(0, 2).map((hub) => (
-                  <div key={hub.id} className="flex items-center justify-between">
-                    <span className="text-fg truncate">{hub.name}</span>
-                    <span className="text-[12px] text-muted font-mono tabular-nums shrink-0">{hub.capacityPercent ? `${hub.capacityPercent}%` : '—'}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="border-t border-line pt-3">
-              <div className="text-[12px] text-muted mb-2">Available teams</div>
-              <div className="space-y-2">
-                {dispatchableTeams.map((team) => (
-                  <div key={team.id} className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-fg truncate">{team.name}</div>
-                      <div className="text-[12px] text-muted">
-                        <span className="font-mono tabular-nums">{team.capacityKg.toLocaleString()}</span> kg
-                      </div>
+                <Section title="Convoy status" divider={false}>
+                  <div className="rounded-card border border-active/30 bg-active/10 px-3 py-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-fg font-medium truncate">{activeRoute.teamName}</span>
+                      <Chip tone="active">en route</Chip>
                     </div>
+                    <p className="mt-1 text-[12px] text-muted">
+                      <span className="font-mono tabular-nums">{(activeRoute.totalDistanceM / 1000).toFixed(1)}</span> km
+                      {' · '}
+                      <span title="A simulated convoy marker (Part A) glides part-way along the route for the demo and parks short of the destination — decorative, not live tracking.">sim convoy holding mid-route</span>
+                    </p>
                     <button
-                      onClick={() => onDispatchTeam(team.id, selectedBarangay.id)}
-                      className="px-3 py-1.5 border border-line text-fg hover:bg-raised rounded-control text-[12px] transition-colors duration-100 cursor-pointer shrink-0"
+                      onClick={() => onMarkReached(activeRoute.id)}
+                      className="mt-3 w-full min-h-[44px] py-2 bg-active text-bg hover:brightness-110 rounded-control font-medium transition-[filter] duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-active/50"
                     >
-                      Dispatch
+                      Mark area reached
                     </button>
                   </div>
-                ))}
-              </div>
-            </div>
+                </Section>
+              );
+            })()}
 
-            <p className="border-t border-line pt-3 text-[12px] text-muted leading-relaxed">
-              OR-Tools generates ETAs from current road blocks and the pgRouting matrix. Dispatch requires
-              human confirmation — no automatic dispatches are executed.
-            </p>
-          </div>
+            <Section
+              title="Available teams"
+              action={
+                <span
+                  className="text-muted cursor-help"
+                  title="Distance is straight-line from the team base (est., not the pgRouting road distance). Fit compares team capacity to the estimated water-dominant cargo mass. OR-Tools computes the real route on dispatch; nothing dispatches automatically."
+                >
+                  <Info className="w-3.5 h-3.5" aria-hidden />
+                </span>
+              }
+            >
+              {dispatchableTeams.length === 0 ? (
+                <p className="text-[12px] text-muted">No dispatchable teams right now.</p>
+              ) : (
+                <div className="space-y-2">
+                  {dispatchableTeams.map((team) => {
+                    const fit = capacityFit(team, estCargoKg);
+                    const meta = FIT_META[fit];
+                    const km = estDistanceKm(team, selectedBarangay);
+                    const isRec = recommendedTeam?.id === team.id;
+                    return (
+                      <div
+                        key={team.id}
+                        className={`rounded-control border px-3 py-2.5 ${isRec ? 'border-active/40 bg-active/5' : 'border-line'}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="flex items-center gap-2 min-w-0">
+                            <TeamIcon type={team.type} />
+                            <span className="text-fg truncate">{team.name}</span>
+                          </span>
+                          {isRec && <Chip tone="active">Recommended</Chip>}
+                        </div>
+                        <div className="mt-2 flex items-center justify-between gap-2">
+                          <span className="flex items-center gap-2 text-[12px] text-muted">
+                            <span className="font-mono tabular-nums">~{km.toFixed(1)}</span> km est.
+                            <span aria-hidden>·</span>
+                            <span className="font-mono tabular-nums">{team.capacityKg.toLocaleString()}</span> kg
+                            <Chip tone={meta.tone}>{meta.label}</Chip>
+                          </span>
+                          <button
+                            onClick={() => onDispatchTeam(team.id, selectedBarangay.id)}
+                            className="px-3 py-1.5 border border-line text-fg hover:bg-raised rounded-control text-[12px] transition-colors duration-150 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/40"
+                          >
+                            Dispatch
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Section>
+
+            {(facilities ?? []).length > 0 && (
+              <Section title="Logistics source">
+                <p className="text-[13px] text-fg">
+                  From {facilities![0].name}
+                  {typeof facilities![0].capacityPercent === 'number' && (
+                    <span className="text-muted"> · <span className="font-mono tabular-nums">{facilities![0].capacityPercent}%</span> stocked</span>
+                  )}
+                </p>
+              </Section>
+            )}
+          </>
         )}
       </div>
     </DetailPanel>
