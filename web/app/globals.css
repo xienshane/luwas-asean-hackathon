@@ -92,3 +92,8 @@ select {
 .luwas-convoy__sim { font: 600 8px/1 ui-monospace, monospace; text-transform: uppercase; letter-spacing: 0.1em; color: #06281f; opacity: 0.7; padding-right: 1px; }
 .luwas-convoy--parked::after { content: ''; position: absolute; inset: -3px; border-radius: 11px; box-shadow: 0 0 0 2px var(--color-active); animation: luwas-pulse-ring 1.8s ease-out infinite; }
 @media (prefers-reduced-motion: reduce) { .luwas-convoy--parked::after { animation: none; } }
+
+/* Rail crossfade (LUWAS Part B) — fade the incoming triage/barangay/route panel in on mount. */
+@keyframes luwas-rail-fade { from { opacity: 0; } to { opacity: 1; } }
+.luwas-rail-swap { animation: luwas-rail-fade 150ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .luwas-rail-swap { animation: none; } }
