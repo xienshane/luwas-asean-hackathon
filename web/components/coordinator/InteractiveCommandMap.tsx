@@ -55,21 +55,6 @@ interface InteractiveCommandMapProps {
   active?: boolean;
 }
 
-// ─── Distance Helper (Haversine Formula) ──────────────────────────────────────
-const calculateDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-  const R = 6371; // Earth radius in km
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-};
-
 // ─── Theme Helpers (calm tokens: reached / escalating / critical) ─────────────
 
 // Silent Area pin state → color. White-ish = reached, amber = escalating,
@@ -139,7 +124,6 @@ export default function InteractiveCommandMap({
 
   const [routeGeometries, setRouteGeometries] = useState<Record<string, [number, number][]>>({});
   const [roadGeometries, setRoadGeometries] = useState<Record<string, [number, number][]>>({}); // Store actual road paths
-  const [selectedRoutePath, setSelectedRoutePath] = useState<[number, number][] | null>(null); // Dynamic path for selected report
   const [teamRouteGeometries, setTeamRouteGeometries] = useState<Record<string, [number, number][]>>({}); // OSRM-snapped per-team route paths
 
   // Minimal default: barangay risk + active routes + reports. Roads, teams,
@@ -198,19 +182,6 @@ export default function InteractiveCommandMap({
   );
 
   // Helper to find the nearest facility hub to a specific coordinate
-  const getNearestHubToCoords = useCallback((lat: number, lng: number) => {
-    let nearest: LocationHub | undefined = facilities[0];
-    let minDist = Infinity;
-    facilities.forEach((hub) => {
-      const dist = calculateDistanceKm(lat, lng, hub.latitude, hub.longitude);
-      if (dist < minDist) {
-        minDist = dist;
-        nearest = hub;
-      }
-    });
-    return { hub: nearest, distance: minDist };
-  }, [facilities]);
-
   // ── 1. Generate Barangay Polygons ─────────────────────────────────
   const generateBarangayPolygon = useCallback((barangay: Barangay): [number, number][] => {
     const centerLng = barangay.longitude;
@@ -289,58 +260,6 @@ export default function InteractiveCommandMap({
       active = false;
     };
   }, [edges]);
-
-  // ── 3. Dynamic Route Generation to selected Report from Nearest Hub ──
-  useEffect(() => {
-    if (!selectedReport) {
-      setSelectedRoutePath(null);
-      return;
-    }
-
-    let active = true;
-    const { hub } = getNearestHubToCoords(selectedReport.latitude, selectedReport.longitude);
-    if (!hub) return; // no facilities loaded yet → no depot to route from
-
-    const fetchIncidentRoute = async () => {
-      try {
-        const correctCoords = `${hub.longitude},${hub.latitude};${selectedReport.longitude},${selectedReport.latitude}`;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6000);
-        
-        const res = await fetch(
-          `https://router.project-osrm.org/route/v1/driving/${correctCoords}?overview=full&geometries=geojson`,
-          { signal: controller.signal }
-        );
-        clearTimeout(timeoutId);
-
-        if (res.ok && active) {
-          const data = await res.json();
-          const geometry = data.routes?.[0]?.geometry?.coordinates;
-          if (geometry?.length) {
-            setSelectedRoutePath(geometry);
-          } else {
-            setSelectedRoutePath([
-              [hub.longitude, hub.latitude],
-              [selectedReport.longitude, selectedReport.latitude]
-            ]);
-          }
-        }
-      } catch (e) {
-        console.warn("Failed to fetch custom OSRM path to selected incident", e);
-        if (active) {
-          setSelectedRoutePath([
-            [hub.longitude, hub.latitude],
-            [selectedReport.longitude, selectedReport.latitude]
-          ]);
-        }
-      }
-    };
-
-    fetchIncidentRoute();
-    return () => {
-      active = false;
-    };
-  }, [selectedReport, getNearestHubToCoords]);
 
   // ── Load MapLibre from npm (client-only dynamic import) once ─────────────
   // No persisted "already loaded" ref guard: under React StrictMode (on by
@@ -497,11 +416,6 @@ export default function InteractiveCommandMap({
         data: { type: 'FeatureCollection', features: [] },
       });
 
-      map.addSource('routes-source', {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] },
-      });
-
       // Barangay layers
       map.addLayer({
         id: 'barangays-fill',
@@ -598,39 +512,6 @@ export default function InteractiveCommandMap({
           'line-dasharray': [4, 3],
           'line-opacity': 0.75,
         },
-      });
-
-      // Dynamic incident line (nearest hub -> selected report)
-      map.addLayer({
-        id: 'routes-layer-casing',
-        type: 'line',
-        source: 'routes-source',
-        paint: {
-          'line-color': ROUTE_CASING,
-          'line-width': 8,
-          'line-opacity': 0.5,
-        },
-        layout: {
-          'line-cap': 'round',
-          'line-join': 'round',
-          'visibility': 'none'
-        }
-      });
-
-      map.addLayer({
-        id: 'routes-layer',
-        type: 'line',
-        source: 'routes-source',
-        paint: {
-          'line-color': ROUTE_ACTIVE,
-          'line-width': 4,
-          'line-opacity': 0.95,
-        },
-        layout: {
-          'line-cap': 'round',
-          'line-join': 'round',
-          'visibility': 'none'
-        }
       });
 
       // ── Per-team OR-Tools route layers (always-on; distinct from the dynamic incident line) ──
@@ -1012,42 +893,6 @@ export default function InteractiveCommandMap({
       });
     }
   }, [isMapLoaded, mapLayers.roads, edges, roadGeometries]);
-
-  // ── Active Teal Route Rendering ──
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !isMapLoaded) return;
-
-    const routesSource = map.getSource('routes-source');
-    if (routesSource) {
-      if (mapLayers.routes && selectedRoutePath) {
-        routesSource.setData({
-          type: 'FeatureCollection',
-          features: [
-            {
-              type: 'Feature',
-              properties: { status: 'active' },
-              geometry: {
-                type: 'LineString',
-                coordinates: selectedRoutePath
-              }
-            }
-          ]
-        });
-        map.setLayoutProperty('routes-layer', 'visibility', 'visible');
-        map.setLayoutProperty('routes-layer-casing', 'visibility', 'visible');
-      } else {
-        routesSource.setData({
-          type: 'FeatureCollection',
-          features: []
-        });
-        if (map.getLayer('routes-layer')) {
-          map.setLayoutProperty('routes-layer', 'visibility', 'none');
-          map.setLayoutProperty('routes-layer-casing', 'visibility', 'none');
-        }
-      }
-    }
-  }, [isMapLoaded, mapLayers.routes, selectedRoutePath]);
 
   // ── OSRM-snap per-team OR-Tools routes onto real roads (waypoints: team base -> ordered stops) ──
   useEffect(() => {
