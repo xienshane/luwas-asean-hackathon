@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import type { Marker, Popup, MapMouseEvent, MapLayerMouseEvent, MapGeoJSONFeature, LngLat } from 'maplibre-gl';
 import type { Barangay, FieldReport, Team, RoadEdge, Route, Volunteer, LocationHub } from '@/lib/types/coordinator';
+import { routeLineCoords } from '@/lib/coordinator/routeGeometry';
 import { COLOR, silentAreaState, STATE_COLOR, STATE_LABEL } from './ui';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -1097,8 +1098,8 @@ export default function InteractiveCommandMap({
         )
         .join('');
 
-      const coordinates =
-        teamRouteGeometries[route.id] ?? route.path.map((p) => [p.lng, p.lat] as [number, number]);
+      // pgRouting path first (block-aware); OSRM snap only as a degenerate-path fallback.
+      const coordinates = routeLineCoords(route, teamRouteGeometries[route.id]);
 
       return {
         type: 'Feature',
