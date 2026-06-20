@@ -12,6 +12,7 @@ import {
 import type { Marker, Popup, MapMouseEvent, MapLayerMouseEvent, MapGeoJSONFeature, LngLat } from 'maplibre-gl';
 import type { Barangay, FieldReport, Team, RoadEdge, Route, Volunteer, LocationHub } from '@/lib/types/coordinator';
 import { routeLineCoords } from '@/lib/coordinator/routeGeometry';
+import { pointAtFraction, stopFraction } from '@/lib/coordinator/pathInterpolate';
 import { coordsChanged } from '@/lib/coordinator/ghostRoutes';
 import { COLOR, silentAreaState, STATE_COLOR, STATE_LABEL } from './ui';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -26,6 +27,21 @@ const ROUTE_PLANNED = '#7c8aa8';  // visible dashed planned
 const ROUTE_DONE = '#46506a';     // dimmed completed (unchanged)
 const ROUTE_CASING = '#0b1120';
 const BARANGAY_OUTLINE = '#3a4660';
+
+// Part A — demo convoy. A clearly-labelled SIMULATED vehicle (not live telemetry) that eases
+// along the real-road route geometry and parks short of the destination. DEMO_CONVOY is the
+// one-line kill switch; CONVOY_MS is the ease duration before it parks at stopFraction.
+const DEMO_CONVOY = true;
+const CONVOY_MS = 5000;
+
+// Convoy chip icon in the team-type language, dark stroke for contrast on the active-green chip.
+function convoyIcon(type?: string): string {
+  const a = `width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#06281f" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"`;
+  if (type === 'boat') return `<svg ${a}><path d="M12 3v17M2 10c0 4.4 3.6 8 10 8s10-3.6 10-8H2z"/></svg>`;
+  if (type === 'ambulance') return `<svg ${a}><path d="M19 12h-4l-3 9L9 3l-3 9H2"/></svg>`;
+  if (type === '4x4') return `<svg ${a}><circle cx="18.5" cy="17.5" r="2.5"/><circle cx="5.5" cy="17.5" r="2.5"/><path d="M14 6H5a2 2 0 0 0-2 2v6h18v-3a3 3 0 0 0-3-3h-4Z"/></svg>`;
+  return `<svg ${a}><rect x="1" y="3" width="15" height="13" rx="2" ry="2"/><polygon points="16 8 20 8 23 11 23 16 16 16"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`;
+}
 
 interface InteractiveCommandMapProps {
   barangays: Barangay[];
@@ -113,6 +129,11 @@ export default function InteractiveCommandMap({
   const volunteerMarkersRef = useRef<Marker[]>([]);
   const hubMarkersRef = useRef<Marker[]>([]);
   const routeEndpointMarkersRef = useRef<Marker[]>([]);
+  const vehicleMarkersRef = useRef<Map<string, Marker>>(new Map());
+  const convoyStateRef = useRef<Map<string, {
+    coords: [number, number][]; stop: number; start: number; parked: boolean; iconEl: HTMLElement | null;
+  }>>(new Map());
+  const convoyRafRef = useRef<number>(0);
   const prevRenderedRef = useRef<Map<string, [number, number][]>>(new Map());
   const ghostPathsRef = useRef<Map<string, [number, number][]>>(new Map());
 
@@ -1136,6 +1157,108 @@ export default function InteractiveCommandMap({
       routeEndpointMarkersRef.current.push(new M({ element: startEl }).setLngLat(start).addTo(map));
       routeEndpointMarkersRef.current.push(new M({ element: endEl }).setLngLat(end).addTo(map));
     });
+  }, [isMapLoaded, routes, teams, mapLayers.routes, teamRouteGeometries]);
+
+  // Demo convoy marker (Part A). A clearly-labelled SIMULATED vehicle eases from HQ along the
+  // SAME real-road geometry the route line draws and PARKS short of the destination (never
+  // arrives) — decorative motion for the demo narrative, not live telemetry. Honest-by-design:
+  // a "sim" pill rides the marker, it stops at stopFraction, and DEMO_CONVOY kills it in one line.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded || !maplibreglRef.current) return;
+
+    const markers = vehicleMarkersRef.current;
+    const state = convoyStateRef.current;
+    const M = maplibreglRef.current.Marker;
+
+    // Which routes should carry a convoy right now? (obeys DEMO_CONVOY + the routes layer toggle)
+    const activeIds = new Set<string>();
+    if (DEMO_CONVOY && mapLayers.routes) {
+      routes.filter((r) => r.status === 'active').forEach((r) => activeIds.add(r.id));
+    }
+
+    // Drop convoys for routes that are no longer active/present (e.g. mark-reached / complete).
+    for (const [id, marker] of markers) {
+      if (!activeIds.has(id)) {
+        marker.remove();
+        markers.delete(id);
+        state.delete(id);
+      }
+    }
+
+    const reduceMotion =
+      typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+    routes.filter((r) => activeIds.has(r.id)).forEach((route) => {
+      let coords = routeLineCoords(route, teamRouteGeometries[route.id]);
+      if (coords.length < 2) return;
+      // HQ-anchor so f=0 is always HQ — geometry direction is not guaranteed (reuse endpoint logic).
+      const team = teams.find((t) => t.id === route.teamId);
+      if (team) {
+        const d2 = (c: [number, number]) =>
+          (c[0] - team.baseLocation.lng) ** 2 + (c[1] - team.baseLocation.lat) ** 2;
+        if (d2(coords[coords.length - 1]) < d2(coords[0])) coords = [...coords].reverse();
+      }
+      const stop = stopFraction(route.id);
+
+      let entry = state.get(route.id);
+      if (!entry) {
+        // New convoy: build the marker, record start time so re-renders never restart the ease.
+        const el = document.createElement('div');
+        el.className = 'luwas-convoy';
+        el.innerHTML =
+          `<span class="luwas-convoy__icon">${convoyIcon(team?.type)}</span>` +
+          `<span class="luwas-convoy__sim">sim</span>`;
+        const p0 = pointAtFraction(coords, 0);
+        const marker = new M({ element: el }).setLngLat([p0.lng, p0.lat]).addTo(map);
+        markers.set(route.id, marker);
+        entry = {
+          coords, stop, start: performance.now(), parked: false,
+          iconEl: el.querySelector('.luwas-convoy__icon'),
+        };
+        state.set(route.id, entry);
+      } else {
+        // Existing convoy: refresh geometry (a reroute can change it) but keep the start time.
+        entry.coords = coords;
+        entry.stop = stop;
+      }
+
+      // Reduced motion: place parked at stopFraction with no rAF (static, signals "holding").
+      if (reduceMotion) {
+        const p = pointAtFraction(coords, stop);
+        const marker = markers.get(route.id)!;
+        marker.setLngLat([p.lng, p.lat]);
+        if (entry.iconEl) entry.iconEl.style.transform = `rotate(${p.bearing}deg)`;
+        marker.getElement().classList.add('luwas-convoy--parked');
+        entry.parked = true;
+      }
+    });
+
+    if (reduceMotion) return; // markers placed statically; no animation loop.
+
+    // One shared rAF loop drives ALL convoys (mirror the flow loop). Each parks — stops updating —
+    // once it reaches its stopFraction, so there is no per-frame work for a parked convoy.
+    const ease = (t: number) => 1 - (1 - t) ** 3; // ease-out cubic
+    const tick = () => {
+      const now = performance.now();
+      for (const [id, entry] of state) {
+        if (entry.parked) continue;
+        const marker = markers.get(id);
+        if (!marker) continue;
+        const t = Math.min(1, (now - entry.start) / CONVOY_MS);
+        const f = ease(t) * entry.stop;
+        const p = pointAtFraction(entry.coords, f);
+        marker.setLngLat([p.lng, p.lat]);
+        if (entry.iconEl) entry.iconEl.style.transform = `rotate(${p.bearing}deg)`;
+        if (t >= 1) {
+          entry.parked = true;
+          marker.getElement().classList.add('luwas-convoy--parked');
+        }
+      }
+      convoyRafRef.current = requestAnimationFrame(tick);
+    };
+    convoyRafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(convoyRafRef.current);
   }, [isMapLoaded, routes, teams, mapLayers.routes, teamRouteGeometries]);
 
   // Directional "flow" on active routes (motion-meaning). Steps a dash pattern so the highlight

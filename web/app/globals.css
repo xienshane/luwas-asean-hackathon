@@ -85,3 +85,10 @@ select {
 .luwas-end__ring { position: absolute; inset: 0; border-radius: 9999px; }
 .luwas-end--active .luwas-end__ring { animation: luwas-pulse-ring 1.8s ease-out infinite; }
 @media (prefers-reduced-motion: reduce) { .luwas-end--active .luwas-end__ring { animation: none; } }
+
+/* Demo convoy marker (LUWAS Part A) — a SIMULATED vehicle chip; the "sim" pill keeps it honest. */
+.luwas-convoy { position: relative; display: flex; align-items: center; gap: 4px; padding: 4px 5px; border-radius: 9px; background: var(--color-active); border: 1px solid rgba(11,17,32,0.55); box-shadow: 0 0 0 3px rgba(11,17,32,0.85), 0 2px 8px rgba(0,0,0,0.5); will-change: transform; }
+.luwas-convoy__icon { display: flex; align-items: center; justify-content: center; transition: transform 0.2s linear; }
+.luwas-convoy__sim { font: 600 8px/1 ui-monospace, monospace; text-transform: uppercase; letter-spacing: 0.1em; color: #06281f; opacity: 0.7; padding-right: 1px; }
+.luwas-convoy--parked::after { content: ''; position: absolute; inset: -3px; border-radius: 11px; box-shadow: 0 0 0 2px var(--color-active); animation: luwas-pulse-ring 1.8s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) { .luwas-convoy--parked::after { animation: none; } }
