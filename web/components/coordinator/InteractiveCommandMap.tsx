@@ -33,6 +33,7 @@ interface InteractiveCommandMapProps {
   edges: RoadEdge[];
   routes: Route[];
   facilities: LocationHub[];
+  dispatchPreview?: { teamId: string; from: { lat: number; lng: number }; to: { lat: number; lng: number } } | null;
   volunteers: Volunteer[];
   selectedBarangay: Barangay | null;
   onSelectBarangay: (b: Barangay) => void;
@@ -97,6 +98,7 @@ export default function InteractiveCommandMap({
   edges,
   routes,
   facilities,
+  dispatchPreview,
   volunteers,
   selectedBarangay,
   onSelectBarangay,
@@ -668,6 +670,15 @@ export default function InteractiveCommandMap({
         },
       });
 
+      // Provisional dispatch line (hub -> area), shown via OSRM while the real pgRouting route
+      // computes. Amber + dashed, distinct from the route of record; replaced by the active route.
+      map.addSource('dispatch-preview-source', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      map.addLayer({
+        id: 'dispatch-preview-line', type: 'line', source: 'dispatch-preview-source',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': COLOR.warning, 'line-width': 3, 'line-opacity': 0.9, 'line-dasharray': [1.5, 1.2] },
+      });
+
       // Per-team route hover: ETA + cargo summary + ordered stops popover
       const onTeamRouteHover = (e: MapLayerMouseEvent) => {
         map.getCanvas().style.cursor = 'pointer';
@@ -1119,6 +1130,43 @@ export default function InteractiveCommandMap({
     src.setData({ type: 'FeatureCollection', features });
   }, [isMapLoaded, mapLayers.routes, routes, teams, teamRouteGeometries]);
 
+  // Provisional dispatch preview: OSRM-snap hub -> area for a responsive line until the real
+  // pgRouting route lands (parent nulls dispatchPreview then). OSRM is acceptable here because
+  // this is an explicitly provisional indicator, not the block-aware route of record.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded) return;
+    const src = map.getSource('dispatch-preview-source') as { setData: (d: unknown) => void } | undefined;
+    if (!src) return;
+    if (!dispatchPreview) { src.setData({ type: 'FeatureCollection', features: [] }); return; }
+
+    let activePreview = true;
+    const { from, to } = dispatchPreview;
+    const straight = [[from.lng, from.lat], [to.lng, to.lat]] as [number, number][];
+    const draw = (coords: [number, number][]) => {
+      if (!activePreview) return;
+      src.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } }] });
+    };
+    draw(straight); // show instantly; refine with OSRM if it answers
+
+    (async () => {
+      try {
+        const c = `${from.lng},${from.lat};${to.lng},${to.lat}`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${c}?overview=full&geometries=geojson`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          const data = await res.json();
+          const geom = data.routes?.[0]?.geometry?.coordinates;
+          if (geom?.length) draw(geom);
+        }
+      } catch { /* keep the straight provisional line */ }
+    })();
+
+    return () => { activePreview = false; };
+  }, [isMapLoaded, dispatchPreview]);
+
   // ── Interactive Report Markers (Custom SVG styling for Pending/Confirmed/Flagged) ──
   useEffect(() => {
     const map = mapRef.current;
@@ -1488,6 +1536,7 @@ export default function InteractiveCommandMap({
     toggleLayer('team-routes-casing', mapLayers.routes);
     toggleLayer('team-routes-line', mapLayers.routes);
     toggleLayer('team-routes-line-planned', mapLayers.routes);
+    toggleLayer('dispatch-preview-line', mapLayers.routes);
   }, [mapLayers, isMapLoaded]);
 
   // ── Fullscreen Setup ──
