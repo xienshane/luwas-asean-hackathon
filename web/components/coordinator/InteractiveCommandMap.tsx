@@ -12,6 +12,7 @@ import {
 import type { Marker, Popup, MapMouseEvent, MapLayerMouseEvent, MapGeoJSONFeature, LngLat } from 'maplibre-gl';
 import type { Barangay, FieldReport, Team, RoadEdge, Route, Volunteer, LocationHub } from '@/lib/types/coordinator';
 import { routeLineCoords } from '@/lib/coordinator/routeGeometry';
+import { coordsChanged } from '@/lib/coordinator/ghostRoutes';
 import { COLOR, silentAreaState, STATE_COLOR, STATE_LABEL } from './ui';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -125,6 +126,8 @@ export default function InteractiveCommandMap({
   const volunteerMarkersRef = useRef<Marker[]>([]);
   const hubMarkersRef = useRef<Marker[]>([]);
   const routeEndpointMarkersRef = useRef<Marker[]>([]);
+  const prevRenderedRef = useRef<Map<string, [number, number][]>>(new Map());
+  const ghostPathsRef = useRef<Map<string, [number, number][]>>(new Map());
 
   // Tooltip popup reference
   // Always assigned before any hover handler reads it (see map 'load'); typed non-null to
@@ -636,6 +639,15 @@ export default function InteractiveCommandMap({
         data: { type: 'FeatureCollection', features: [] },
       });
 
+      // Ghost of a route's PREVIOUS path, kept at low opacity after a reroute until the area is
+      // reached or it reroutes again. Added before the live layers so it renders underneath.
+      map.addSource('team-routes-ghost-source', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      map.addLayer({
+        id: 'team-routes-ghost', type: 'line', source: 'team-routes-ghost-source',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#64748b', 'line-width': 3, 'line-opacity': 0.3, 'line-dasharray': [2, 2] },
+      });
+
       map.addLayer({
         id: 'team-routes-casing',
         type: 'line',
@@ -1122,6 +1134,15 @@ export default function InteractiveCommandMap({
       // pgRouting path first (block-aware); OSRM snap only as a degenerate-path fallback.
       const coordinates = routeLineCoords(route, teamRouteGeometries[route.id]);
 
+      // Ghost capture: if an ACTIVE route's geometry changed vs last render, keep the old path
+      // as a ghost (persists until reached or the next reroute). coordsChanged is unit-tested.
+      const prevCoords = prevRenderedRef.current.get(route.id) ?? [];
+      if (route.status === 'active' && coordsChanged(prevCoords, coordinates)) {
+        ghostPathsRef.current.set(route.id, prevCoords);
+      }
+      if (route.status === 'completed') ghostPathsRef.current.delete(route.id);
+      prevRenderedRef.current.set(route.id, coordinates);
+
       return {
         type: 'Feature',
         properties: {
@@ -1138,6 +1159,16 @@ export default function InteractiveCommandMap({
     });
 
     src.setData({ type: 'FeatureCollection', features });
+
+    // Drop ghosts for routes that no longer exist, then publish the ghost geometry.
+    const liveIds = new Set(routes.map((r) => r.id));
+    for (const id of [...ghostPathsRef.current.keys()]) if (!liveIds.has(id)) ghostPathsRef.current.delete(id);
+    const ghostSrc = map.getSource('team-routes-ghost-source') as { setData: (d: unknown) => void } | undefined;
+    ghostSrc?.setData({
+      type: 'FeatureCollection',
+      features: [...ghostPathsRef.current.values()].filter((c) => c.length >= 2)
+        .map((c) => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: c } })),
+    });
   }, [isMapLoaded, mapLayers.routes, routes, teams, teamRouteGeometries]);
 
   // Provisional dispatch preview: OSRM-snap hub -> area for a responsive line until the real
@@ -1617,6 +1648,7 @@ export default function InteractiveCommandMap({
     toggleLayer('roads-layer-solid', mapLayers.roads);
     toggleLayer('roads-layer-blocked', mapLayers.roads);
     toggleLayer('team-routes-casing', mapLayers.routes);
+    toggleLayer('team-routes-ghost', mapLayers.routes);
     toggleLayer('team-routes-line', mapLayers.routes);
     toggleLayer('team-routes-flow', mapLayers.routes);
     toggleLayer('team-routes-line-planned', mapLayers.routes);
