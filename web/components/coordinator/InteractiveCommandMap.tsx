@@ -351,10 +351,12 @@ export default function InteractiveCommandMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isMapLoaded) return;
+    // Only ever zoom in: keep the current zoom if it's already tighter than the
+    // target so selecting from outside the map never pulls the coordinator back out.
     if (selectedReport) {
-      map.flyTo({ center: [selectedReport.longitude, selectedReport.latitude], zoom: 13.2, essential: true });
+      map.flyTo({ center: [selectedReport.longitude, selectedReport.latitude], zoom: Math.max(map.getZoom(), 13.2), essential: true });
     } else if (selectedBarangay) {
-      map.flyTo({ center: [selectedBarangay.longitude, selectedBarangay.latitude], zoom: 12.5, essential: true });
+      map.flyTo({ center: [selectedBarangay.longitude, selectedBarangay.latitude], zoom: Math.max(map.getZoom(), 12.5), essential: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBarangay?.id, selectedReport?.id, isMapLoaded]);
@@ -392,9 +394,10 @@ export default function InteractiveCommandMap({
     if (barangay) {
       onSelectBarangay(barangay);
       setSelectedEdge(null);
-      mapRef.current?.flyTo({
+      const map = mapRef.current;
+      map?.flyTo({
         center: [barangay.longitude, barangay.latitude],
-        zoom: 12.5,
+        zoom: Math.max(map.getZoom(), 12.5), // only zoom in, never out
         essential: true
       });
     }
@@ -1380,7 +1383,7 @@ export default function InteractiveCommandMap({
         setSelectedEdge(null);
         map.flyTo({
           center: [report.longitude, report.latitude],
-          zoom: 13.2,
+          zoom: Math.max(map.getZoom(), 13.2), // only zoom in, never out
           essential: true,
           speed: 1.2
         });
