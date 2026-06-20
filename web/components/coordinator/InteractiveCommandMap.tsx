@@ -541,20 +541,27 @@ export default function InteractiveCommandMap({
         },
       });
 
+      // Closed road — hazard styling, deliberately NOT in the route color family. Dark casing
+      // gives ≥3:1 on the basemap; heavier core + distinct dash reads as a barrier, not a route.
+      map.addLayer({
+        id: 'roads-layer-blocked-casing',
+        type: 'line',
+        source: 'roads-source',
+        filter: ['==', ['get', 'status'], 'blocked'],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#1a0606', 'line-width': 7, 'line-opacity': 0.95 },
+      });
       map.addLayer({
         id: 'roads-layer-blocked',
         type: 'line',
         source: 'roads-source',
         filter: ['==', ['get', 'status'], 'blocked'],
-        layout: {
-          'line-cap': 'round',
-          'line-join': 'round',
-        },
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': COLOR.critical,
-          'line-width': 2.5,
-          'line-dasharray': [4, 3],
-          'line-opacity': 0.75,
+          'line-width': 4,
+          'line-opacity': 1,
+          'line-dasharray': [2, 1.4],
         },
       });
 
@@ -624,6 +631,11 @@ export default function InteractiveCommandMap({
         id: 'dispatch-preview-line', type: 'line', source: 'dispatch-preview-source',
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: { 'line-color': COLOR.warning, 'line-width': 3, 'line-opacity': 0.9, 'line-dasharray': [1.5, 1.2] },
+      });
+
+      // A closure is the REASON a route bends — it must sit above the routes and the ghost.
+      ['roads-layer-blocked-casing', 'roads-layer-blocked'].forEach((id) => {
+        if (map.getLayer(id)) map.moveLayer(id); // move to top of the current stack
       });
 
       // Per-team route hover: ETA + cargo summary + ordered stops popover
@@ -1662,6 +1674,7 @@ export default function InteractiveCommandMap({
     toggleLayer('barangays-outline', mapLayers.barangays);
     toggleLayer('barangays-labels', mapLayers.barangays);
     toggleLayer('roads-layer-solid', mapLayers.roads);
+    toggleLayer('roads-layer-blocked-casing', mapLayers.roads);
     toggleLayer('roads-layer-blocked', mapLayers.roads);
     toggleLayer('team-routes-casing', mapLayers.routes);
     toggleLayer('team-routes-ghost', mapLayers.routes);
