@@ -124,6 +124,7 @@ export default function InteractiveCommandMap({
   const teamMarkersRef = useRef<Marker[]>([]);
   const volunteerMarkersRef = useRef<Marker[]>([]);
   const hubMarkersRef = useRef<Marker[]>([]);
+  const routeEndpointMarkersRef = useRef<Marker[]>([]);
 
   // Tooltip popup reference
   // Always assigned before any hover handler reads it (see map 'load'); typed non-null to
@@ -1166,6 +1167,56 @@ export default function InteractiveCommandMap({
 
     return () => { activePreview = false; };
   }, [isMapLoaded, dispatchPreview]);
+
+  // Emphasized START (HQ) + END (destination) markers per active/planned route. Shape — not
+  // just color — distinguishes them (color-not-only); larger + haloed for contrast on the dark
+  // map; END pulses while active (motion-meaning, reduced-motion-guarded via CSS).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded || !maplibreglRef.current) return;
+    routeEndpointMarkersRef.current.forEach((m) => m.remove());
+    routeEndpointMarkersRef.current = [];
+    if (!mapLayers.routes) return;
+
+    const makeEl = (html: string, kind: 'start' | 'end', active: boolean) => {
+      const el = document.createElement('div');
+      el.className = `luwas-endpoint ${kind === 'end' ? `luwas-end ${active ? 'luwas-end--active' : ''}` : ''}`;
+      el.innerHTML = html;
+      return el;
+    };
+
+    routes.filter((r) => r.status === 'active' || r.status === 'planned').forEach((route) => {
+      const coords = routeLineCoords(route, teamRouteGeometries[route.id]);
+      if (coords.length < 2) return;
+      const start = coords[0];
+      const end = coords[coords.length - 1];
+      const destName = route.stops?.[route.stops.length - 1]?.barangayName ?? 'Destination';
+      const active = route.status === 'active';
+
+      const startEl = makeEl(
+        `<span class="luwas-endpoint__label" style="color:var(--color-active)">HQ</span>
+         <span style="display:flex;width:30px;height:30px;border-radius:8px;align-items:center;justify-content:center;
+           background:var(--color-active);box-shadow:0 0 0 3px rgba(11,17,32,0.9),0 2px 8px rgba(0,0,0,0.5)">
+           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#06281f" stroke-width="2.2"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V8l9-5 9 5v13"/><path d="M9 21v-6h6v6"/></svg>
+         </span>`, 'start', active);
+
+      const endEl = makeEl(
+        `<span class="luwas-endpoint__label" style="color:#fff">${destName}</span>
+         <span class="luwas-end__ring" style="box-shadow:0 0 0 2px var(--color-critical)"></span>
+         <span style="display:flex;width:30px;height:30px;border-radius:9999px 9999px 9999px 2px;rotate:45deg;
+           align-items:center;justify-content:center;background:var(--color-critical);
+           box-shadow:0 0 0 3px rgba(11,17,32,0.9),0 2px 8px rgba(0,0,0,0.5)">
+           <svg style="rotate:-45deg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff"
+             stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/>
+             <path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11Z"/></svg>
+         </span>`, 'end', active);
+
+      const M = maplibreglRef.current!.Marker;
+      routeEndpointMarkersRef.current.push(new M({ element: startEl }).setLngLat(start).addTo(map));
+      routeEndpointMarkersRef.current.push(new M({ element: endEl }).setLngLat(end).addTo(map));
+    });
+  }, [isMapLoaded, routes, mapLayers.routes, teamRouteGeometries]);
 
   // ── Interactive Report Markers (Custom SVG styling for Pending/Confirmed/Flagged) ──
   useEffect(() => {

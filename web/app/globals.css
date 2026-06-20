@@ -77,3 +77,11 @@ body {
 select {
   color-scheme: dark;
 }
+
+/* Route-endpoint emphasis (LUWAS Part B). */
+@keyframes luwas-pulse-ring { 0% { transform: scale(0.8); opacity: 0.7; } 70% { transform: scale(1.9); opacity: 0; } 100% { opacity: 0; } }
+.luwas-endpoint { position: relative; display: flex; align-items: center; justify-content: center; }
+.luwas-endpoint__label { position: absolute; top: -22px; white-space: nowrap; font: 600 11px/1 ui-monospace, monospace; letter-spacing: 0.08em; padding: 2px 6px; border-radius: 6px; background: rgba(11,17,32,0.85); }
+.luwas-end__ring { position: absolute; inset: 0; border-radius: 9999px; }
+.luwas-end--active .luwas-end__ring { animation: luwas-pulse-ring 1.8s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) { .luwas-end--active .luwas-end__ring { animation: none; } }
