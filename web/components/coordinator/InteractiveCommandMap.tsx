@@ -40,6 +40,7 @@ interface InteractiveCommandMapProps {
   onSelectBarangay: (b: Barangay) => void;
   selectedReport: FieldReport | null;
   onSelectReport: (r: FieldReport) => void;
+  onSelectRoute?: (route: Route) => void;
   scores: {
     barangayId: string; score: number; hoursSinceContact: number | null;
     timeFactor?: number; popDensityNorm?: number; hazardNorm?: number;
@@ -90,6 +91,7 @@ export default function InteractiveCommandMap({
   onSelectBarangay,
   selectedReport,
   onSelectReport,
+  onSelectRoute,
   scores,
   onUpdateRoadStatus,
   onBlockRoadAt,
@@ -169,6 +171,16 @@ export default function InteractiveCommandMap({
   useEffect(() => {
     barangaysRef.current = barangays;
   }, [barangays]);
+
+  // Route-line click is bound once at map load too, so read the current routes + callback via refs.
+  const routesRef = useRef(routes);
+  useEffect(() => {
+    routesRef.current = routes;
+  }, [routes]);
+  const onSelectRouteRef = useRef(onSelectRoute);
+  useEffect(() => {
+    onSelectRouteRef.current = onSelectRoute;
+  }, [onSelectRoute]);
 
   const getScoreData = useCallback(
     (barangayId: string) =>
@@ -366,6 +378,15 @@ export default function InteractiveCommandMap({
       });
     }
   }, [onSelectBarangay]);
+
+  // Clicking a route line jumps to the Teams & Dispatch tab focused on that route's team.
+  const handleRouteClick = useCallback((e: MapLayerMouseEvent) => {
+    if (blockModeRef.current) return;
+    const id = e.features?.[0]?.properties?.id;
+    if (!id) return;
+    const route = routesRef.current.find((r) => r.id === id);
+    if (route) onSelectRouteRef.current?.(route);
+  }, []);
 
   // ── Initialize MapLibre ──
   const initMap = () => {
@@ -617,6 +638,7 @@ export default function InteractiveCommandMap({
         map.on('mouseenter', lid, onTeamRouteHover);
         map.on('mousemove', lid, (e: MapLayerMouseEvent) => hoverPopupRef.current.setLngLat(e.lngLat));
         map.on('mouseleave', lid, onTeamRouteLeave);
+        map.on('click', lid, handleRouteClick);
       });
 
       // Event handlers
@@ -1149,7 +1171,18 @@ export default function InteractiveCommandMap({
 
     if (!mapLayers.reports) return;
 
+    // A dispatched area is already represented by its route destination pin, which would otherwise
+    // overlap the report marker. Hide report markers in barangays with an active/planned route;
+    // they reappear once the route completes.
+    const dispatchedBarangayIds = new Set(
+      routes
+        .filter((r) => r.status === 'active' || r.status === 'planned')
+        .map((r) => r.stops?.[r.stops.length - 1]?.barangayId)
+        .filter((id): id is string => Boolean(id)),
+    );
+
     reports.forEach((report) => {
+      if (report.barangayId && dispatchedBarangayIds.has(report.barangayId)) return;
       const isSelected = selectedReport?.id === report.id;
       const status = report.status;
       const bg = reportStatusColor(status);
@@ -1236,7 +1269,7 @@ export default function InteractiveCommandMap({
 
       reportMarkersRef.current.push(marker);
     });
-  }, [isMapLoaded, mapLayers.reports, reports, selectedReport, onSelectReport]);
+  }, [isMapLoaded, mapLayers.reports, reports, routes, selectedReport, onSelectReport]);
 
   // ── Interactive Team Markers (Custom SVGs categorized by Team Type) ──
   useEffect(() => {

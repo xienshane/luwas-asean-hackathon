@@ -32,6 +32,8 @@ import { PAGASA_CATEGORY_LABELS, type LiveConditions } from '@/lib/live/conditio
 
 export default function CommandDashboard() {
   const [currentView, setCurrentView] = useState('map');
+  // Team to focus when arriving on the Teams & Dispatch tab (e.g. after clicking its route).
+  const [focusTeamId, setFocusTeamId] = useState<string | null>(null);
 
   // Phase 6.1 — connectivity tier drives the degradation banner + action gating.
   const realtimeHealthy = useRealtimeHealth();
@@ -478,6 +480,11 @@ export default function CommandDashboard() {
     addActivityLog(`SUPPLY PLANNING: Relief manifest for ${bName} was [${status.toUpperCase()}] by coordinator.`, status === 'approved' ? 'success' : 'alert');
   };
 
+  const handleSelectRoute = (route: Route) => {
+    setFocusTeamId(route.teamId || null);
+    setCurrentView('teams');
+  };
+
   const handleDispatchTeam = async (teamId: string, barangayId: string) => {
     const tName = teams.find(t => t.id === teamId)?.name;
     const brgy = barangays.find(b => b.id === barangayId);
@@ -703,6 +710,7 @@ export default function CommandDashboard() {
                 onSelectBarangay={handleSelectBarangay}
                 selectedReport={selectedReport}
                 onSelectReport={handleSelectReport}
+                onSelectRoute={handleSelectRoute}
                 scores={scores}
                 onUpdateRoadStatus={handleUpdateRoadStatus}
                 onBlockRoadAt={handleBlockRoadAt}
@@ -760,6 +768,7 @@ export default function CommandDashboard() {
             routes={routes}
             barangays={barangays}
             onDispatchTeam={handleDispatchTeam}
+            focusTeamId={focusTeamId}
           />
         )}
 
