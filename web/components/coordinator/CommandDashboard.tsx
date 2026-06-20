@@ -21,6 +21,7 @@ import LeftSidebar from './LeftSidebar';
 import InteractiveCommandMap from './InteractiveCommandMap';
 import BottomOperationsConsole from './BottomOperationsConsole';
 import RightIntelligencePanel from './RightIntelligencePanel';
+import RouteDetailPanel from './RouteDetailPanel';
 import OperationsPanel from './OperationsPanel';
 import ReportsView from './ReportsView';
 import TeamsView from './TeamsView';
@@ -66,6 +67,7 @@ export default function CommandDashboard() {
   useEffect(() => { setManifests(live.manifests); }, [live.manifests]);
 
   const [selectedBarangay, setSelectedBarangay] = useState<Barangay | null>(null);
+  const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
   const [selectedReport, setSelectedReport] = useState<FieldReport | null>(null);
 
   const [scores, setScores] = useState<{ barangayId: string; score: number; hoursSinceContact: number | null; timeFactor: number; popDensityNorm: number; hazardNorm: number }[]>([]);
@@ -99,6 +101,7 @@ export default function CommandDashboard() {
 
   const handleSelectBarangay = (b: Barangay) => {
     setSelectedBarangay(b);
+    setSelectedRoute(null);
     const matchingReport = reports.find(r => r.barangayId === b.id && r.status === 'pending');
     if (matchingReport) {
       setSelectedReport(matchingReport);
@@ -480,8 +483,17 @@ export default function CommandDashboard() {
     addActivityLog(`SUPPLY PLANNING: Relief manifest for ${bName} was [${status.toUpperCase()}] by coordinator.`, status === 'approved' ? 'success' : 'alert');
   };
 
+  // Route-click opens an in-rail Route/Convoy detail (keeps the map in view) instead of jumping
+  // to the Teams view. Route wins the rail: selecting a route clears any barangay selection.
   const handleSelectRoute = (route: Route) => {
-    setFocusTeamId(route.teamId || null);
+    setSelectedRoute(route);
+    setSelectedBarangay(null);
+  };
+
+  // "View in Teams" preserves the old behavior as a secondary action.
+  const handleViewRouteInTeams = () => {
+    if (selectedRoute) setFocusTeamId(selectedRoute.teamId || null);
+    setSelectedRoute(null);
     setCurrentView('teams');
   };
 
@@ -720,7 +732,15 @@ export default function CommandDashboard() {
             </div>
             <BottomOperationsConsole activityLogs={activityLogs} />
           </div>
-          {selectedBarangay ? (
+          {selectedRoute && routes.some((r) => r.id === selectedRoute.id) ? (
+            <RouteDetailPanel
+              route={routes.find((r) => r.id === selectedRoute.id)!}
+              team={teams.find((t) => t.id === selectedRoute.teamId)}
+              onMarkReached={(id) => { handleMarkReached(id); setSelectedRoute(null); }}
+              onViewInTeams={handleViewRouteInTeams}
+              onClose={() => setSelectedRoute(null)}
+            />
+          ) : selectedBarangay ? (
             <RightIntelligencePanel
               selectedBarangay={selectedBarangay}
               barangays={barangays}
