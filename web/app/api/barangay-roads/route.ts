@@ -11,7 +11,10 @@ export async function GET(request: Request) {
   const barangayId = new URL(request.url).searchParams.get('barangayId');
   if (!barangayId) return Response.json({ error: 'barangayId is required' }, { status: 400 });
 
-  const { data, error } = await ssr.rpc('barangay_road_edges', { p_barangay_id: barangayId });
+  const [{ data, error }, brgy] = await Promise.all([
+    ssr.rpc('barangay_road_edges', { p_barangay_id: barangayId }),
+    ssr.from('barangay_directory').select('id, name, lat, lng').eq('id', barangayId).maybeSingle(),
+  ]);
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
   const features = (data ?? []).map((e: { id: number; name: string | null; impassable: boolean; geometry: unknown }) => ({
@@ -19,7 +22,10 @@ export async function GET(request: Request) {
     properties: { id: e.id, name: e.name, impassable: e.impassable },
     geometry: e.geometry,
   }));
-  return Response.json({ type: 'FeatureCollection', features }, {
+  // Centroid + name let the picker draw the barangay "section" and label for context.
+  const b = brgy.data as { id: string; name: string | null; lat: number; lng: number } | null;
+  const barangay = b ? { id: b.id, name: b.name, lat: b.lat, lng: b.lng } : null;
+  return Response.json({ type: 'FeatureCollection', features, barangay }, {
     headers: { 'Cache-Control': 'private, max-age=120' },
   });
 }
