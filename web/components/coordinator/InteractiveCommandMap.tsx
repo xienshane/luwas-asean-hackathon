@@ -129,6 +129,7 @@ export default function InteractiveCommandMap({
   const volunteerMarkersRef = useRef<Marker[]>([]);
   const hubMarkersRef = useRef<Marker[]>([]);
   const routeEndpointMarkersRef = useRef<Marker[]>([]);
+  const blockedMarkersRef = useRef<Marker[]>([]);
   const vehicleMarkersRef = useRef<Map<string, Marker>>(new Map());
   const convoyStateRef = useRef<Map<string, {
     coords: [number, number][]; stop: number; start: number; parked: boolean; iconEl: HTMLElement | null;
@@ -948,6 +949,44 @@ export default function InteractiveCommandMap({
         type: 'FeatureCollection',
         features: features
       });
+    }
+  }, [isMapLoaded, mapLayers.roads, edges, roadGeometries]);
+
+  // "✕ ROAD BLOCKED" chips on each closed segment — the unmistakable, route-distinct closure
+  // marker (color-not-only: shape + label + symbol, not red hue alone). DOM markers render above
+  // the canvas, so a chip is never hidden by a line. Built from `edges` (the same client array
+  // that feeds roads-source) so it doesn't depend on source paint timing.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded || !maplibreglRef.current) return;
+    blockedMarkersRef.current.forEach((m) => m.remove());
+    blockedMarkersRef.current = [];
+    if (!mapLayers.roads) return;
+
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const blocked = edges.filter((e) => e.status === 'blocked');
+
+    for (const edge of blocked) {
+      const line = roadGeometries[edge.id] ?? [
+        [edge.sourceCoords.lng, edge.sourceCoords.lat],
+        [edge.targetCoords.lng, edge.targetCoords.lat],
+      ];
+      if (!line || line.length < 2) continue;
+      const mid = line[Math.floor(line.length / 2)] as [number, number];
+      const name = edge.name || 'Road closed';
+
+      const el = document.createElement('div');
+      el.className = `luwas-endpoint luwas-block ${reduce ? '' : 'luwas-block--pulse'}`;
+      el.innerHTML =
+        `<span class="luwas-endpoint__label" style="color:#fecaca">${name}</span>
+         <span style="display:flex;width:26px;height:26px;border-radius:7px;align-items:center;justify-content:center;
+           background:${COLOR.critical};box-shadow:0 0 0 3px rgba(11,18,32,0.9),0 2px 8px rgba(0,0,0,0.55)">
+           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6"
+             stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+         </span>`;
+      blockedMarkersRef.current.push(
+        new maplibreglRef.current.Marker({ element: el }).setLngLat(mid).addTo(map),
+      );
     }
   }, [isMapLoaded, mapLayers.roads, edges, roadGeometries]);
 
@@ -2108,8 +2147,11 @@ export default function InteractiveCommandMap({
                     <span className="text-fg">Slow</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="w-4 border-t-2 border-dashed inline-block shrink-0" style={{ borderColor: COLOR.critical }} />
-                    <span className="text-fg">Blocked</span>
+                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-[4px] shrink-0"
+                      style={{ background: COLOR.critical }}>
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                    </span>
+                    <span className="text-fg">Blocked (closure)</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="w-4 h-0.5 inline-block shrink-0" style={{ background: COLOR.critical }} />
