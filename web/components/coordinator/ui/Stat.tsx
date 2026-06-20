@@ -18,8 +18,8 @@ export default function Stat({
   /** CSS color for the value (e.g. STATE_COLOR[state]); defaults to fg. */
   accent?: string;
   sub?: React.ReactNode;
-  /** 80% prediction interval, rendered as a thin bar under the value. */
-  range?: { low: number; high: number };
+  /** 80% prediction interval, rendered as a band with the point estimate marked. */
+  range?: { low: number; high: number; value?: number };
   /** Right-aligned element beside the value (e.g. a severity badge). */
   action?: React.ReactNode;
   className?: string;
@@ -36,17 +36,25 @@ export default function Stat({
         </span>
         {unit && <span className="text-[13px] text-muted">{unit}</span>}
       </div>
-      {range && (
+      {range && range.high > range.low && (
         <div className="mt-2">
-          <div className="h-1 rounded-full bg-line overflow-hidden" aria-hidden>
-            <div
-              className="h-full rounded-full bg-muted/60"
-              style={{ marginLeft: '8%', width: '84%' }}
-            />
+          <div className="relative h-1.5 rounded-full bg-line" aria-hidden>
+            <div className="absolute inset-y-0 left-0 right-0 rounded-full bg-muted/30" />
+            {typeof range.value === 'number' && (
+              <span
+                className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full border border-bg"
+                style={{
+                  left: `${Math.min(100, Math.max(0, ((range.value - range.low) / (range.high - range.low)) * 100))}%`,
+                  background: accent ?? 'var(--color-fg)',
+                }}
+              />
+            )}
           </div>
-          <p className="mt-1 text-[11px] font-mono tabular-nums text-muted">
-            80% interval · {range.low.toLocaleString()}–{range.high.toLocaleString()}
-          </p>
+          <div className="mt-1 flex justify-between text-[11px] font-mono tabular-nums text-muted">
+            <span>{range.low.toLocaleString()}</span>
+            <span className="uppercase tracking-wide font-sans text-[10px]">80% interval</span>
+            <span>{range.high.toLocaleString()}</span>
+          </div>
         </div>
       )}
       {sub && <div className="mt-1.5 text-[13px] text-muted">{sub}</div>}

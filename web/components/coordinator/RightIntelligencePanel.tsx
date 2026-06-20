@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import type { Barangay, ImpactPrediction, SupplyManifest, Team, Route, LocationHub } from '@/lib/types/coordinator';
-import { DetailPanel, silentAreaState, STATE_LABEL, STATE_COLOR } from './ui';
+import { DetailPanel, Segmented, Stat, Chip, Section, silentAreaState, STATE_LABEL, STATE_COLOR } from './ui';
+import { Activity } from 'lucide-react';
 import { lowConfidenceReason } from '@/lib/coordinator/confidence';
 import { pickAffected, affectedSource } from '@/lib/pipeline/affected';
 
@@ -144,11 +145,17 @@ export default function RightIntelligencePanel({
     setIsEditing(false);
   };
 
-  const tabs: { id: Tab; label: string }[] = [
+  const tabs = [
     { id: 'overview', label: 'Overview' },
     { id: 'supplies', label: 'Supplies' },
     { id: 'dispatch', label: 'Dispatch' },
   ];
+
+  // Source-tagged label for the headline affected figure (verbatim precedence, no logic change).
+  const affectedLabel =
+    affectedFrom === 'reported' ? 'Reported affected'
+    : affectedFrom === 'override' ? 'Overridden affected'
+    : 'Est. affected';
 
   const supplyRows = [
     { label: 'Clean water', value: finalWater, unit: 'L', inv: water.inventory },
@@ -175,118 +182,102 @@ export default function RightIntelligencePanel({
       onClose={onClearBarangaySelection}
     >
       {/* Tabs */}
-      <div className="flex border-b border-line text-[13px]">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setDrawerTab(t.id)}
-            className={`flex-1 py-2 border-b-2 transition-colors duration-100 cursor-pointer ${
-              drawerTab === t.id ? 'border-fg/50 text-fg' : 'border-transparent text-muted hover:text-fg'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="px-2 pt-2 pb-1 border-b border-line">
+        <Segmented tabs={tabs} value={drawerTab} onChange={(id) => setDrawerTab(id as Tab)} />
       </div>
 
-      <div className="p-4 space-y-4 text-[13px]">
-        {/* ── Overview ── */}
+      <div className="text-[13px]">
+        {/* ── Overview: situation hero ── */}
         {drawerTab === 'overview' && (
           <>
-            <div className="grid grid-cols-2 gap-y-3 gap-x-4">
-              {[
-                { l: 'Municipality', v: selectedBarangay.cityMunicipality },
-                { l: 'Population', v: selectedBarangay.population.toLocaleString(), mono: true },
-                { l: 'Silent Area score', v: selectedScore.score.toFixed(2), mono: true, color: STATE_COLOR[state] },
-                { l: 'State', v: STATE_LABEL[state], color: STATE_COLOR[state] },
-              ].map(({ l, v, mono, color }) => (
-                <div key={l}>
-                  <div className="text-[12px] text-muted mb-0.5">{l}</div>
-                  <div className={mono ? 'font-mono tabular-nums' : ''} style={color ? { color } : undefined}>
-                    {v}
+            {prediction ? (
+              <div className="px-4 pt-4">
+                <Stat
+                  label={affectedLabel}
+                  value={effectiveAffected.toLocaleString()}
+                  unit="people affected"
+                  accent={STATE_COLOR[state]}
+                  action={<SeverityBadge severity={prediction.damageSeverity} />}
+                  range={hasInterval ? { low: prediction.affectedLow!, high: prediction.affectedHigh!, value: effectiveAffected } : undefined}
+                  sub={
+                    (affectedFrom === 'reported' || affectedFrom === 'override') ? (
+                      <span>
+                        Model predicted{' '}
+                        <span className="font-mono tabular-nums line-through">
+                          {prediction.predictedAffected.toLocaleString()}
+                        </span>
+                      </span>
+                    ) : undefined
+                  }
+                />
+                {(lowConfReason || prediction.isDay0 || isAffectedOverridden) && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {lowConfReason && (
+                      <span title={lowConfReason}>
+                        <Chip tone="warning">Low confidence</Chip>
+                      </span>
+                    )}
+                    {prediction.isDay0 && (
+                      <span title="Day-0 forecast from a uniform storm scenario (no per-barangay wind footprint). Override-able; not yet confirmed by a field report.">
+                        <Chip tone="warning">Predicted · Day 0</Chip>
+                      </span>
+                    )}
+                    {isAffectedOverridden && (
+                      <Chip tone="active">Overridden · {prediction.overrideValue?.toLocaleString()}</Chip>
+                    )}
                   </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="border-t border-line pt-3">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[12px] text-muted">Impact prediction · {prediction?.model ?? 'TabPFN'}</span>
-                {prediction && <SeverityBadge severity={prediction.damageSeverity} />}
+                )}
               </div>
-              {prediction ? (
-                <>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-2xl font-mono tabular-nums text-fg">
-                      {effectiveAffected.toLocaleString()}
-                    </span>
-                    <span className="text-[12px] text-muted">
-                      {affectedFrom === 'reported' ? 'reported affected' : affectedFrom === 'override' ? 'overridden affected' : 'est. affected'}
-                    </span>
+            ) : (
+              <Section title="Impact prediction" divider={false}>
+                <div className="flex flex-col items-center text-center gap-2 rounded-card border border-line bg-raised/30 px-4 py-6">
+                  <Activity className="w-5 h-5 text-muted" aria-hidden />
+                  <p className="text-[13px] text-muted leading-relaxed">
+                    No prediction yet — confirm a report to run the pipeline. The Silent Area
+                    score below stays live.
+                  </p>
+                </div>
+              </Section>
+            )}
+
+            {/* Demoted metadata grid */}
+            <Section title="Barangay" divider={Boolean(prediction)}>
+              <div className="grid grid-cols-2 gap-y-3 gap-x-4">
+                {[
+                  { l: 'Municipality', v: selectedBarangay.cityMunicipality },
+                  { l: 'Population', v: selectedBarangay.population.toLocaleString(), mono: true },
+                  { l: 'Silent Area score', v: selectedScore.score.toFixed(2), mono: true, color: STATE_COLOR[state] },
+                  { l: 'State', v: STATE_LABEL[state], color: STATE_COLOR[state] },
+                ].map(({ l, v, mono, color }) => (
+                  <div key={l}>
+                    <div className="text-[12px] text-muted mb-0.5">{l}</div>
+                    <div className={mono ? 'font-mono tabular-nums' : ''} style={color ? { color } : undefined}>
+                      {v}
+                    </div>
                   </div>
-                  {(affectedFrom === 'reported' || affectedFrom === 'override') && (
-                    <div className="mt-0.5 text-[12px] text-muted">
-                      Model predicted{' '}
-                      <span className="font-mono tabular-nums line-through">
-                        {prediction.predictedAffected.toLocaleString()}
-                      </span>
-                    </div>
-                  )}
-                  {hasInterval && (
-                    <div className="mt-0.5 text-[12px] text-muted">
-                      80% range{' '}
-                      <span className="font-mono tabular-nums text-fg">
-                        {prediction.affectedLow!.toLocaleString()}–{prediction.affectedHigh!.toLocaleString()}
-                      </span>
-                    </div>
-                  )}
-                  {lowConfReason && (
-                    <div
-                      className="mt-1.5 inline-flex items-center gap-1.5 rounded-control border border-warning/30 bg-warning/10 px-2 py-1 text-[11px] font-medium text-warning"
-                      title={lowConfReason}
-                    >
-                      <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-warning" />
-                      Low confidence — decision support
-                    </div>
-                  )}
-                  {prediction.isDay0 && (
-                    <div
-                      className="mt-1.5 inline-flex items-center gap-1.5 rounded-control border border-warning/30 bg-warning/10 px-2 py-1 text-[11px] font-medium text-warning"
-                      title="Day-0 forecast from a uniform storm scenario (no per-barangay wind footprint). Override-able; not yet confirmed by a field report."
-                    >
-                      <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-warning" />
-                      Predicted — Unconfirmed (Day 0)
-                    </div>
-                  )}
-                  {isAffectedOverridden && (
-                    <div className="mt-1.5 text-[13px] text-active">
-                      Overridden · <span className="font-mono tabular-nums">{prediction.overrideValue?.toLocaleString()}</span> people
-                    </div>
-                  )}
-                  {prediction.contributors && prediction.contributors.length > 0 && (
-                    <ul className="mt-2 space-y-1 text-[12px] text-muted">
-                      {prediction.contributors.map((c, i) => (
-                        <li key={i} className="flex gap-2">
-                          <span className="text-muted">—</span>
-                          {c}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </>
-              ) : (
-                <p className="text-[13px] text-muted leading-relaxed">
-                  Not generated yet — TabPFN runs in the Phase 4 pipeline and isn’t wired to
-                  live reports. The Silent Area score above is live.
-                </p>
-              )}
-            </div>
+                ))}
+              </div>
+            </Section>
+
+            {/* Contributors */}
+            {prediction && prediction.contributors && prediction.contributors.length > 0 && (
+              <Section title={`Why · ${prediction.model ?? 'TabPFN'}`}>
+                <ul className="space-y-1.5 text-[12px] text-muted">
+                  {prediction.contributors.map((c, i) => (
+                    <li key={i} className="flex gap-2">
+                      <span className="text-muted shrink-0">—</span>
+                      {c}
+                    </li>
+                  ))}
+                </ul>
+              </Section>
+            )}
           </>
         )}
 
         {/* ── Supplies ── */}
         {drawerTab === 'supplies' && (
-          <>
+          <div className="p-4 space-y-4">
             {!manifest && (
               <div className="rounded-control border border-line bg-raised/30 px-3 py-2 text-[12px] text-muted leading-relaxed">
                 No manifest yet — confirm a report to run the pipeline (TabPFN → Sphere) and
@@ -357,12 +348,12 @@ export default function RightIntelligencePanel({
                 </button>
               </div>
             </div>
-          </>
+          </div>
         )}
 
         {/* ── Dispatch ── */}
         {drawerTab === 'dispatch' && (
-          <>
+          <div className="p-4 space-y-4">
             {(() => {
               const activeRoute = routes.find(
                 (r) => r.status === 'active' && r.stops.some((s) => s.barangayId === selectedBarangay.id),
@@ -424,7 +415,7 @@ export default function RightIntelligencePanel({
               OR-Tools generates ETAs from current road blocks and the pgRouting matrix. Dispatch requires
               human confirmation — no automatic dispatches are executed.
             </p>
-          </>
+          </div>
         )}
       </div>
     </DetailPanel>
