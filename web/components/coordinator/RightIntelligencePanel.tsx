@@ -23,6 +23,7 @@ interface RightIntelligencePanelProps {
   ) => void;
   onUpdateManifestStatus: (barangayId: string, status: 'approved' | 'modified' | 'rejected') => void;
   onDispatchTeam: (teamId: string, barangayId: string) => void;
+  onMarkReached: (routeId: string) => void;
   onClearBarangaySelection: () => void;
 }
 
@@ -38,6 +39,8 @@ export default function RightIntelligencePanel({
   onSaveOverrides,
   onUpdateManifestStatus,
   onDispatchTeam,
+  onMarkReached,
+  routes,
   onClearBarangaySelection,
 }: RightIntelligencePanelProps) {
   const [drawerTab, setDrawerTab] = useState<Tab>('overview');
@@ -360,6 +363,29 @@ export default function RightIntelligencePanel({
         {/* ── Dispatch ── */}
         {drawerTab === 'dispatch' && (
           <>
+            {(() => {
+              const activeRoute = routes.find(
+                (r) => r.status === 'active' && r.stops.some((s) => s.barangayId === selectedBarangay.id),
+              );
+              if (!activeRoute) return null;
+              return (
+                <div className="rounded-control border border-active/30 bg-active/10 px-3 py-2.5">
+                  <div className="flex items-center gap-2 text-[12px] text-active font-medium">
+                    <span className="relative flex h-2 w-2">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-active/60" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-active" />
+                    </span>
+                    {activeRoute.teamName} en route — {(activeRoute.totalDistanceM / 1000).toFixed(1)} km
+                  </div>
+                  <button
+                    onClick={() => onMarkReached(activeRoute.id)}
+                    className="mt-2 w-full min-h-[44px] py-2 border border-active/40 bg-active/10 text-active hover:bg-active/20 rounded-control font-medium transition-colors duration-100 cursor-pointer"
+                  >
+                    Mark area reached
+                  </button>
+                </div>
+              );
+            })()}
             <div>
               <div className="text-[12px] text-muted mb-2">Nearest logistics hubs</div>
               <div className="space-y-1.5">

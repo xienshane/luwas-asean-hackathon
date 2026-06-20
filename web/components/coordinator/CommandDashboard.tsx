@@ -509,6 +509,25 @@ export default function CommandDashboard() {
     }
   };
 
+  const handleMarkReached = async (routeId: string) => {
+    const route = routes.find(r => r.id === routeId);
+    const bName = route?.stops?.[0]?.barangayName ?? 'area';
+    setRoutes(prev => prev.map(r => r.id === routeId ? { ...r, status: 'completed' } : r));
+    if (route?.teamId) setTeams(prev => prev.map(t => t.id === route.teamId ? { ...t, status: 'active', currentAssignment: undefined } : t));
+    addActivityLog(`AREA REACHED: ${bName} marked reached. Route completed; contact updated.`, 'success');
+    try {
+      const res = await fetch('/api/routes/complete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ routeId }),
+      });
+      if (!res.ok) throw new Error(`complete ${res.status}`);
+      const map = await fetchCoordinatorMapData();
+      setBarangays(map.barangays);
+      setScores(map.scores);
+    } catch (err) {
+      addActivityLog(`AREA REACHED: failed to persist — ${err instanceof Error ? err.message : 'service unreachable'}.`, 'alert');
+    }
+  };
+
   const addActivityLog = (event: string, type: 'info' | 'warn' | 'success' | 'alert' = 'info') => {
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     setActivityLogs(prev => [
@@ -707,6 +726,7 @@ export default function CommandDashboard() {
               onSaveOverrides={handleSaveOverrides}
               onUpdateManifestStatus={handleUpdateManifestStatus}
               onDispatchTeam={handleDispatchTeam}
+              onMarkReached={handleMarkReached}
               onClearBarangaySelection={handleClearBarangaySelection}
             />
           ) : (
