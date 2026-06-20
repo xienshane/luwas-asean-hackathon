@@ -2,8 +2,17 @@
 
 import React, { useState, useEffect } from 'react';
 import type { Barangay, ImpactPrediction, SupplyManifest, Team, Route, LocationHub } from '@/lib/types/coordinator';
-import { DetailPanel, Segmented, Stat, Chip, Section, silentAreaState, STATE_LABEL, STATE_COLOR } from './ui';
-import { Activity } from 'lucide-react';
+import { DetailPanel, Segmented, Stat, Chip, CoverageBar, Section, silentAreaState, STATE_LABEL, STATE_COLOR } from './ui';
+import type { ChipTone } from './ui';
+import { Activity, Info, PackageOpen } from 'lucide-react';
+
+// Manifest review status → chip tone.
+const MANIFEST_TONE: Record<string, ChipTone> = {
+  approved: 'active',
+  modified: 'warning',
+  rejected: 'critical',
+  pending: 'muted',
+};
 import { lowConfidenceReason } from '@/lib/coordinator/confidence';
 import { pickAffected, affectedSource } from '@/lib/pipeline/affected';
 
@@ -180,6 +189,24 @@ export default function RightIntelligencePanel({
         </span>
       }
       onClose={onClearBarangaySelection}
+      footer={
+        drawerTab === 'supplies' ? (
+          <div className="p-3 flex items-center gap-2">
+            <button
+              onClick={() => onUpdateManifestStatus(selectedBarangay.id, 'approved')}
+              className="flex-1 min-h-[44px] py-2 bg-active text-bg hover:brightness-110 rounded-control font-medium transition-[filter] duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-active/50"
+            >
+              Approve manifest
+            </button>
+            <button
+              onClick={() => onUpdateManifestStatus(selectedBarangay.id, 'rejected')}
+              className="px-3 min-h-[44px] py-2 text-muted hover:text-critical rounded-control text-[13px] transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-critical/40"
+            >
+              Reject
+            </button>
+          </div>
+        ) : undefined
+      }
     >
       {/* Tabs */}
       <div className="px-2 pt-2 pb-1 border-b border-line">
@@ -277,44 +304,51 @@ export default function RightIntelligencePanel({
 
         {/* ── Supplies ── */}
         {drawerTab === 'supplies' && (
-          <div className="p-4 space-y-4">
-            {!manifest && (
-              <div className="rounded-control border border-line bg-raised/30 px-3 py-2 text-[12px] text-muted leading-relaxed">
-                No manifest yet — confirm a report to run the pipeline (TabPFN → Sphere) and
-                generate one. Coordinator overrides below still apply.
-              </div>
-            )}
-            <div className="flex items-center justify-between text-[12px] text-muted">
-              <span>Sphere manifest</span>
-              <span>3-day ration</span>
-            </div>
-            <div className="space-y-2 font-mono">
-              {supplyRows.map((r) => (
-                <div key={r.label} className="flex items-center justify-between">
-                  <div>
-                    <div className="text-fg font-sans">{r.label}</div>
-                    <div className="text-[12px] text-muted">
-                      Inv <span className="font-mono tabular-nums">{r.inv.toLocaleString()}</span>
-                    </div>
-                  </div>
-                  <span className="font-mono tabular-nums text-fg">
-                    {r.value.toLocaleString()} <span className="text-muted font-sans">{r.unit}</span>
+          <>
+            <Section
+              title="Sphere manifest"
+              divider={false}
+              action={
+                <span className="flex items-center gap-2">
+                  <span
+                    className="text-muted cursor-help"
+                    title="Deterministic Sphere standard: 15 L water + 2,100 kcal per person/day over a 3-day ration. Inventory is the on-hand stock; a shortfall is need minus inventory."
+                  >
+                    <Info className="w-3.5 h-3.5" aria-hidden />
                   </span>
+                  <Chip tone={MANIFEST_TONE[manifest?.status ?? 'pending']}>
+                    {manifest?.status ? manifest.status[0].toUpperCase() + manifest.status.slice(1) : 'Pending'}
+                  </Chip>
+                </span>
+              }
+            >
+              {!manifest && (
+                <div className="mb-3 flex flex-col items-center text-center gap-2 rounded-card border border-line bg-raised/30 px-4 py-5">
+                  <PackageOpen className="w-5 h-5 text-muted" aria-hidden />
+                  <p className="text-[12px] text-muted leading-relaxed">
+                    No manifest yet — confirm a report to run the pipeline. Overrides below still apply.
+                  </p>
                 </div>
-              ))}
-            </div>
+              )}
+              <div className="space-y-3">
+                {supplyRows.map((r) => (
+                  <CoverageBar key={r.label} label={r.label} recommended={r.value} onHand={r.inv} unit={r.unit} />
+                ))}
+              </div>
+            </Section>
 
-            <div className="border-t border-line pt-3 space-y-3">
+            <Section title="Coordinator override">
               <button
                 onClick={() => setIsEditing((e) => !e)}
-                className="w-full flex items-center justify-between py-2 px-3 border border-line rounded-control text-muted hover:text-fg hover:bg-raised/40 transition-colors duration-100 cursor-pointer"
+                aria-expanded={isEditing}
+                className="w-full flex items-center justify-between min-h-[44px] py-2 px-3 bg-raised rounded-control text-muted hover:text-fg transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/40"
               >
-                <span>Coordinator override</span>
+                <span>Adjust affected count or per-item targets</span>
                 <span className="text-[12px] text-muted">{isEditing ? 'Collapse' : 'Configure'}</span>
               </button>
 
               {isEditing && (
-                <div className="space-y-2.5">
+                <div className="mt-3 space-y-2.5">
                   <Field label="Affected population" value={affectedInput} onChange={setAffectedInput} placeholder={prediction?.predictedAffected.toString()} />
                   <div className="grid grid-cols-2 gap-2.5">
                     <Field label="Water (L)" value={waterInput} onChange={setWaterInput} placeholder={water.recommended.toString()} />
@@ -326,29 +360,14 @@ export default function RightIntelligencePanel({
                   </div>
                   <button
                     onClick={handleSaveOverrides}
-                    className="w-full py-2 border border-line text-fg hover:bg-raised rounded-control transition-colors duration-100 cursor-pointer font-medium"
+                    className="w-full min-h-[44px] py-2 border border-line text-fg hover:bg-raised rounded-control transition-colors duration-150 cursor-pointer font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/40"
                   >
                     Apply overrides
                   </button>
                 </div>
               )}
-
-              <div className="flex items-center gap-2 border-t border-line pt-3">
-                <button
-                  onClick={() => onUpdateManifestStatus(selectedBarangay.id, 'approved')}
-                  className="flex-1 py-2 border border-active/40 bg-active/10 text-active hover:bg-active/20 rounded-control font-medium transition-colors duration-100 cursor-pointer"
-                >
-                  Approve
-                </button>
-                <button
-                  onClick={() => onUpdateManifestStatus(selectedBarangay.id, 'rejected')}
-                  className="px-3 py-2 border border-line text-muted hover:text-critical hover:border-critical/40 rounded-control transition-colors duration-100 cursor-pointer"
-                >
-                  Reject
-                </button>
-              </div>
-            </div>
-          </div>
+            </Section>
+          </>
         )}
 
         {/* ── Dispatch ── */}
