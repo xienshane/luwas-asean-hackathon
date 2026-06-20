@@ -11,9 +11,10 @@ export async function GET(request: Request) {
   const barangayId = new URL(request.url).searchParams.get('barangayId');
   if (!barangayId) return Response.json({ error: 'barangayId is required' }, { status: 400 });
 
-  const [{ data, error }, brgy] = await Promise.all([
+  const [{ data, error }, brgy, { data: boundary }] = await Promise.all([
     ssr.rpc('barangay_road_edges', { p_barangay_id: barangayId }),
     ssr.from('barangay_directory').select('id, name, lat, lng').eq('id', barangayId).maybeSingle(),
+    ssr.rpc('barangay_boundary', { p_barangay_id: barangayId }),
   ]);
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
   // Centroid + name let the picker draw the barangay "section" and label for context.
   const b = brgy.data as { id: string; name: string | null; lat: number; lng: number } | null;
   const barangay = b ? { id: b.id, name: b.name, lat: b.lat, lng: b.lng } : null;
-  return Response.json({ type: 'FeatureCollection', features, barangay }, {
+  return Response.json({ type: 'FeatureCollection', features, barangay, boundary: boundary ?? null }, {
     headers: { 'Cache-Control': 'private, max-age=120' },
   });
 }
