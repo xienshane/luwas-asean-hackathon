@@ -20,9 +20,9 @@ type FeatureProps = NonNullable<MapGeoJSONFeature['properties']>;
 
 // Neutral linework tones for the calm basemap (roads default off).
 const ROAD_OPEN = '#52607a';
-const ROUTE_ACTIVE = '#9fb0cc';
-const ROUTE_PLANNED = '#5d6a86';
-const ROUTE_DONE = '#46506a';
+const ROUTE_ACTIVE = '#2dd4bf';   // teal-400 — vivid, ≥3:1 on #0b1120 (was #9fb0cc, too muted)
+const ROUTE_PLANNED = '#7c8aa8';  // visible dashed planned
+const ROUTE_DONE = '#46506a';     // dimmed completed (unchanged)
 const ROUTE_CASING = '#0b1120';
 const BARANGAY_OUTLINE = '#3a4660';
 
@@ -652,9 +652,18 @@ export default function InteractiveCommandMap({
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': ['match', ['get', 'status'], 'completed', ROUTE_DONE, ROUTE_ACTIVE],
-          'line-width': 3.5,
+          'line-width': ['match', ['get', 'status'], 'completed', 3, 4.5],
           'line-opacity': 0.9,
+          'line-opacity-transition': { duration: 300 },
         },
+      });
+
+      // Directional "flow" overlay on active routes (motion-meaning); animated in a rAF effect.
+      map.addLayer({
+        id: 'team-routes-flow', type: 'line', source: 'team-routes-source',
+        filter: ['==', ['get', 'status'], 'active'],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#eafff9', 'line-width': 2, 'line-opacity': 0.9, 'line-dasharray': [0, 4, 3] },
       });
 
       map.addLayer({
@@ -1218,6 +1227,29 @@ export default function InteractiveCommandMap({
     });
   }, [isMapLoaded, routes, mapLayers.routes, teamRouteGeometries]);
 
+  // Directional "flow" on active routes (motion-meaning). Steps a dash pattern so the highlight
+  // travels depot -> destination. Skipped entirely under prefers-reduced-motion (the static
+  // team-routes-line already conveys the path).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded) return;
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      if (map.getLayer('team-routes-flow')) map.setLayoutProperty('team-routes-flow', 'visibility', 'none');
+      return;
+    }
+    const seq = [ [0,4,3],[0.5,4,2.5],[1,4,2],[1.5,4,1.5],[2,4,1],[2.5,4,0.5],[3,4,0],[0,0.5,3,3.5],[0,1,3,3],[0,2,3,2],[0,3,3,1],[0,3.5,3,0.5] ];
+    let i = 0, raf = 0, last = 0;
+    const tick = (t: number) => {
+      if (t - last > 90) { // ~11fps marching ants; cheap
+        if (map.getLayer('team-routes-flow')) map.setPaintProperty('team-routes-flow', 'line-dasharray', seq[i % seq.length]);
+        i++; last = t;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [isMapLoaded]);
+
   // ── Interactive Report Markers (Custom SVG styling for Pending/Confirmed/Flagged) ──
   useEffect(() => {
     const map = mapRef.current;
@@ -1586,6 +1618,7 @@ export default function InteractiveCommandMap({
     toggleLayer('roads-layer-blocked', mapLayers.roads);
     toggleLayer('team-routes-casing', mapLayers.routes);
     toggleLayer('team-routes-line', mapLayers.routes);
+    toggleLayer('team-routes-flow', mapLayers.routes);
     toggleLayer('team-routes-line-planned', mapLayers.routes);
     toggleLayer('dispatch-preview-line', mapLayers.routes);
   }, [mapLayers, isMapLoaded]);
