@@ -242,6 +242,7 @@ export default function TeamsView({ teams, routes, barangays, onDispatchTeam, fo
                 <div className="text-[12px] text-muted">Dispatch to</div>
                 <div className="flex items-center gap-2">
                   <select
+                    data-testid="dispatch-destination"
                     value={dest}
                     onChange={(e) => setDest(e.target.value)}
                     className="flex-1 bg-bg border border-line rounded-control px-2.5 py-1.5 text-[13px] text-fg focus:outline-none focus:border-muted cursor-pointer"
@@ -256,6 +257,7 @@ export default function TeamsView({ teams, routes, barangays, onDispatchTeam, fo
                     ))}
                   </select>
                   <button
+                    data-testid="dispatch-submit"
                     onClick={() => {
                       if (!dest) return;
                       onDispatchTeam(selected.id, dest);

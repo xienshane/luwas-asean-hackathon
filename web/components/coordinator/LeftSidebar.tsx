@@ -105,6 +105,7 @@ export default function LeftSidebar({
             return (
               <button
                 key={item.id}
+                data-testid={`nav-${item.id}`}
                 onClick={() => onViewChange(item.id)}
                 title={collapsed ? item.label : undefined}
                 className={`relative w-full flex items-center rounded-control text-[14px] transition-colors duration-100 cursor-pointer ${
