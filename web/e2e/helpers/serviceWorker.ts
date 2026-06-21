@@ -9,6 +9,7 @@ const QUEUE_SYNC_TAG = 'workbox-background-sync:luwas-report-queue';
 // Registration happens in a mount effect (ServiceWorkerRegistrar) and clientsClaim()
 // claims existing clients; a single reload covers the first-load race.
 export async function waitForServiceWorker(page: Page): Promise<void> {
+  // Wait for an active registration first.
   await page.waitForFunction(
     async () => {
       if (!('serviceWorker' in navigator)) return false;
@@ -18,8 +19,12 @@ export async function waitForServiceWorker(page: Page): Promise<void> {
     null,
     { timeout: 30_000 },
   );
-  const controlled = await page.evaluate(() => !!navigator.serviceWorker.controller);
-  if (!controlled) {
+  // clientsClaim() claims the current page once the SW activates — usually within a
+  // couple of seconds — so poll for control rather than checking once. A single reload
+  // is the fallback if the first-load claim is somehow missed.
+  try {
+    await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 15_000 });
+  } catch {
     await page.reload({ waitUntil: 'load' });
     await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 30_000 });
   }
