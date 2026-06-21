@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Compass,
   FileText,
@@ -11,7 +11,10 @@ import {
 } from 'lucide-react';
 import type { Marker, Popup, MapMouseEvent, MapLayerMouseEvent, MapGeoJSONFeature, LngLat } from 'maplibre-gl';
 import type { Barangay, FieldReport, Team, RoadEdge, Route, Volunteer, LocationHub } from '@/lib/types/coordinator';
-import { COLOR, silentAreaState, STATE_COLOR, STATE_LABEL } from './ui';
+import { routeLineCoords } from '@/lib/coordinator/routeGeometry';
+import { pointAtFraction, stopFraction } from '@/lib/coordinator/pathInterpolate';
+import { nextGhostState, emptyGhostState, ghostDivergentSegments } from '@/lib/coordinator/ghostRoutes';
+import { COLOR, silentAreaState, STATE_COLOR, STATE_LABEL, SERVED_COLOR, SERVED_LABEL } from './ui';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 // MapLibre erases GeoJSON feature properties to an untyped scalar bag; alias it once.
@@ -19,11 +22,26 @@ type FeatureProps = NonNullable<MapGeoJSONFeature['properties']>;
 
 // Neutral linework tones for the calm basemap (roads default off).
 const ROAD_OPEN = '#52607a';
-const ROUTE_ACTIVE = '#9fb0cc';
-const ROUTE_PLANNED = '#5d6a86';
-const ROUTE_DONE = '#46506a';
+const ROUTE_ACTIVE = '#2dd4bf';   // teal-400 — vivid, ≥3:1 on #0b1120 (was #9fb0cc, too muted)
+const ROUTE_PLANNED = '#7c8aa8';  // visible dashed planned
+const ROUTE_DONE = '#46506a';     // dimmed completed (unchanged)
 const ROUTE_CASING = '#0b1120';
 const BARANGAY_OUTLINE = '#3a4660';
+
+// Part A — demo convoy. A clearly-labelled SIMULATED vehicle (not live telemetry) that eases
+// along the real-road route geometry and parks short of the destination. DEMO_CONVOY is the
+// one-line kill switch; CONVOY_MS is the ease duration before it parks at stopFraction.
+const DEMO_CONVOY = true;
+const CONVOY_MS = 14000;
+
+// Convoy chip icon in the team-type language, dark stroke for contrast on the active-green chip.
+function convoyIcon(type?: string): string {
+  const a = `width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#06281f" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"`;
+  if (type === 'boat') return `<svg ${a}><path d="M12 3v17M2 10c0 4.4 3.6 8 10 8s10-3.6 10-8H2z"/></svg>`;
+  if (type === 'ambulance') return `<svg ${a}><path d="M19 12h-4l-3 9L9 3l-3 9H2"/></svg>`;
+  if (type === '4x4') return `<svg ${a}><circle cx="18.5" cy="17.5" r="2.5"/><circle cx="5.5" cy="17.5" r="2.5"/><path d="M14 6H5a2 2 0 0 0-2 2v6h18v-3a3 3 0 0 0-3-3h-4Z"/></svg>`;
+  return `<svg ${a}><rect x="1" y="3" width="15" height="13" rx="2" ry="2"/><polygon points="16 8 20 8 23 11 23 16 16 16"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`;
+}
 
 interface InteractiveCommandMapProps {
   barangays: Barangay[];
@@ -32,11 +50,13 @@ interface InteractiveCommandMapProps {
   edges: RoadEdge[];
   routes: Route[];
   facilities: LocationHub[];
+  dispatchPreview?: { teamId: string; from: { lat: number; lng: number }; to: { lat: number; lng: number } } | null;
   volunteers: Volunteer[];
   selectedBarangay: Barangay | null;
   onSelectBarangay: (b: Barangay) => void;
   selectedReport: FieldReport | null;
   onSelectReport: (r: FieldReport) => void;
+  onSelectRoute?: (route: Route) => void;
   scores: {
     barangayId: string; score: number; hoursSinceContact: number | null;
     timeFactor?: number; popDensityNorm?: number; hazardNorm?: number;
@@ -51,21 +71,6 @@ interface InteractiveCommandMapProps {
   onResetReports?: () => void;
   active?: boolean;
 }
-
-// ─── Distance Helper (Haversine Formula) ──────────────────────────────────────
-const calculateDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-  const R = 6371; // Earth radius in km
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-};
 
 // ─── Theme Helpers (calm tokens: reached / escalating / critical) ─────────────
 
@@ -96,11 +101,13 @@ export default function InteractiveCommandMap({
   edges,
   routes,
   facilities,
+  dispatchPreview,
   volunteers,
   selectedBarangay,
   onSelectBarangay,
   selectedReport,
   onSelectReport,
+  onSelectRoute,
   scores,
   onUpdateRoadStatus,
   onBlockRoadAt,
@@ -121,6 +128,15 @@ export default function InteractiveCommandMap({
   const teamMarkersRef = useRef<Marker[]>([]);
   const volunteerMarkersRef = useRef<Marker[]>([]);
   const hubMarkersRef = useRef<Marker[]>([]);
+  const routeEndpointMarkersRef = useRef<Marker[]>([]);
+  const blockedMarkersRef = useRef<Marker[]>([]);
+  const ghostLabelMarkersRef = useRef<Marker[]>([]);
+  const vehicleMarkersRef = useRef<Map<string, Marker>>(new Map());
+  const convoyStateRef = useRef<Map<string, {
+    coords: [number, number][]; stop: number; start: number; parked: boolean; iconEl: HTMLElement | null;
+  }>>(new Map());
+  const convoyRafRef = useRef<number>(0);
+  const ghostStateRef = useRef(emptyGhostState());
 
   // Tooltip popup reference
   // Always assigned before any hover handler reads it (see map 'load'); typed non-null to
@@ -132,7 +148,6 @@ export default function InteractiveCommandMap({
 
   const [routeGeometries, setRouteGeometries] = useState<Record<string, [number, number][]>>({});
   const [roadGeometries, setRoadGeometries] = useState<Record<string, [number, number][]>>({}); // Store actual road paths
-  const [selectedRoutePath, setSelectedRoutePath] = useState<[number, number][] | null>(null); // Dynamic path for selected report
   const [teamRouteGeometries, setTeamRouteGeometries] = useState<Record<string, [number, number][]>>({}); // OSRM-snapped per-team route paths
 
   // Minimal default: barangay risk + active routes + reports. Roads, teams,
@@ -179,6 +194,30 @@ export default function InteractiveCommandMap({
     barangaysRef.current = barangays;
   }, [barangays]);
 
+  // A barangay is "served" once it is a stop on a COMPLETED route — relief was delivered
+  // there. Collected into a Set so the choropleth can paint it green (overriding the
+  // score-based color) and the tooltip/legend can flag it explicitly.
+  const servedBarangayIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const route of routes) {
+      if (route.status !== 'completed') continue;
+      for (const stop of route.stops ?? []) {
+        if (stop.barangayId) ids.add(stop.barangayId);
+      }
+    }
+    return ids;
+  }, [routes]);
+
+  // Route-line click is bound once at map load too, so read the current routes + callback via refs.
+  const routesRef = useRef(routes);
+  useEffect(() => {
+    routesRef.current = routes;
+  }, [routes]);
+  const onSelectRouteRef = useRef(onSelectRoute);
+  useEffect(() => {
+    onSelectRouteRef.current = onSelectRoute;
+  }, [onSelectRoute]);
+
   const getScoreData = useCallback(
     (barangayId: string) =>
       scores.find((s) => s.barangayId === barangayId) ??
@@ -191,19 +230,6 @@ export default function InteractiveCommandMap({
   );
 
   // Helper to find the nearest facility hub to a specific coordinate
-  const getNearestHubToCoords = useCallback((lat: number, lng: number) => {
-    let nearest: LocationHub | undefined = facilities[0];
-    let minDist = Infinity;
-    facilities.forEach((hub) => {
-      const dist = calculateDistanceKm(lat, lng, hub.latitude, hub.longitude);
-      if (dist < minDist) {
-        minDist = dist;
-        nearest = hub;
-      }
-    });
-    return { hub: nearest, distance: minDist };
-  }, [facilities]);
-
   // ── 1. Generate Barangay Polygons ─────────────────────────────────
   const generateBarangayPolygon = useCallback((barangay: Barangay): [number, number][] => {
     const centerLng = barangay.longitude;
@@ -283,58 +309,6 @@ export default function InteractiveCommandMap({
     };
   }, [edges]);
 
-  // ── 3. Dynamic Route Generation to selected Report from Nearest Hub ──
-  useEffect(() => {
-    if (!selectedReport) {
-      setSelectedRoutePath(null);
-      return;
-    }
-
-    let active = true;
-    const { hub } = getNearestHubToCoords(selectedReport.latitude, selectedReport.longitude);
-    if (!hub) return; // no facilities loaded yet → no depot to route from
-
-    const fetchIncidentRoute = async () => {
-      try {
-        const correctCoords = `${hub.longitude},${hub.latitude};${selectedReport.longitude},${selectedReport.latitude}`;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6000);
-        
-        const res = await fetch(
-          `https://router.project-osrm.org/route/v1/driving/${correctCoords}?overview=full&geometries=geojson`,
-          { signal: controller.signal }
-        );
-        clearTimeout(timeoutId);
-
-        if (res.ok && active) {
-          const data = await res.json();
-          const geometry = data.routes?.[0]?.geometry?.coordinates;
-          if (geometry?.length) {
-            setSelectedRoutePath(geometry);
-          } else {
-            setSelectedRoutePath([
-              [hub.longitude, hub.latitude],
-              [selectedReport.longitude, selectedReport.latitude]
-            ]);
-          }
-        }
-      } catch (e) {
-        console.warn("Failed to fetch custom OSRM path to selected incident", e);
-        if (active) {
-          setSelectedRoutePath([
-            [hub.longitude, hub.latitude],
-            [selectedReport.longitude, selectedReport.latitude]
-          ]);
-        }
-      }
-    };
-
-    fetchIncidentRoute();
-    return () => {
-      active = false;
-    };
-  }, [selectedReport, getNearestHubToCoords]);
-
   // ── Load MapLibre from npm (client-only dynamic import) once ─────────────
   // No persisted "already loaded" ref guard: under React StrictMode (on by
   // default in dev) this effect runs mount → cleanup → mount. A persisted guard
@@ -392,10 +366,12 @@ export default function InteractiveCommandMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isMapLoaded) return;
+    // Only ever zoom in: keep the current zoom if it's already tighter than the
+    // target so selecting from outside the map never pulls the coordinator back out.
     if (selectedReport) {
-      map.flyTo({ center: [selectedReport.longitude, selectedReport.latitude], zoom: 13.2, essential: true });
+      map.flyTo({ center: [selectedReport.longitude, selectedReport.latitude], zoom: Math.max(map.getZoom(), 13.2), essential: true });
     } else if (selectedBarangay) {
-      map.flyTo({ center: [selectedBarangay.longitude, selectedBarangay.latitude], zoom: 12.5, essential: true });
+      map.flyTo({ center: [selectedBarangay.longitude, selectedBarangay.latitude], zoom: Math.max(map.getZoom(), 12.5), essential: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBarangay?.id, selectedReport?.id, isMapLoaded]);
@@ -433,13 +409,23 @@ export default function InteractiveCommandMap({
     if (barangay) {
       onSelectBarangay(barangay);
       setSelectedEdge(null);
-      mapRef.current?.flyTo({
+      const map = mapRef.current;
+      map?.flyTo({
         center: [barangay.longitude, barangay.latitude],
-        zoom: 12.5,
+        zoom: Math.max(map.getZoom(), 12.5), // only zoom in, never out
         essential: true
       });
     }
   }, [onSelectBarangay]);
+
+  // Clicking a route line jumps to the Teams & Dispatch tab focused on that route's team.
+  const handleRouteClick = useCallback((e: MapLayerMouseEvent) => {
+    if (blockModeRef.current) return;
+    const id = e.features?.[0]?.properties?.id;
+    if (!id) return;
+    const route = routesRef.current.find((r) => r.id === id);
+    if (route) onSelectRouteRef.current?.(route);
+  }, []);
 
   // ── Initialize MapLibre ──
   const initMap = () => {
@@ -486,11 +472,6 @@ export default function InteractiveCommandMap({
       });
 
       map.addSource('roads-source', {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] },
-      });
-
-      map.addSource('routes-source', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
       });
@@ -576,60 +557,52 @@ export default function InteractiveCommandMap({
         },
       });
 
+      // Closed road — hazard styling, deliberately NOT in the route color family. Dark casing
+      // gives ≥3:1 on the basemap; heavier core + distinct dash reads as a barrier, not a route.
+      map.addLayer({
+        id: 'roads-layer-blocked-casing',
+        type: 'line',
+        source: 'roads-source',
+        filter: ['==', ['get', 'status'], 'blocked'],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#1a0606', 'line-width': 7, 'line-opacity': 0.95 },
+      });
       map.addLayer({
         id: 'roads-layer-blocked',
         type: 'line',
         source: 'roads-source',
         filter: ['==', ['get', 'status'], 'blocked'],
-        layout: {
-          'line-cap': 'round',
-          'line-join': 'round',
-        },
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': COLOR.critical,
-          'line-width': 2.5,
-          'line-dasharray': [4, 3],
-          'line-opacity': 0.75,
-        },
-      });
-
-      // Dynamic incident line (nearest hub -> selected report)
-      map.addLayer({
-        id: 'routes-layer-casing',
-        type: 'line',
-        source: 'routes-source',
-        paint: {
-          'line-color': ROUTE_CASING,
-          'line-width': 8,
-          'line-opacity': 0.5,
-        },
-        layout: {
-          'line-cap': 'round',
-          'line-join': 'round',
-          'visibility': 'none'
-        }
-      });
-
-      map.addLayer({
-        id: 'routes-layer',
-        type: 'line',
-        source: 'routes-source',
-        paint: {
-          'line-color': ROUTE_ACTIVE,
           'line-width': 4,
-          'line-opacity': 0.95,
+          'line-opacity': 1,
+          'line-dasharray': [2, 1.4],
         },
-        layout: {
-          'line-cap': 'round',
-          'line-join': 'round',
-          'visibility': 'none'
-        }
       });
 
       // ── Per-team OR-Tools route layers (always-on; distinct from the dynamic incident line) ──
       map.addSource('team-routes-source', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
+      });
+
+      // Ghost of a route's PREVIOUS path, kept at low opacity after a reroute until the area is
+      // reached or it reroutes again. Added before the live layers so it renders underneath.
+      map.addSource('team-routes-ghost-source', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      // Dark casing first so a faded line still reads against the dark basemap.
+      map.addLayer({
+        id: 'team-routes-ghost-casing', type: 'line', source: 'team-routes-ghost-source',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': ROUTE_CASING, 'line-width': 6, 'line-opacity': 0.55 },
+      });
+      // The ghost is a LOW-OPACITY version of the active route color — unmistakably "a route",
+      // just faded as the old one. The low opacity + the on-map "Original route" chip keep it
+      // distinct from the live active line.
+      map.addLayer({
+        id: 'team-routes-ghost', type: 'line', source: 'team-routes-ghost-source',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': ROUTE_ACTIVE, 'line-width': 3.5, 'line-opacity': 0.5 },
       });
 
       map.addLayer({
@@ -648,9 +621,18 @@ export default function InteractiveCommandMap({
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': ['match', ['get', 'status'], 'completed', ROUTE_DONE, ROUTE_ACTIVE],
-          'line-width': 3.5,
+          'line-width': ['match', ['get', 'status'], 'completed', 3, 4.5],
           'line-opacity': 0.9,
+          'line-opacity-transition': { duration: 300 },
         },
+      });
+
+      // Directional "flow" overlay on active routes (motion-meaning); animated in a rAF effect.
+      map.addLayer({
+        id: 'team-routes-flow', type: 'line', source: 'team-routes-source',
+        filter: ['==', ['get', 'status'], 'active'],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#eafff9', 'line-width': 2, 'line-opacity': 0.9, 'line-dasharray': [0, 4, 3] },
       });
 
       map.addLayer({
@@ -665,6 +647,20 @@ export default function InteractiveCommandMap({
           'line-opacity': 0.85,
           'line-dasharray': [2, 1.6],
         },
+      });
+
+      // Provisional dispatch line (hub -> area), shown via OSRM while the real pgRouting route
+      // computes. Amber + dashed, distinct from the route of record; replaced by the active route.
+      map.addSource('dispatch-preview-source', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      map.addLayer({
+        id: 'dispatch-preview-line', type: 'line', source: 'dispatch-preview-source',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': COLOR.warning, 'line-width': 3, 'line-opacity': 0.9, 'line-dasharray': [1.5, 1.2] },
+      });
+
+      // A closure is the REASON a route bends — it must sit above the routes and the ghost.
+      ['roads-layer-blocked-casing', 'roads-layer-blocked'].forEach((id) => {
+        if (map.getLayer(id)) map.moveLayer(id); // move to top of the current stack
       });
 
       // Per-team route hover: ETA + cargo summary + ordered stops popover
@@ -702,6 +698,7 @@ export default function InteractiveCommandMap({
         map.on('mouseenter', lid, onTeamRouteHover);
         map.on('mousemove', lid, (e: MapLayerMouseEvent) => hoverPopupRef.current.setLngLat(e.lngLat));
         map.on('mouseleave', lid, onTeamRouteLeave);
+        map.on('click', lid, handleRouteClick);
       });
 
       // Event handlers
@@ -732,9 +729,10 @@ export default function InteractiveCommandMap({
           p.hoursSinceContact === null || p.hoursSinceContact === undefined || p.hoursSinceContact === ''
             ? 'No contact'
             : `${Math.round(Number(p.hoursSinceContact))}h ago`;
+        const served = p.served === true || p.served === 'true';
         const state = silentAreaState(Number(p.score));
-        const stateLabel = STATE_LABEL[state];
-        const stateColor = STATE_COLOR[state];
+        const stateLabel = served ? SERVED_LABEL : STATE_LABEL[state];
+        const stateColor = served ? SERVED_COLOR : STATE_COLOR[state];
 
         // One breakdown row: label · weight (left), a 0–1 fill bar (middle), and the
         // component value (right). The fixed 3-column grid + a fill bar that scales by
@@ -757,8 +755,10 @@ export default function InteractiveCommandMap({
               <div class="px-3 py-2.5 text-[13px] font-sans">
                 <div class="flex items-center justify-between gap-2 border-b border-line pb-1.5 mb-2">
                   <span class="font-medium text-fg truncate">${p.name}</span>
-                  <span class="flex items-center gap-1.5 text-[12px] text-muted shrink-0">
-                    <span style="width:6px;height:6px;border-radius:9999px;background:${stateColor}"></span>
+                  <span class="flex items-center gap-1.5 text-[12px] shrink-0" style="color:${served ? stateColor : 'var(--color-muted)'}">
+                    ${served
+                      ? `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="${stateColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`
+                      : `<span style="width:6px;height:6px;border-radius:9999px;background:${stateColor}"></span>`}
                     ${stateLabel}
                   </span>
                 </div>
@@ -874,7 +874,9 @@ export default function InteractiveCommandMap({
     if (barangaysSource && mapLayers.barangays) {
       const features = barangays.map(barangay => {
         const sd = getScoreData(barangay.id);
-        const color = scoreColor(sd.score);
+        // Served (delivered-to) barangays render green, overriding the priority choropleth.
+        const served = servedBarangayIds.has(barangay.id);
+        const color = served ? SERVED_COLOR : scoreColor(sd.score);
 
         return {
           type: 'Feature',
@@ -882,6 +884,7 @@ export default function InteractiveCommandMap({
             id: barangay.id,
             name: barangay.name,
             score: sd.score,
+            served,
             hoursSinceContact: sd.hoursSinceContact,
             color: color,
             // Composite-priority components for the hover breakdown tooltip (Phase 4.4).
@@ -924,7 +927,7 @@ export default function InteractiveCommandMap({
         );
       }
     }
-  }, [isMapLoaded, mapLayers.barangays, barangays, getScoreData, generateBarangayPolygon]);
+  }, [isMapLoaded, mapLayers.barangays, barangays, getScoreData, generateBarangayPolygon, servedBarangayIds]);
 
   // Selected-barangay highlight via feature-state (no feature rebuild): clear the prior
   // selection and set the new one whenever the selection changes.
@@ -979,41 +982,73 @@ export default function InteractiveCommandMap({
     }
   }, [isMapLoaded, mapLayers.roads, edges, roadGeometries]);
 
-  // ── Active Teal Route Rendering ──
+  // "✕ ROAD BLOCKED" chips on each closed segment — the unmistakable, route-distinct closure
+  // marker (color-not-only: shape + label + symbol, not red hue alone). DOM markers render above
+  // the canvas, so a chip is never hidden by a line. Built from `edges` (the same client array
+  // that feeds roads-source) so it doesn't depend on source paint timing.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !isMapLoaded) return;
+    if (!map || !isMapLoaded || !maplibreglRef.current) return;
+    blockedMarkersRef.current.forEach((m) => m.remove());
+    blockedMarkersRef.current = [];
+    if (!mapLayers.roads) return;
 
-    const routesSource = map.getSource('routes-source');
-    if (routesSource) {
-      if (mapLayers.routes && selectedRoutePath) {
-        routesSource.setData({
-          type: 'FeatureCollection',
-          features: [
-            {
-              type: 'Feature',
-              properties: { status: 'active' },
-              geometry: {
-                type: 'LineString',
-                coordinates: selectedRoutePath
-              }
-            }
-          ]
-        });
-        map.setLayoutProperty('routes-layer', 'visibility', 'visible');
-        map.setLayoutProperty('routes-layer-casing', 'visibility', 'visible');
-      } else {
-        routesSource.setData({
-          type: 'FeatureCollection',
-          features: []
-        });
-        if (map.getLayer('routes-layer')) {
-          map.setLayoutProperty('routes-layer', 'visibility', 'none');
-          map.setLayoutProperty('routes-layer-casing', 'visibility', 'none');
-        }
-      }
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const blocked = edges.filter((e) => e.status === 'blocked');
+
+    // Cluster connected closures into ONE chip (a multi-edge closure otherwise stacks chips at every
+    // segment midpoint = clutter). Union-find over shared nodes: edges that touch at a sourceNode/
+    // targetNode belong to the same closure. Each cluster then gets a single chip.
+    const parent = new Map<string, string>();
+    const find = (x: string): string => {
+      let r = x;
+      while (parent.get(r) !== r) r = parent.get(r)!;
+      while (parent.get(x) !== r) { const n = parent.get(x)!; parent.set(x, r); x = n; }
+      return r;
+    };
+    const union = (a: string, b: string) => { parent.set(find(a), find(b)); };
+    for (const e of blocked) {
+      if (!parent.has(e.sourceNode)) parent.set(e.sourceNode, e.sourceNode);
+      if (!parent.has(e.targetNode)) parent.set(e.targetNode, e.targetNode);
+      union(e.sourceNode, e.targetNode);
     }
-  }, [isMapLoaded, mapLayers.routes, selectedRoutePath]);
+    const clusters = new Map<string, typeof blocked>();
+    for (const e of blocked) {
+      const root = find(e.sourceNode);
+      (clusters.get(root) ?? clusters.set(root, []).get(root)!).push(e);
+    }
+
+    for (const group of clusters.values()) {
+      // Anchor + label come from the longest edge in the cluster (stable, sits on a real road).
+      const anchor = group.reduce((a, b) => (b.lengthM > a.lengthM ? b : a));
+      const line = roadGeometries[anchor.id] ?? [
+        [anchor.sourceCoords.lng, anchor.sourceCoords.lat],
+        [anchor.targetCoords.lng, anchor.targetCoords.lat],
+      ];
+      if (!line || line.length < 2) continue;
+      const mid = line[Math.floor(line.length / 2)] as [number, number];
+
+      const name = anchor.name || 'Road closed';
+      const otherNames = new Set(group.map((e) => e.name).filter((n) => n && n !== anchor.name));
+      const badge = otherNames.size > 0
+        ? `<span style="margin-left:5px;padding:1px 5px;border-radius:6px;font-size:10px;font-weight:700;
+             background:rgba(11,18,32,0.85);color:#fecaca;border:1px solid rgba(254,202,202,0.4)">+${otherNames.size}</span>`
+        : '';
+
+      const el = document.createElement('div');
+      el.className = `luwas-endpoint luwas-block ${reduce ? '' : 'luwas-block--pulse'}`;
+      el.innerHTML =
+        `<span class="luwas-endpoint__label" style="color:#fecaca">${name}${badge}</span>
+         <span style="display:flex;width:26px;height:26px;border-radius:7px;align-items:center;justify-content:center;
+           background:${COLOR.critical};box-shadow:0 0 0 3px rgba(11,18,32,0.9),0 2px 8px rgba(0,0,0,0.55)">
+           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6"
+             stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+         </span>`;
+      blockedMarkersRef.current.push(
+        new maplibreglRef.current.Marker({ element: el }).setLngLat(mid).addTo(map),
+      );
+    }
+  }, [isMapLoaded, mapLayers.roads, edges, roadGeometries]);
 
   // ── OSRM-snap per-team OR-Tools routes onto real roads (waypoints: team base -> ordered stops) ──
   useEffect(() => {
@@ -1079,10 +1114,19 @@ export default function InteractiveCommandMap({
 
     if (!mapLayers.routes) {
       src.setData({ type: 'FeatureCollection', features: [] });
+      const ghostSrc = map.getSource('team-routes-ghost-source') as { setData: (d: unknown) => void } | undefined;
+      ghostSrc?.setData({ type: 'FeatureCollection', features: [] });
+      ghostLabelMarkersRef.current.forEach((m) => m.remove());
+      ghostLabelMarkersRef.current = [];
       return;
     }
 
     const AVG_SPEED_KMH = 25; // disaster-response convoy avg over degraded roads
+
+    // Per-team active/completed geometry for the ghost capture (keyed by stable teamId — survives
+    // the route-id change a reroute causes; see nextGhostState).
+    const activeByTeam: Record<string, [number, number][]> = {};
+    const completedTeamIds: string[] = [];
 
     const features = routes.map((route) => {
       const team = teams.find((t) => t.id === route.teamId);
@@ -1097,8 +1141,12 @@ export default function InteractiveCommandMap({
         )
         .join('');
 
-      const coordinates =
-        teamRouteGeometries[route.id] ?? route.path.map((p) => [p.lng, p.lat] as [number, number]);
+      // pgRouting path first (block-aware); OSRM snap only as a degenerate-path fallback.
+      const coordinates = routeLineCoords(route, teamRouteGeometries[route.id]);
+
+      // Collect per-team geometry for the ghost capture below (by teamId, not route.id).
+      if (route.teamId && route.status === 'active') activeByTeam[route.teamId] = coordinates;
+      if (route.teamId && route.status === 'completed') completedTeamIds.push(route.teamId);
 
       return {
         type: 'Feature',
@@ -1116,7 +1164,273 @@ export default function InteractiveCommandMap({
     });
 
     src.setData({ type: 'FeatureCollection', features });
+
+    // Capture/keep ghosts by teamId (survives the route-id change a reroute causes) and publish.
+    ghostStateRef.current = nextGhostState(ghostStateRef.current, activeByTeam, completedTeamIds);
+    const ghostSrc = map.getSource('team-routes-ghost-source') as { setData: (d: unknown) => void } | undefined;
+    // Draw ONLY the parts of each team's old path the new active path doesn't cover, so the ghost
+    // (and its label) never sits on top of road shared with the new route. See ghostDivergentSegments.
+    const ghostSegmentsByTeam = Object.entries(ghostStateRef.current.ghostByTeam)
+      .map(([teamId, ghost]) => ({
+        segments: ghostDivergentSegments(ghost, activeByTeam[teamId] ?? []),
+      }))
+      .filter((g) => g.segments.length > 0);
+    ghostSrc?.setData({
+      type: 'FeatureCollection',
+      features: ghostSegmentsByTeam.flatMap((g) =>
+        g.segments.map((c) => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: c } })),
+      ),
+    });
+
+    // One "Original route" chip per team, on the midpoint of its longest divergent segment
+    // (color-not-only: the faded line + an explicit label).
+    ghostLabelMarkersRef.current.forEach((m) => m.remove());
+    ghostLabelMarkersRef.current = [];
+    if (maplibreglRef.current) {
+      for (const g of ghostSegmentsByTeam) {
+        const c = g.segments.reduce((a, b) => (b.length > a.length ? b : a));
+        const mid = c[Math.floor(c.length / 2)] as [number, number];
+        const el = document.createElement('div');
+        el.className = 'luwas-endpoint';
+        el.innerHTML =
+          `<span style="display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border-radius:7px;
+             font-size:10px;font-weight:600;white-space:nowrap;
+             background:rgba(11,18,32,0.85);color:${ROUTE_ACTIVE};border:1px solid ${ROUTE_ACTIVE}66">
+             <span style="width:12px;border-top:2px solid ${ROUTE_ACTIVE};opacity:0.8"></span>Original route</span>`;
+        ghostLabelMarkersRef.current.push(
+          new maplibreglRef.current.Marker({ element: el }).setLngLat(mid).addTo(map),
+        );
+      }
+    }
   }, [isMapLoaded, mapLayers.routes, routes, teams, teamRouteGeometries]);
+
+  // Provisional dispatch preview: OSRM-snap hub -> area for a responsive line until the real
+  // pgRouting route lands (parent nulls dispatchPreview then). OSRM is acceptable here because
+  // this is an explicitly provisional indicator, not the block-aware route of record.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded) return;
+    const src = map.getSource('dispatch-preview-source') as { setData: (d: unknown) => void } | undefined;
+    if (!src) return;
+    if (!dispatchPreview) { src.setData({ type: 'FeatureCollection', features: [] }); return; }
+
+    let activePreview = true;
+    const { from, to } = dispatchPreview;
+    const straight = [[from.lng, from.lat], [to.lng, to.lat]] as [number, number][];
+    const draw = (coords: [number, number][]) => {
+      if (!activePreview) return;
+      src.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } }] });
+    };
+    draw(straight); // show instantly; refine with OSRM if it answers
+
+    (async () => {
+      try {
+        const c = `${from.lng},${from.lat};${to.lng},${to.lat}`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${c}?overview=full&geometries=geojson`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          const data = await res.json();
+          const geom = data.routes?.[0]?.geometry?.coordinates;
+          if (geom?.length) draw(geom);
+        }
+      } catch { /* keep the straight provisional line */ }
+    })();
+
+    return () => { activePreview = false; };
+  }, [isMapLoaded, dispatchPreview]);
+
+  // Emphasized START (HQ) + END (destination) markers per active/planned route. Shape — not
+  // just color — distinguishes them (color-not-only); larger + haloed for contrast on the dark
+  // map; END pulses while active (motion-meaning, reduced-motion-guarded via CSS).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded || !maplibreglRef.current) return;
+    routeEndpointMarkersRef.current.forEach((m) => m.remove());
+    routeEndpointMarkersRef.current = [];
+    if (!mapLayers.routes) return;
+
+    const makeEl = (html: string, kind: 'start' | 'end', active: boolean) => {
+      const el = document.createElement('div');
+      el.className = `luwas-endpoint ${kind === 'end' ? `luwas-end ${active ? 'luwas-end--active' : ''}` : ''}`;
+      el.innerHTML = html;
+      return el;
+    };
+
+    routes.filter((r) => r.status === 'active' || r.status === 'planned').forEach((route) => {
+      const coords = routeLineCoords(route, teamRouteGeometries[route.id]);
+      if (coords.length < 2) return;
+      // Geometry direction is not guaranteed (pgRouting / reroute can emit either order), so
+      // anchor HQ to whichever line end is nearest the team base; the other end is the destination.
+      const team = teams.find((t) => t.id === route.teamId);
+      const c0 = coords[0];
+      const cN = coords[coords.length - 1];
+      let start = c0;
+      let end = cN;
+      if (team) {
+        const d2 = (c: [number, number]) =>
+          (c[0] - team.baseLocation.lng) ** 2 + (c[1] - team.baseLocation.lat) ** 2;
+        if (d2(cN) < d2(c0)) {
+          start = cN;
+          end = c0;
+        }
+      }
+      const destName = route.stops?.[route.stops.length - 1]?.barangayName ?? 'Destination';
+      const active = route.status === 'active';
+
+      const startEl = makeEl(
+        `<span class="luwas-endpoint__label" style="color:var(--color-active)">HQ</span>
+         <span style="display:flex;width:30px;height:30px;border-radius:8px;align-items:center;justify-content:center;
+           background:var(--color-active);box-shadow:0 0 0 3px rgba(11,17,32,0.9),0 2px 8px rgba(0,0,0,0.5)">
+           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#06281f" stroke-width="2.2"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V8l9-5 9 5v13"/><path d="M9 21v-6h6v6"/></svg>
+         </span>`, 'start', active);
+
+      const endEl = makeEl(
+        `<span class="luwas-endpoint__label" style="color:#fff">${destName}</span>
+         <span class="luwas-end__ring" style="box-shadow:0 0 0 2px var(--color-critical)"></span>
+         <span style="display:flex;width:30px;height:30px;border-radius:9999px 9999px 9999px 2px;rotate:45deg;
+           align-items:center;justify-content:center;background:var(--color-critical);
+           box-shadow:0 0 0 3px rgba(11,17,32,0.9),0 2px 8px rgba(0,0,0,0.5)">
+           <svg style="rotate:-45deg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff"
+             stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/>
+             <path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11Z"/></svg>
+         </span>`, 'end', active);
+
+      const M = maplibreglRef.current!.Marker;
+      routeEndpointMarkersRef.current.push(new M({ element: startEl }).setLngLat(start).addTo(map));
+      routeEndpointMarkersRef.current.push(new M({ element: endEl }).setLngLat(end).addTo(map));
+    });
+  }, [isMapLoaded, routes, teams, mapLayers.routes, teamRouteGeometries]);
+
+  // Demo convoy marker (Part A). A clearly-labelled SIMULATED vehicle eases from HQ along the
+  // SAME real-road geometry the route line draws and PARKS short of the destination (never
+  // arrives) — decorative motion for the demo narrative, not live telemetry. Honest-by-design:
+  // a "sim" pill rides the marker, it stops at stopFraction, and DEMO_CONVOY kills it in one line.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded || !maplibreglRef.current) return;
+
+    const markers = vehicleMarkersRef.current;
+    const state = convoyStateRef.current;
+    const M = maplibreglRef.current.Marker;
+
+    // Which routes should carry a convoy right now? (obeys DEMO_CONVOY + the routes layer toggle)
+    const activeIds = new Set<string>();
+    if (DEMO_CONVOY && mapLayers.routes) {
+      routes.filter((r) => r.status === 'active').forEach((r) => activeIds.add(r.id));
+    }
+
+    // Drop convoys for routes that are no longer active/present (e.g. mark-reached / complete).
+    for (const [id, marker] of markers) {
+      if (!activeIds.has(id)) {
+        marker.remove();
+        markers.delete(id);
+        state.delete(id);
+      }
+    }
+
+    const reduceMotion =
+      typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+    routes.filter((r) => activeIds.has(r.id)).forEach((route) => {
+      let coords = routeLineCoords(route, teamRouteGeometries[route.id]);
+      if (coords.length < 2) return;
+      // HQ-anchor so f=0 is always HQ — geometry direction is not guaranteed (reuse endpoint logic).
+      const team = teams.find((t) => t.id === route.teamId);
+      if (team) {
+        const d2 = (c: [number, number]) =>
+          (c[0] - team.baseLocation.lng) ** 2 + (c[1] - team.baseLocation.lat) ** 2;
+        if (d2(coords[coords.length - 1]) < d2(coords[0])) coords = [...coords].reverse();
+      }
+      const stop = stopFraction(route.id);
+
+      let entry = state.get(route.id);
+      if (!entry) {
+        // New convoy: build the marker, record start time so re-renders never restart the ease.
+        const el = document.createElement('div');
+        el.className = 'luwas-convoy';
+        el.innerHTML =
+          `<span class="luwas-convoy__icon">${convoyIcon(team?.type)}</span>` +
+          `<span class="luwas-convoy__sim">sim</span>`;
+        const p0 = pointAtFraction(coords, 0);
+        const marker = new M({ element: el }).setLngLat([p0.lng, p0.lat]).addTo(map);
+        markers.set(route.id, marker);
+        entry = {
+          coords, stop, start: performance.now(), parked: false,
+          iconEl: el.querySelector('.luwas-convoy__icon'),
+        };
+        state.set(route.id, entry);
+      } else {
+        // Existing convoy: refresh geometry (a reroute can change it) but keep the start time.
+        entry.coords = coords;
+        entry.stop = stop;
+      }
+
+      // Reduced motion: place parked at stopFraction with no rAF (static, signals "holding").
+      if (reduceMotion) {
+        const p = pointAtFraction(coords, stop);
+        const marker = markers.get(route.id)!;
+        marker.setLngLat([p.lng, p.lat]);
+        if (entry.iconEl) entry.iconEl.style.transform = `rotate(${p.bearing}deg)`;
+        marker.getElement().classList.add('luwas-convoy--parked');
+        entry.parked = true;
+      }
+    });
+
+    if (reduceMotion) return; // markers placed statically; no animation loop.
+
+    // One shared rAF loop drives ALL convoys (mirror the flow loop). Each parks — stops updating —
+    // once it reaches its stopFraction, so there is no per-frame work for a parked convoy.
+    // ease-in-out quadratic: gentle start -> steady cruise -> gentle settle. (Cubic peaked at ~3x
+    // average speed mid-route, which read as the convoy racing to the middle; quadratic peaks at ~2x
+    // and, paired with the longer CONVOY_MS, keeps the advance slow and deliberate throughout.)
+    const ease = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
+    const tick = () => {
+      const now = performance.now();
+      for (const [id, entry] of state) {
+        if (entry.parked) continue;
+        const marker = markers.get(id);
+        if (!marker) continue;
+        const t = Math.min(1, (now - entry.start) / CONVOY_MS);
+        const f = ease(t) * entry.stop;
+        const p = pointAtFraction(entry.coords, f);
+        marker.setLngLat([p.lng, p.lat]);
+        if (entry.iconEl) entry.iconEl.style.transform = `rotate(${p.bearing}deg)`;
+        if (t >= 1) {
+          entry.parked = true;
+          marker.getElement().classList.add('luwas-convoy--parked');
+        }
+      }
+      convoyRafRef.current = requestAnimationFrame(tick);
+    };
+    convoyRafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(convoyRafRef.current);
+  }, [isMapLoaded, routes, teams, mapLayers.routes, teamRouteGeometries]);
+
+  // Directional "flow" on active routes (motion-meaning). Steps a dash pattern so the highlight
+  // travels depot -> destination. Skipped entirely under prefers-reduced-motion (the static
+  // team-routes-line already conveys the path).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded) return;
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      if (map.getLayer('team-routes-flow')) map.setLayoutProperty('team-routes-flow', 'visibility', 'none');
+      return;
+    }
+    const seq = [ [0,4,3],[0.5,4,2.5],[1,4,2],[1.5,4,1.5],[2,4,1],[2.5,4,0.5],[3,4,0],[0,0.5,3,3.5],[0,1,3,3],[0,2,3,2],[0,3,3,1],[0,3.5,3,0.5] ];
+    let i = 0, raf = 0, last = 0;
+    const tick = (t: number) => {
+      if (t - last > 90) { // ~11fps marching ants; cheap
+        if (map.getLayer('team-routes-flow')) map.setPaintProperty('team-routes-flow', 'line-dasharray', seq[i % seq.length]);
+        i++; last = t;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [isMapLoaded]);
 
   // ── Interactive Report Markers (Custom SVG styling for Pending/Confirmed/Flagged) ──
   useEffect(() => {
@@ -1128,7 +1442,18 @@ export default function InteractiveCommandMap({
 
     if (!mapLayers.reports) return;
 
+    // A dispatched area is already represented by its route destination pin, which would otherwise
+    // overlap the report marker. Hide report markers in barangays with an active/planned route;
+    // they reappear once the route completes.
+    const dispatchedBarangayIds = new Set(
+      routes
+        .filter((r) => r.status === 'active' || r.status === 'planned')
+        .map((r) => r.stops?.[r.stops.length - 1]?.barangayId)
+        .filter((id): id is string => Boolean(id)),
+    );
+
     reports.forEach((report) => {
+      if (report.barangayId && dispatchedBarangayIds.has(report.barangayId)) return;
       const isSelected = selectedReport?.id === report.id;
       const status = report.status;
       const bg = reportStatusColor(status);
@@ -1203,7 +1528,7 @@ export default function InteractiveCommandMap({
         setSelectedEdge(null);
         map.flyTo({
           center: [report.longitude, report.latitude],
-          zoom: 13.2,
+          zoom: Math.max(map.getZoom(), 13.2), // only zoom in, never out
           essential: true,
           speed: 1.2
         });
@@ -1215,7 +1540,7 @@ export default function InteractiveCommandMap({
 
       reportMarkersRef.current.push(marker);
     });
-  }, [isMapLoaded, mapLayers.reports, reports, selectedReport, onSelectReport]);
+  }, [isMapLoaded, mapLayers.reports, reports, routes, selectedReport, onSelectReport]);
 
   // ── Interactive Team Markers (Custom SVGs categorized by Team Type) ──
   useEffect(() => {
@@ -1483,10 +1808,14 @@ export default function InteractiveCommandMap({
     toggleLayer('barangays-outline', mapLayers.barangays);
     toggleLayer('barangays-labels', mapLayers.barangays);
     toggleLayer('roads-layer-solid', mapLayers.roads);
+    toggleLayer('roads-layer-blocked-casing', mapLayers.roads);
     toggleLayer('roads-layer-blocked', mapLayers.roads);
     toggleLayer('team-routes-casing', mapLayers.routes);
+    toggleLayer('team-routes-ghost', mapLayers.routes);
     toggleLayer('team-routes-line', mapLayers.routes);
+    toggleLayer('team-routes-flow', mapLayers.routes);
     toggleLayer('team-routes-line-planned', mapLayers.routes);
+    toggleLayer('dispatch-preview-line', mapLayers.routes);
   }, [mapLayers, isMapLoaded]);
 
   // ── Fullscreen Setup ──
@@ -1898,6 +2227,13 @@ export default function InteractiveCommandMap({
                       <span className="text-fg">{label}</span>
                     </div>
                   ))}
+                  {/* Served is orthogonal to the priority scale — a delivered-to community. */}
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center justify-center w-2 h-2 shrink-0">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={SERVED_COLOR} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+                    </span>
+                    <span className="text-fg">{SERVED_LABEL}</span>
+                  </div>
                 </div>
               </div>
 
@@ -1913,8 +2249,11 @@ export default function InteractiveCommandMap({
                     <span className="text-fg">Slow</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="w-4 border-t-2 border-dashed inline-block shrink-0" style={{ borderColor: COLOR.critical }} />
-                    <span className="text-fg">Blocked</span>
+                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-[4px] shrink-0"
+                      style={{ background: COLOR.critical }}>
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                    </span>
+                    <span className="text-fg">Blocked (closure)</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="w-4 h-0.5 inline-block shrink-0" style={{ background: COLOR.critical }} />
@@ -1937,6 +2276,10 @@ export default function InteractiveCommandMap({
                   <div className="flex items-center gap-2">
                     <span className="w-4 h-0.5 inline-block shrink-0" style={{ background: ROUTE_DONE }} />
                     <span className="text-fg">Completed</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-0.5 inline-block shrink-0" style={{ background: ROUTE_ACTIVE, opacity: 0.5 }} />
+                    <span className="text-fg">Original (rerouted)</span>
                   </div>
                 </div>
               </div>

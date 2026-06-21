@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import type { NeedsSeverity, RoadStatus } from '@/lib/types/parse';
 import BarangayPicker, { type BarangayOption } from './BarangayPicker';
+import BlockedRoadPicker from './BlockedRoadPicker';
 
 type SubmitState =
   | { kind: 'idle' }
@@ -73,6 +74,7 @@ export default function ReportForm({ barangays }: { barangays: BarangayOption[] 
   const [roadStatus, setRoadStatus] = useState<RoadStatus>('unknown');
   const [population, setPopulation] = useState('');
   const [notes, setNotes] = useState('');
+  const [edgeIds, setEdgeIds] = useState<number[]>([]);
   const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [state, setState] = useState<SubmitState>({ kind: 'idle' });
@@ -91,6 +93,9 @@ export default function ReportForm({ barangays }: { barangays: BarangayOption[] 
     navigator.serviceWorker.addEventListener('message', onMessage);
     return () => navigator.serviceWorker.removeEventListener('message', onMessage);
   }, []);
+
+  // Reset the road picks when the barangay changes or Road leaves Impassable.
+  useEffect(() => { setEdgeIds([]); }, [barangayId, roadStatus]);
 
   const captureGps = () => {
     setGpsError(null);
@@ -116,6 +121,7 @@ export default function ReportForm({ barangays }: { barangays: BarangayOption[] 
       population_estimate: population === '' ? null : Number(population),
       needs_severity: severity,
       road_status: roadStatus,
+      impassable_edge_ids: roadStatus === 'impassable' ? edgeIds : [],
       lat: gps?.lat ?? null,
       lng: gps?.lng ?? null,
       captured_at: new Date().toISOString(),
@@ -132,6 +138,7 @@ export default function ReportForm({ barangays }: { barangays: BarangayOption[] 
         setState({ kind: 'sent' });
         setNotes('');
         setPopulation('');
+        setEdgeIds([]);
       } else if (res.status === 202) {
         // Service worker queued it for Background Sync (we were offline).
         const next = readQueuedCount() + 1;
@@ -140,6 +147,7 @@ export default function ReportForm({ barangays }: { barangays: BarangayOption[] 
         setState({ kind: 'queued' });
         setNotes('');
         setPopulation('');
+        setEdgeIds([]);
       } else {
         const body = await res.json().catch(() => ({}));
         setState({ kind: 'error', message: body.error ?? `submit failed (${res.status})` });
@@ -201,6 +209,12 @@ export default function ReportForm({ barangays }: { barangays: BarangayOption[] 
             />
           </Field>
         </div>
+
+        {roadStatus === 'impassable' && barangayId && (
+          <Field icon={Route} label="Which road(s) are blocked?">
+            <BlockedRoadPicker barangayId={barangayId} selectedEdgeIds={edgeIds} onChange={setEdgeIds} />
+          </Field>
+        )}
 
         <Field label="What is happening?">
           <textarea

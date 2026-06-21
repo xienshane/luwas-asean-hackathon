@@ -21,6 +21,7 @@ import LeftSidebar from './LeftSidebar';
 import InteractiveCommandMap from './InteractiveCommandMap';
 import BottomOperationsConsole from './BottomOperationsConsole';
 import RightIntelligencePanel from './RightIntelligencePanel';
+import RouteDetailPanel from './RouteDetailPanel';
 import OperationsPanel from './OperationsPanel';
 import ReportsView from './ReportsView';
 import TeamsView from './TeamsView';
@@ -32,6 +33,8 @@ import { PAGASA_CATEGORY_LABELS, type LiveConditions } from '@/lib/live/conditio
 
 export default function CommandDashboard() {
   const [currentView, setCurrentView] = useState('map');
+  // Team to focus when arriving on the Teams & Dispatch tab (e.g. after clicking its route).
+  const [focusTeamId, setFocusTeamId] = useState<string | null>(null);
 
   // Phase 6.1 — connectivity tier drives the degradation banner + action gating.
   const realtimeHealthy = useRealtimeHealth();
@@ -47,6 +50,16 @@ export default function CommandDashboard() {
 
   const live = useLivePlan();
   const [routes, setRoutes] = useState<Route[]>([]);
+  const [dispatchPreview, setDispatchPreview] = useState<
+    { teamId: string; from: { lat: number; lng: number }; to: { lat: number; lng: number } } | null
+  >(null);
+
+  // Drop the provisional hub->area line once the real pgRouting route for that team lands.
+  useEffect(() => {
+    if (dispatchPreview && routes.some((r) => r.teamId === dispatchPreview.teamId && r.status === 'active')) {
+      setDispatchPreview(null);
+    }
+  }, [routes, dispatchPreview]);
   const [predictions, setPredictions] = useState<Record<string, ImpactPrediction>>({});
   const [manifests, setManifests] = useState<Record<string, SupplyManifest>>({});
   useEffect(() => { setRoutes(live.routes); }, [live.routes]);
@@ -54,6 +67,7 @@ export default function CommandDashboard() {
   useEffect(() => { setManifests(live.manifests); }, [live.manifests]);
 
   const [selectedBarangay, setSelectedBarangay] = useState<Barangay | null>(null);
+  const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
   const [selectedReport, setSelectedReport] = useState<FieldReport | null>(null);
 
   const [scores, setScores] = useState<{ barangayId: string; score: number; hoursSinceContact: number | null; timeFactor: number; popDensityNorm: number; hazardNorm: number }[]>([]);
@@ -87,6 +101,7 @@ export default function CommandDashboard() {
 
   const handleSelectBarangay = (b: Barangay) => {
     setSelectedBarangay(b);
+    setSelectedRoute(null);
     const matchingReport = reports.find(r => r.barangayId === b.id && r.status === 'pending');
     if (matchingReport) {
       setSelectedReport(matchingReport);
@@ -468,14 +483,68 @@ export default function CommandDashboard() {
     addActivityLog(`SUPPLY PLANNING: Relief manifest for ${bName} was [${status.toUpperCase()}] by coordinator.`, status === 'approved' ? 'success' : 'alert');
   };
 
-  const handleDispatchTeam = (teamId: string, barangayId: string) => {
-    setTeams(prev => prev.map(t => t.id === teamId ? { ...t, status: 'dispatched', currentAssignment: `Relief Delivery to ${barangays.find(b => b.id === barangayId)?.name}` } : t));
-    setRoutes(prev => prev.map(r => r.teamId === teamId ? { ...r, status: 'active' } : r));
+  // Route-click opens an in-rail Route/Convoy detail (keeps the map in view) instead of jumping
+  // to the Teams view. Route wins the rail: selecting a route clears any barangay selection.
+  const handleSelectRoute = (route: Route) => {
+    setSelectedRoute(route);
+    setSelectedBarangay(null);
+  };
 
+  // "View in Teams" preserves the old behavior as a secondary action.
+  const handleViewRouteInTeams = () => {
+    if (selectedRoute) setFocusTeamId(selectedRoute.teamId || null);
+    setSelectedRoute(null);
+    setCurrentView('teams');
+  };
+
+  const handleDispatchTeam = async (teamId: string, barangayId: string) => {
     const tName = teams.find(t => t.id === teamId)?.name;
-    const bName = barangays.find(b => b.id === barangayId)?.name;
-    
-    addActivityLog(`TEAM DISPATCH: Deployed ${tName} to ${bName} with humanitarian cargo.`, 'success');
+    const brgy = barangays.find(b => b.id === barangayId);
+
+    setTeams(prev => prev.map(t => t.id === teamId
+      ? { ...t, status: 'dispatched', currentAssignment: `Relief Delivery to ${brgy?.name}` } : t));
+
+    // Instant provisional hub->area line while the real road route is computed. dispatch_route
+    // uses the authoritative depot server-side; the client preview uses the loaded hub.
+    const hub = facilities[0];
+    if (hub && brgy) {
+      setDispatchPreview({ teamId, from: { lat: hub.latitude, lng: hub.longitude }, to: { lat: brgy.latitude, lng: brgy.longitude } });
+    }
+    addActivityLog(`TEAM DISPATCH: Deployed ${tName} to ${brgy?.name} with humanitarian cargo.`, 'success');
+
+    try {
+      const res = await fetch('/api/dispatch', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teamId, barangayId }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.error ?? `dispatch ${res.status}`);
+      }
+      addActivityLog(`ROUTING: real-road route generated for ${tName} → ${brgy?.name}.`, 'info');
+    } catch (err) {
+      setDispatchPreview(null);
+      addActivityLog(`ROUTING: route generation failed — ${err instanceof Error ? err.message : 'service unreachable'}.`, 'alert');
+    }
+  };
+
+  const handleMarkReached = async (routeId: string) => {
+    const route = routes.find(r => r.id === routeId);
+    const bName = route?.stops?.[0]?.barangayName ?? 'area';
+    setRoutes(prev => prev.map(r => r.id === routeId ? { ...r, status: 'completed' } : r));
+    if (route?.teamId) setTeams(prev => prev.map(t => t.id === route.teamId ? { ...t, status: 'active', currentAssignment: undefined } : t));
+    addActivityLog(`AREA REACHED: ${bName} marked reached. Route completed; contact updated.`, 'success');
+    try {
+      const res = await fetch('/api/routes/complete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ routeId }),
+      });
+      if (!res.ok) throw new Error(`complete ${res.status}`);
+      const map = await fetchCoordinatorMapData();
+      setBarangays(map.barangays);
+      setScores(map.scores);
+    } catch (err) {
+      addActivityLog(`AREA REACHED: failed to persist — ${err instanceof Error ? err.message : 'service unreachable'}.`, 'alert');
+    }
   };
 
   const addActivityLog = (event: string, type: 'info' | 'warn' | 'success' | 'alert' = 'info') => {
@@ -647,11 +716,13 @@ export default function CommandDashboard() {
                 edges={edges}
                 routes={routes}
                 facilities={facilities}
+                dispatchPreview={dispatchPreview}
                 volunteers={liveVolunteers}
                 selectedBarangay={selectedBarangay}
                 onSelectBarangay={handleSelectBarangay}
                 selectedReport={selectedReport}
                 onSelectReport={handleSelectReport}
+                onSelectRoute={handleSelectRoute}
                 scores={scores}
                 onUpdateRoadStatus={handleUpdateRoadStatus}
                 onBlockRoadAt={handleBlockRoadAt}
@@ -661,7 +732,15 @@ export default function CommandDashboard() {
             </div>
             <BottomOperationsConsole activityLogs={activityLogs} />
           </div>
-          {selectedBarangay ? (
+          {selectedRoute && routes.some((r) => r.id === selectedRoute.id) ? (
+            <RouteDetailPanel
+              route={routes.find((r) => r.id === selectedRoute.id)!}
+              team={teams.find((t) => t.id === selectedRoute.teamId)}
+              onMarkReached={(id) => { handleMarkReached(id); setSelectedRoute(null); }}
+              onViewInTeams={handleViewRouteInTeams}
+              onClose={() => setSelectedRoute(null)}
+            />
+          ) : selectedBarangay ? (
             <RightIntelligencePanel
               selectedBarangay={selectedBarangay}
               barangays={barangays}
@@ -675,6 +754,7 @@ export default function CommandDashboard() {
               onSaveOverrides={handleSaveOverrides}
               onUpdateManifestStatus={handleUpdateManifestStatus}
               onDispatchTeam={handleDispatchTeam}
+              onMarkReached={handleMarkReached}
               onClearBarangaySelection={handleClearBarangaySelection}
             />
           ) : (
@@ -708,6 +788,7 @@ export default function CommandDashboard() {
             routes={routes}
             barangays={barangays}
             onDispatchTeam={handleDispatchTeam}
+            focusTeamId={focusTeamId}
           />
         )}
 

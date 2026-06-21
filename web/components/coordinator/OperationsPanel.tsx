@@ -3,7 +3,7 @@
 import React from 'react';
 import { ChevronRight, Check, Flag } from 'lucide-react';
 import type { FieldReport, Route, SupplyManifest, Barangay } from '@/lib/types/coordinator';
-import { SeverityRail, StatusDot, SEVERITY_TONE } from './ui';
+import { SeverityRail, StatusDot, DetailPanel, SEVERITY_TONE } from './ui';
 
 interface OperationsPanelProps {
   reports: FieldReport[];
@@ -65,12 +65,12 @@ export default function OperationsPanel({
   ];
 
   return (
-    <aside className="w-[25%] min-w-[340px] max-w-[360px] h-full bg-surface border-l border-line flex flex-col overflow-hidden shrink-0">
-      <header className="shrink-0 px-4 py-3 border-b border-line">
-        <h2 className="text-[20px] font-medium text-fg">Operations</h2>
-      </header>
-
-      <div className="flex-1 overflow-y-auto">
+    <DetailPanel
+      className="luwas-rail-swap w-[25%] min-w-[340px] max-w-[360px] shrink-0"
+      eyebrow="Operations"
+      title={pending.length > 0 ? `${pending.length} awaiting` : 'All clear'}
+    >
+      <div>
         {/* Action counters */}
         <div className="border-b border-line">
           {counters.map((c) => (
@@ -142,6 +142,6 @@ export default function OperationsPanel({
           ))
         )}
       </div>
-    </aside>
+    </DetailPanel>
   );
 }

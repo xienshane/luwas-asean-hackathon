@@ -21,6 +21,7 @@ interface TeamsViewProps {
   routes: Route[];
   barangays: Barangay[];
   onDispatchTeam: (teamId: string, barangayId: string) => void;
+  focusTeamId?: string | null;
 }
 
 const TEAM_STATUS: Record<string, { tone: Tone; label: string }> = {
@@ -42,8 +43,10 @@ const eta = (m: number) => {
   return min >= 60 ? `${Math.floor(min / 60)}h ${min % 60}m` : `${min}m`;
 };
 
-export default function TeamsView({ teams, routes, barangays, onDispatchTeam }: TeamsViewProps) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+export default function TeamsView({ teams, routes, barangays, onDispatchTeam, focusTeamId }: TeamsViewProps) {
+  // This view unmounts when the tab is left, so the initializer captures focusTeamId on each
+  // arrival (e.g. after clicking a route on the map) — no prop→state sync effect needed.
+  const [selectedId, setSelectedId] = useState<string | null>(focusTeamId ?? null);
   const [dest, setDest] = useState('');
 
   // Live volunteer roster (coordinator_volunteers view, RLS coordinator-only).

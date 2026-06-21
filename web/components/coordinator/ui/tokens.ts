@@ -45,6 +45,15 @@ export const STATE_LABEL: Record<SilentAreaState, string> = {
   critical: 'Critical',
 };
 
+// ── Served state (orthogonal to the silent-area score) ─────────────────────
+// A barangay is "served" once it is the destination of a COMPLETED route — i.e.
+// relief was actually delivered there. This is a positive, explicit signal and
+// is rendered in the brand green (reused from COLOR.active for token consistency),
+// overriding the score-based choropleth color so coordinators can see at a glance
+// which communities have been reached on the ground.
+export const SERVED_COLOR = COLOR.active;
+export const SERVED_LABEL = 'Served';
+
 // Maps the report/needs severity scale onto the calm semantic tones.
 export const SEVERITY_TONE: Record<string, Tone> = {
   critical: 'critical',

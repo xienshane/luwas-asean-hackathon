@@ -50,6 +50,7 @@ export async function POST(request: Request) {
       needs_severity: r.needs_severity,
       road_status: r.road_status,
       road_impassable: r.road_impassable,
+      impassable_edge_id: r.road_impassable && r.impassable_edge_ids.length ? r.impassable_edge_ids[0] : null,
       confidence: 1,
       status: 'pending',
       captured_at: r.captured_at,
@@ -59,6 +60,16 @@ export async function POST(request: Request) {
   );
   if (error) {
     return Response.json({ error: error.message }, { status: 500 });
+  }
+
+  if (r.road_impassable && r.impassable_edge_ids.length) {
+    // Block the volunteer-selected set (idempotent; trigger already blocked ids[0]) and redraw
+    // dispatched routes so the closure is reflected immediately. Best-effort: a routing hiccup
+    // must not fail the field report.
+    try {
+      await supabase.rpc('block_edges_for_report', { p_report_id: r.id, p_edge_ids: r.impassable_edge_ids });
+      await supabase.rpc('reroute_active_dispatch_routes');
+    } catch { /* report already saved; blocking/reroute is best-effort */ }
   }
 
   return Response.json({ id: r.id, offline_synced }, { status: 201 });
