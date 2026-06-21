@@ -42,3 +42,9 @@ next-env.d.ts
 
 # generated service worker (built by scripts/build-sw.mjs)
 /public/sw.js
+
+# Playwright
+/playwright/.auth
+/test-results/
+/playwright-report/
+/playwright/.cache/
