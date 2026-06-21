@@ -682,6 +682,15 @@ export default function CommandDashboard() {
   return (
     <div className="flex h-screen w-screen bg-bg text-fg font-sans overflow-hidden">
       <ConnectivityBanner tier={connectivity} />
+      {/* E2E hook (Phase 5.2): deterministic "map data + scores loaded" signal,
+          so tests never depend on the MapLibre canvas. Renders nothing. */}
+      <div
+        data-testid="dashboard-stats"
+        data-barangays={barangays.length}
+        data-scores={scores.length}
+        data-high-priority={highPriorityCount}
+        hidden
+      />
       {/* Left Sidebar */}
       <LeftSidebar
         currentView={currentView}
