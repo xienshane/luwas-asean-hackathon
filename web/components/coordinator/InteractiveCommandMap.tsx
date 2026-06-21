@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Compass,
   FileText,
@@ -14,7 +14,7 @@ import type { Barangay, FieldReport, Team, RoadEdge, Route, Volunteer, LocationH
 import { routeLineCoords } from '@/lib/coordinator/routeGeometry';
 import { pointAtFraction, stopFraction } from '@/lib/coordinator/pathInterpolate';
 import { nextGhostState, emptyGhostState, ghostDivergentSegments } from '@/lib/coordinator/ghostRoutes';
-import { COLOR, silentAreaState, STATE_COLOR, STATE_LABEL } from './ui';
+import { COLOR, silentAreaState, STATE_COLOR, STATE_LABEL, SERVED_COLOR, SERVED_LABEL } from './ui';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 // MapLibre erases GeoJSON feature properties to an untyped scalar bag; alias it once.
@@ -193,6 +193,20 @@ export default function InteractiveCommandMap({
   useEffect(() => {
     barangaysRef.current = barangays;
   }, [barangays]);
+
+  // A barangay is "served" once it is a stop on a COMPLETED route — relief was delivered
+  // there. Collected into a Set so the choropleth can paint it green (overriding the
+  // score-based color) and the tooltip/legend can flag it explicitly.
+  const servedBarangayIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const route of routes) {
+      if (route.status !== 'completed') continue;
+      for (const stop of route.stops ?? []) {
+        if (stop.barangayId) ids.add(stop.barangayId);
+      }
+    }
+    return ids;
+  }, [routes]);
 
   // Route-line click is bound once at map load too, so read the current routes + callback via refs.
   const routesRef = useRef(routes);
@@ -715,9 +729,10 @@ export default function InteractiveCommandMap({
           p.hoursSinceContact === null || p.hoursSinceContact === undefined || p.hoursSinceContact === ''
             ? 'No contact'
             : `${Math.round(Number(p.hoursSinceContact))}h ago`;
+        const served = p.served === true || p.served === 'true';
         const state = silentAreaState(Number(p.score));
-        const stateLabel = STATE_LABEL[state];
-        const stateColor = STATE_COLOR[state];
+        const stateLabel = served ? SERVED_LABEL : STATE_LABEL[state];
+        const stateColor = served ? SERVED_COLOR : STATE_COLOR[state];
 
         // One breakdown row: label · weight (left), a 0–1 fill bar (middle), and the
         // component value (right). The fixed 3-column grid + a fill bar that scales by
@@ -740,8 +755,10 @@ export default function InteractiveCommandMap({
               <div class="px-3 py-2.5 text-[13px] font-sans">
                 <div class="flex items-center justify-between gap-2 border-b border-line pb-1.5 mb-2">
                   <span class="font-medium text-fg truncate">${p.name}</span>
-                  <span class="flex items-center gap-1.5 text-[12px] text-muted shrink-0">
-                    <span style="width:6px;height:6px;border-radius:9999px;background:${stateColor}"></span>
+                  <span class="flex items-center gap-1.5 text-[12px] shrink-0" style="color:${served ? stateColor : 'var(--color-muted)'}">
+                    ${served
+                      ? `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="${stateColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`
+                      : `<span style="width:6px;height:6px;border-radius:9999px;background:${stateColor}"></span>`}
                     ${stateLabel}
                   </span>
                 </div>
@@ -857,7 +874,9 @@ export default function InteractiveCommandMap({
     if (barangaysSource && mapLayers.barangays) {
       const features = barangays.map(barangay => {
         const sd = getScoreData(barangay.id);
-        const color = scoreColor(sd.score);
+        // Served (delivered-to) barangays render green, overriding the priority choropleth.
+        const served = servedBarangayIds.has(barangay.id);
+        const color = served ? SERVED_COLOR : scoreColor(sd.score);
 
         return {
           type: 'Feature',
@@ -865,6 +884,7 @@ export default function InteractiveCommandMap({
             id: barangay.id,
             name: barangay.name,
             score: sd.score,
+            served,
             hoursSinceContact: sd.hoursSinceContact,
             color: color,
             // Composite-priority components for the hover breakdown tooltip (Phase 4.4).
@@ -907,7 +927,7 @@ export default function InteractiveCommandMap({
         );
       }
     }
-  }, [isMapLoaded, mapLayers.barangays, barangays, getScoreData, generateBarangayPolygon]);
+  }, [isMapLoaded, mapLayers.barangays, barangays, getScoreData, generateBarangayPolygon, servedBarangayIds]);
 
   // Selected-barangay highlight via feature-state (no feature rebuild): clear the prior
   // selection and set the new one whenever the selection changes.
@@ -2207,6 +2227,13 @@ export default function InteractiveCommandMap({
                       <span className="text-fg">{label}</span>
                     </div>
                   ))}
+                  {/* Served is orthogonal to the priority scale — a delivered-to community. */}
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center justify-center w-2 h-2 shrink-0">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={SERVED_COLOR} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+                    </span>
+                    <span className="text-fg">{SERVED_LABEL}</span>
+                  </div>
                 </div>
               </div>
 
