@@ -76,7 +76,7 @@ web_modules/
 
 # Next.js build output
 .next
-out
+web/out/
 
 # Nuxt.js build / generate output
 .nuxt
@@ -141,3 +141,22 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Python (data-pipeline, ai-services) — virtualenvs & caches, never tracked
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Large raw NOAH hazard layers — kept LOCAL only
+data-pipeline/raw/project-noah/
+
+# Large raw OSM road extract (bbbike, Cebu) — kept LOCAL only; loaded into road_edges
+data-pipeline/raw/osm-roads/
+
+# Local-only scratch (plans, notes) — not tracked
+.local/
