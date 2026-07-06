@@ -26,7 +26,7 @@ export default function Chip({
   const t = TONE[tone];
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-control text-[12px] font-medium
+      className={`inline-flex items-center gap-1.5 px-2 py-px rounded-control text-[12px] font-medium
         bg-raised ring-1 ${t.ring} ${t.text} ${className}`}
     >
       {icon ? (

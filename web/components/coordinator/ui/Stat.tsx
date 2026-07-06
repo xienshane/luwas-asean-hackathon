@@ -27,19 +27,19 @@ export default function Stat({
   return (
     <div className={className}>
       <div className="flex items-start justify-between gap-3">
-        <p className="text-[12px] uppercase tracking-wider text-muted">{label}</p>
+        <p className="text-[11px] font-medium text-muted">{label}</p>
         {action && <div className="shrink-0">{action}</div>}
       </div>
       <div className="mt-1 flex items-baseline gap-1.5">
-        <span className="text-3xl font-mono tabular-nums leading-none" style={accent ? { color: accent } : undefined}>
+        <span className="text-[28px] font-mono tabular-nums leading-none" style={accent ? { color: accent } : undefined}>
           {value}
         </span>
         {unit && <span className="text-[13px] text-muted">{unit}</span>}
       </div>
       {range && range.high > range.low && (
         <div className="mt-2">
-          <div className="relative h-1.5 rounded-full bg-line" aria-hidden>
-            <div className="absolute inset-y-0 left-0 right-0 rounded-full bg-muted/30" />
+          <div className="relative h-1 bg-line" aria-hidden>
+            <div className="absolute inset-y-0 left-0 right-0 bg-muted/30" />
             {typeof range.value === 'number' && (
               <span
                 className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full border border-bg"
@@ -52,7 +52,7 @@ export default function Stat({
           </div>
           <div className="mt-1 flex justify-between text-[11px] font-mono tabular-nums text-muted">
             <span>{range.low.toLocaleString()}</span>
-            <span className="uppercase tracking-wide font-sans text-[10px]">80% interval</span>
+            <span className="font-sans text-[10px]">80% interval</span>
             <span>{range.high.toLocaleString()}</span>
           </div>
         </div>

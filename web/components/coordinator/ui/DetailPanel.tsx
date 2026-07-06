@@ -24,10 +24,10 @@ export default function DetailPanel({
     <aside
       className={`h-full bg-surface border-l border-line flex flex-col overflow-hidden ${className}`}
     >
-      <header className="shrink-0 px-4 py-3 border-b border-line flex items-start justify-between gap-3">
+      <header className="shrink-0 px-4 py-2.5 border-b border-line flex items-start justify-between gap-3">
         <div className="min-w-0">
           {eyebrow && <p className="text-[13px] text-muted mb-0.5">{eyebrow}</p>}
-          <h2 className="text-[15px] font-medium text-fg truncate">{title}</h2>
+          <h2 className="text-[14px] font-medium text-fg truncate">{title}</h2>
           {subtitle && <div className="text-[13px] text-muted mt-0.5">{subtitle}</div>}
         </div>
         {onClose && (
