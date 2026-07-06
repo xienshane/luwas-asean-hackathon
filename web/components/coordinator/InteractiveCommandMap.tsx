@@ -14,6 +14,7 @@ import type { Barangay, FieldReport, Team, RoadEdge, Route, Volunteer, LocationH
 import { routeLineCoords } from '@/lib/coordinator/routeGeometry';
 import { pointAtFraction, stopFraction } from '@/lib/coordinator/pathInterpolate';
 import { nextGhostState, emptyGhostState, ghostDivergentSegments } from '@/lib/coordinator/ghostRoutes';
+import { applyGraphiteBasemap } from '@/lib/coordinator/basemapTheme';
 import { COLOR, silentAreaState, STATE_COLOR, STATE_LABEL, SERVED_COLOR, SERVED_LABEL } from './ui';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -444,7 +445,7 @@ export default function InteractiveCommandMap({
       zoom: 11.5,
       minZoom: 8.0,
       maxBounds: WHOLE_CEBU_BOUNDS,
-      attributionControl: false,
+      attributionControl: { compact: true },
     });
 
     // Claim the ref synchronously so a re-entrant initMap() (StrictMode remount)
@@ -462,6 +463,11 @@ export default function InteractiveCommandMap({
     });
 
     map.on('load', () => {
+      // Re-paint the CARTO dark-matter vector basemap to graphite before adding
+      // our own sources/layers, so LUWAS routes and pins stay the highest-contrast
+      // elements on the canvas (see lib/coordinator/basemapTheme.ts).
+      applyGraphiteBasemap(map);
+
       // Add sources
       map.addSource('barangays-source', {
         type: 'geojson',
@@ -1921,6 +1927,9 @@ export default function InteractiveCommandMap({
           border-top-color: var(--color-raised) !important;
           border-bottom-color: var(--color-raised) !important;
         }
+        /* CARTO attribution chip — required by their terms; retinted to graphite. */
+        .maplibregl-ctrl-attrib { background: rgba(10, 11, 13, 0.7) !important; font: 10px/1.4 var(--font-sans); }
+        .maplibregl-ctrl-attrib, .maplibregl-ctrl-attrib a { color: var(--color-muted) !important; }
       `}</style>
 
       {/* Header */}
