@@ -815,16 +815,16 @@ export default function CommandDashboard() {
       {/* Reset confirmation */}
       {showResetConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-surface border border-line rounded-card max-w-md w-full mx-4 overflow-hidden">
-            <div className="px-5 py-4 border-b border-line">
-              <h3 className="text-[17px] font-medium text-fg">Reset to scratch</h3>
+          <div className="bg-surface border border-line rounded-card shadow-modal max-w-md w-full mx-4 overflow-hidden">
+            <div className="px-4 py-3 border-b border-line">
+              <h3 className="text-[15px] font-medium text-fg">Reset to scratch</h3>
               <p className="text-[13px] text-muted mt-1">This cannot be undone.</p>
             </div>
-            <div className="px-5 py-4 text-[14px] text-muted">
+            <div className="px-4 py-3 text-[14px] text-muted">
               Clears all reports and generated plans (predictions, manifests, routes, volunteer
               positions) and un-blocks every road. Accounts and base map data are kept.
             </div>
-            <div className="px-5 py-4 border-t border-line flex gap-2 justify-end">
+            <div className="px-4 py-3 border-t border-line flex gap-2 justify-end">
               <button
                 onClick={() => setShowResetConfirm(false)}
                 disabled={resetting}
@@ -847,20 +847,20 @@ export default function CommandDashboard() {
       {/* Day-0 forecast */}
       {showDay0Modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-surface border border-line rounded-card max-w-md w-full mx-4 overflow-hidden">
-            <div className="px-5 py-4 border-b border-line">
-              <h3 className="text-[17px] font-medium text-fg">Run Day 0 Predictions</h3>
+          <div className="bg-surface border border-line rounded-card shadow-modal max-w-md w-full mx-4 overflow-hidden">
+            <div className="px-4 py-3 border-b border-line">
+              <h3 className="text-[15px] font-medium text-fg">Run Day 0 Predictions</h3>
               <p className="text-[13px] text-muted mt-1">
                 Forecast impact across communities before any field report arrives.
               </p>
             </div>
-            <div className="px-5 py-4 space-y-3">
+            <div className="px-4 py-3 space-y-3">
               <label className="block text-[13px] text-muted">Storm scenario (PAGASA intensity)</label>
               <select
                 value={day0Category}
                 onChange={(e) => setDay0Category(Number(e.target.value))}
                 disabled={day0Running}
-                className="w-full px-3 py-2 text-[14px] text-fg bg-raised border border-line rounded-control cursor-pointer disabled:opacity-50"
+                className="w-full px-3 py-2 text-[14px] text-fg bg-raised border border-line-strong rounded-control cursor-pointer disabled:opacity-50"
               >
                 {PAGASA_CATEGORY_LABELS.map((label, i) => (
                   <option key={i} value={i}>{`Cat ${i} — ${label}`}</option>
@@ -914,7 +914,7 @@ export default function CommandDashboard() {
                 nothing is dispatched.
               </p>
             </div>
-            <div className="px-5 py-4 border-t border-line flex gap-2 justify-end">
+            <div className="px-4 py-3 border-t border-line flex gap-2 justify-end">
               <button
                 onClick={() => setShowDay0Modal(false)}
                 disabled={day0Running}

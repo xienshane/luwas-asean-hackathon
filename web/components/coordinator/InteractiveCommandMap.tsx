@@ -1929,7 +1929,7 @@ export default function InteractiveCommandMap({
       `}</style>
 
       {/* Header */}
-      <div className="bg-surface border-b border-line px-4 h-11 flex items-center justify-between z-10 select-none">
+      <div className="bg-surface border-b border-line px-4 h-10 flex items-center justify-between z-10 select-none">
         <div className="flex items-center gap-2.5">
           <Compass className="w-4 h-4 text-muted" />
           <span className="text-[14px] font-medium text-fg">Live Operations Map</span>
@@ -2051,7 +2051,7 @@ export default function InteractiveCommandMap({
                       key={s}
                       onClick={() => handleRoadStatusChange(s)}
                       className={`py-1.5 border rounded-control cursor-pointer transition-colors duration-100 ${
-                        active ? activeStyles[s] : 'border-line text-muted hover:bg-raised/40 hover:text-fg'
+                        active ? activeStyles[s] : 'border-line-strong text-muted hover:bg-raised/40 hover:text-fg'
                       }`}
                     >
                       {labels[s]}
@@ -2067,7 +2067,7 @@ export default function InteractiveCommandMap({
                 value={roadNotes}
                 onChange={(e) => setRoadNotes(e.target.value)}
                 placeholder="Additional details…"
-                className="w-full bg-bg border border-line p-2 rounded-control text-[13px] text-fg placeholder:text-muted focus:outline-none focus:border-muted resize-none h-14"
+                className="w-full bg-bg border border-line-strong p-2 rounded-control text-[13px] text-fg placeholder:text-muted focus:outline-none focus:border-muted resize-none h-14"
               />
             </div>
 
@@ -2120,7 +2120,7 @@ export default function InteractiveCommandMap({
                   <div className="space-y-1.5">
                     {hasTranslation && (
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] uppercase tracking-wide text-muted">
+                        <span className="text-[11px] text-muted">
                           {showingOriginal ? 'Original' : 'Translated · machine'}
                         </span>
                         <button

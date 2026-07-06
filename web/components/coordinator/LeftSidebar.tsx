@@ -116,7 +116,7 @@ export default function LeftSidebar({
                     : 'text-muted hover:text-fg hover:bg-raised/40'
                 }`}
               >
-                {isActive && <span aria-hidden className="absolute left-0 top-1 bottom-1 w-0.5 rounded-r bg-fg/50" />}
+                {isActive && <span aria-hidden className="absolute left-0 top-1 bottom-1 w-0.5 rounded-r bg-fg/60" />}
                 <Icon className={`w-[18px] h-[18px] shrink-0 ${isActive ? 'text-fg' : 'text-muted'}`} />
                 {!collapsed && <span className="truncate">{item.label}</span>}
                 {item.count > 0 &&
@@ -125,7 +125,7 @@ export default function LeftSidebar({
                       <StatusDot tone={item.tone} />
                     </span>
                   ) : (
-                    <span className="ml-auto flex items-center gap-1.5 text-[13px] text-muted tabular-nums">
+                    <span className="ml-auto flex items-center gap-1.5 text-[13px] font-mono text-muted tabular-nums">
                       <StatusDot tone={item.tone} />
                       {item.count}
                     </span>
@@ -193,15 +193,15 @@ export default function LeftSidebar({
       {/* Logout confirmation */}
       {showLogoutConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-surface border border-line rounded-card max-w-md w-full mx-4 overflow-hidden">
-            <div className="px-5 py-4 border-b border-line">
-              <h3 className="text-[17px] font-medium text-fg">Sign out</h3>
+          <div className="bg-surface border border-line rounded-card shadow-modal max-w-md w-full mx-4 overflow-hidden">
+            <div className="px-4 py-3 border-b border-line">
+              <h3 className="text-[15px] font-medium text-fg">Sign out</h3>
               <p className="text-[13px] text-muted mt-1">You&apos;ll need to sign in again to access the command center.</p>
             </div>
-            <div className="px-5 py-4 text-[14px] text-muted">
+            <div className="px-4 py-3 text-[14px] text-muted">
               Any unsaved changes will be lost.
             </div>
-            <div className="px-5 py-4 border-t border-line flex gap-2 justify-end">
+            <div className="px-4 py-3 border-t border-line flex gap-2 justify-end">
               <button
                 onClick={() => setShowLogoutConfirm(false)}
                 className="px-4 py-2 text-[13px] text-muted hover:text-fg border border-line rounded-control transition-colors duration-100 cursor-pointer"
