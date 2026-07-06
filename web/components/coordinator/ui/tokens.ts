@@ -3,16 +3,16 @@
 // the @theme block in app/globals.css.
 
 export const COLOR = {
-  bg: '#0e1424',
-  surface: '#151e31',
-  raised: '#1a2438',
-  fg: '#e8eef9',
-  muted: '#92a0b8',
-  line: 'rgba(255,255,255,0.06)',
-  critical: '#e2524a',
-  warning: '#d9a23a',
-  active: '#3fa35b',
-  reached: '#c5d0e2',
+  bg: '#0B0C0E',
+  surface: '#131418',
+  raised: '#1C1E23',
+  fg: '#E6E8EB',
+  muted: '#8C93A0',
+  line: 'rgba(255,255,255,0.08)',
+  critical: '#EF5B50',
+  warning: '#E0A63D',
+  active: '#43AD63',
+  reached: '#C7CBD2',
 } as const;
 
 export type Tone = 'critical' | 'warning' | 'active' | 'neutral';

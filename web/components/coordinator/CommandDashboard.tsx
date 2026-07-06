@@ -712,7 +712,7 @@ export default function CommandDashboard() {
               {rerouteNotice && (
                 <div
                   role="status"
-                  className="absolute left-1/2 top-6 z-20 -translate-x-1/2 rounded-md border border-amber-400/60 bg-amber-500/95 px-4 py-2 text-sm font-semibold text-amber-950 shadow-lg"
+                  className="absolute left-1/2 top-6 z-20 -translate-x-1/2 rounded-control border border-warning/40 bg-warning/15 px-4 py-2 text-sm font-semibold text-warning shadow-overlay"
                 >
                   ⟲ {rerouteNotice}
                 </div>
