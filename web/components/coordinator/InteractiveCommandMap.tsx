@@ -1610,7 +1610,7 @@ export default function InteractiveCommandMap({
           box-shadow: 0 1px 3px rgba(0,0,0,0.4);
         ">
           ${iconMarkup}
-          <span style="color:#92a0b8;font-size:9px;font-weight:600;font-family:var(--font-jetbrains-mono),monospace;">${label}</span>
+          <span style="color:#92a0b8;font-size:9px;font-weight:600;font-family:var(--font-plex-mono),monospace;">${label}</span>
         </div>
       `;
 
