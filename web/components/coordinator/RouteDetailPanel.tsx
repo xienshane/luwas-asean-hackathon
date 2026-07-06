@@ -59,14 +59,14 @@ export default function RouteDetailPanel({
           {route.status === 'active' && (
             <button
               onClick={() => onMarkReached(route.id)}
-              className="w-full min-h-[44px] py-2 bg-active text-bg hover:brightness-110 rounded-control font-medium transition-[filter] duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-active/50"
+              className="w-full min-h-[38px] py-2 bg-active text-bg hover:brightness-110 rounded-control font-medium transition-[filter] duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-active/50"
             >
               Mark area reached
             </button>
           )}
           <button
             onClick={onViewInTeams}
-            className="w-full flex items-center justify-center gap-1.5 min-h-[40px] py-2 text-muted hover:text-fg rounded-control text-[13px] transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/40"
+            className="w-full flex items-center justify-center gap-1.5 min-h-[36px] py-2 text-muted hover:text-fg rounded-control text-[13px] transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/40"
           >
             View in Teams <ArrowUpRight className="w-3.5 h-3.5" aria-hidden />
           </button>
