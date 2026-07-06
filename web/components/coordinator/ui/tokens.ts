@@ -15,6 +15,20 @@ export const COLOR = {
   reached: '#C7CBD2',
 } as const;
 
+// Map linework palette — the map-canvas siblings of COLOR, consumed by
+// InteractiveCommandMap for MapLibre paint expressions and the legend. Kept here
+// (single source of truth) so the map layers and the legend swatches can't disagree.
+// Keep in sync with §1.3 of the UI refresh plan.
+export const MAP = {
+  ROAD_OPEN: '#4C5563',       // desaturated slate — infrastructure, below routes
+  ROUTE_ACTIVE: '#2DD4BF',    // the one vivid accent (teal on graphite)
+  ROUTE_PLANNED: '#8590A3',   // muted dashed planned
+  ROUTE_DONE: '#41454E',      // dimmed graphite completed
+  ROUTE_CASING: '#08090B',    // route casing, tracks the basemap bg
+  BARANGAY_OUTLINE: '#343841',// graphite boundary
+  HUB: '#41454E',             // hub markers + legend swatch (infrastructure, not a route)
+} as const;
+
 export type Tone = 'critical' | 'warning' | 'active' | 'neutral';
 
 // ── Silent Area state: the three pin states from Phase 3.1 ──────────────────

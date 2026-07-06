@@ -15,19 +15,15 @@ import { routeLineCoords } from '@/lib/coordinator/routeGeometry';
 import { pointAtFraction, stopFraction } from '@/lib/coordinator/pathInterpolate';
 import { nextGhostState, emptyGhostState, ghostDivergentSegments } from '@/lib/coordinator/ghostRoutes';
 import { applyGraphiteBasemap } from '@/lib/coordinator/basemapTheme';
-import { COLOR, silentAreaState, STATE_COLOR, STATE_LABEL, SERVED_COLOR, SERVED_LABEL } from './ui';
+import { COLOR, MAP, silentAreaState, STATE_COLOR, STATE_LABEL, SERVED_COLOR, SERVED_LABEL } from './ui';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 // MapLibre erases GeoJSON feature properties to an untyped scalar bag; alias it once.
 type FeatureProps = NonNullable<MapGeoJSONFeature['properties']>;
 
-// Neutral linework tones for the calm basemap (roads default off).
-const ROAD_OPEN = '#52607a';
-const ROUTE_ACTIVE = '#2dd4bf';   // teal-400 — vivid, ≥3:1 on #0b1120 (was #9fb0cc, too muted)
-const ROUTE_PLANNED = '#7c8aa8';  // visible dashed planned
-const ROUTE_DONE = '#46506a';     // dimmed completed (unchanged)
-const ROUTE_CASING = '#0b1120';
-const BARANGAY_OUTLINE = '#3a4660';
+// Map linework tones now live in ui/tokens.ts as MAP (single source of truth,
+// shared with the legend). Local aliases keep the paint expressions terse.
+const { ROAD_OPEN, ROUTE_ACTIVE, ROUTE_PLANNED, ROUTE_DONE, ROUTE_CASING, BARANGAY_OUTLINE } = MAP;
 
 // Part A — demo convoy. A clearly-labelled SIMULATED vehicle (not live telemetry) that eases
 // along the real-road route geometry and parks short of the destination. DEMO_CONVOY is the
@@ -491,9 +487,9 @@ export default function InteractiveCommandMap({
           'fill-color': ['get', 'color'],
           'fill-opacity': [
             'case',
-            ['boolean', ['feature-state', 'hovered'], false], 0.42,
-            ['boolean', ['feature-state', 'selected'], false], 0.40,
-            0.22
+            ['boolean', ['feature-state', 'hovered'], false], 0.32,
+            ['boolean', ['feature-state', 'selected'], false], 0.30,
+            0.18
           ],
         },
       });
@@ -529,8 +525,8 @@ export default function InteractiveCommandMap({
           'text-anchor': 'center',
         },
         paint: {
-          'text-color': '#e2e8f0',
-          'text-halo-color': '#0f172a',
+          'text-color': '#C7CBD2',
+          'text-halo-color': '#0A0B0D',
           'text-halo-width': 1.5,
         },
       });
@@ -1037,16 +1033,16 @@ export default function InteractiveCommandMap({
       const name = anchor.name || 'Road closed';
       const otherNames = new Set(group.map((e) => e.name).filter((n) => n && n !== anchor.name));
       const badge = otherNames.size > 0
-        ? `<span style="margin-left:5px;padding:1px 5px;border-radius:6px;font-size:10px;font-weight:700;
-             background:rgba(11,18,32,0.85);color:#fecaca;border:1px solid rgba(254,202,202,0.4)">+${otherNames.size}</span>`
+        ? `<span style="margin-left:5px;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700;
+             background:rgba(8,9,11,0.85);color:#fecaca;border:1px solid rgba(254,202,202,0.4)">+${otherNames.size}</span>`
         : '';
 
       const el = document.createElement('div');
       el.className = `luwas-endpoint luwas-block ${reduce ? '' : 'luwas-block--pulse'}`;
       el.innerHTML =
         `<span class="luwas-endpoint__label" style="color:#fecaca">${name}${badge}</span>
-         <span style="display:flex;width:26px;height:26px;border-radius:7px;align-items:center;justify-content:center;
-           background:${COLOR.critical};box-shadow:0 0 0 3px rgba(11,18,32,0.9),0 2px 8px rgba(0,0,0,0.55)">
+         <span style="display:flex;width:26px;height:26px;border-radius:3px;align-items:center;justify-content:center;
+           background:${COLOR.critical};box-shadow:0 0 0 3px rgba(8,9,11,0.9),0 2px 8px rgba(0,0,0,0.55)">
            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6"
              stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
          </span>`;
@@ -1199,9 +1195,9 @@ export default function InteractiveCommandMap({
         const el = document.createElement('div');
         el.className = 'luwas-endpoint';
         el.innerHTML =
-          `<span style="display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border-radius:7px;
+          `<span style="display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border-radius:3px;
              font-size:10px;font-weight:600;white-space:nowrap;
-             background:rgba(11,18,32,0.85);color:${ROUTE_ACTIVE};border:1px solid ${ROUTE_ACTIVE}66">
+             background:rgba(8,9,11,0.85);color:${ROUTE_ACTIVE};border:1px solid ${ROUTE_ACTIVE}66">
              <span style="width:12px;border-top:2px solid ${ROUTE_ACTIVE};opacity:0.8"></span>Original route</span>`;
         ghostLabelMarkersRef.current.push(
           new maplibreglRef.current.Marker({ element: el }).setLngLat(mid).addTo(map),
@@ -1287,8 +1283,8 @@ export default function InteractiveCommandMap({
 
       const startEl = makeEl(
         `<span class="luwas-endpoint__label" style="color:var(--color-active)">HQ</span>
-         <span style="display:flex;width:30px;height:30px;border-radius:8px;align-items:center;justify-content:center;
-           background:var(--color-active);box-shadow:0 0 0 3px rgba(11,17,32,0.9),0 2px 8px rgba(0,0,0,0.5)">
+         <span style="display:flex;width:30px;height:30px;border-radius:3px;align-items:center;justify-content:center;
+           background:var(--color-active);box-shadow:0 0 0 3px rgba(8,9,11,0.9),0 2px 8px rgba(0,0,0,0.5)">
            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#06281f" stroke-width="2.2"
              stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V8l9-5 9 5v13"/><path d="M9 21v-6h6v6"/></svg>
          </span>`, 'start', active);
@@ -1298,7 +1294,7 @@ export default function InteractiveCommandMap({
          <span class="luwas-end__ring" style="box-shadow:0 0 0 2px var(--color-critical)"></span>
          <span style="display:flex;width:30px;height:30px;border-radius:9999px 9999px 9999px 2px;rotate:45deg;
            align-items:center;justify-content:center;background:var(--color-critical);
-           box-shadow:0 0 0 3px rgba(11,17,32,0.9),0 2px 8px rgba(0,0,0,0.5)">
+           box-shadow:0 0 0 3px rgba(8,9,11,0.9),0 2px 8px rgba(0,0,0,0.5)">
            <svg style="rotate:-45deg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff"
              stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/>
              <path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11Z"/></svg>
@@ -1473,10 +1469,10 @@ export default function InteractiveCommandMap({
 
       let iconMarkup = '';
       if (status === 'pending') {
-        iconMarkup = `<span style="color:#0e1424;font-size:11px;font-weight:700;font-family:sans-serif;line-height:1;">!</span>`;
+        iconMarkup = `<span style="color:#0B0C0E;font-size:11px;font-weight:700;font-family:sans-serif;line-height:1;">!</span>`;
       } else if (status === 'confirmed') {
         iconMarkup = `
-          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#0e1424" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#0B0C0E" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="20 6 9 17 4 12"></polyline>
           </svg>`;
       } else if (status === 'flagged') {
@@ -1608,7 +1604,7 @@ export default function InteractiveCommandMap({
         <div style="
           background: #151e31;
           border: 1px solid rgba(255,255,255,0.06);
-          border-radius: 8px;
+          border-radius: 3px;
           padding: 3px 5px;
           display: flex;
           align-items: center;
@@ -1725,11 +1721,11 @@ export default function InteractiveCommandMap({
       const el = document.createElement('div');
       el.className = 'cursor-pointer';
       
-      let hubColor = '#46506a';
+      let hubColor = MAP.HUB;
       let iconMarkup = '';
 
       if (hub.type === 'shelter') {
-        hubColor = '#46506a';
+        hubColor = MAP.HUB;
         iconMarkup = `
           <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
@@ -1737,7 +1733,7 @@ export default function InteractiveCommandMap({
           </svg>
         `;
       } else if (hub.type === 'supply_hub') {
-        hubColor = '#46506a';
+        hubColor = MAP.HUB;
         iconMarkup = `
           <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
@@ -1747,7 +1743,7 @@ export default function InteractiveCommandMap({
         `;
       } else {
         // Warehouse (Large Depot)
-        hubColor = '#46506a';
+        hubColor = MAP.HUB;
         iconMarkup = `
           <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M22 10v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V10l10-6 10 6Z"/>
@@ -1760,7 +1756,7 @@ export default function InteractiveCommandMap({
         <div style="
           background: ${hubColor};
           border: 1px solid rgba(232,238,249,0.35);
-          border-radius: 6px;
+          border-radius: 3px;
           width: 20px;
           height: 20px;
           display: flex;
@@ -1919,9 +1915,9 @@ export default function InteractiveCommandMap({
           background-color: var(--color-raised) !important;
           color: var(--color-fg) !important;
           border: 1px solid var(--color-line) !important;
-          border-radius: 10px !important;
+          border-radius: 4px !important;
           padding: 0 !important;
-          box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.5) !important;
+          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45) !important;
         }
         .command-map-tooltip .maplibregl-popup-tip {
           border-top-color: var(--color-raised) !important;
@@ -2315,7 +2311,7 @@ export default function InteractiveCommandMap({
                 <div className="text-[11px] text-muted mb-1.5">Assets</div>
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2 rounded-sm inline-block shrink-0" style={{ background: '#46506a', border: '1px solid rgba(232,238,249,0.35)' }} />
+                    <span className="w-2.5 h-2 rounded-sm inline-block shrink-0" style={{ background: MAP.HUB, border: '1px solid rgba(232,238,249,0.35)' }} />
                     <span className="text-fg">Logistics hub</span>
                   </div>
                   <div className="flex items-center gap-2">
