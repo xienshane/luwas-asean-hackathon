@@ -143,6 +143,13 @@ export default function InteractiveCommandMap({
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  // Cursor coordinate readout (telemetry accent). The lngLat is stashed in a ref on every
+  // 'mousemove' and flushed to state at most once per animation frame, so React re-renders at
+  // frame cadence instead of per pixel (same rAF-throttle pattern as convoyRafRef).
+  const [cursorLngLat, setCursorLngLat] = useState<LngLat | null>(null);
+  const cursorLatestRef = useRef<LngLat | null>(null);
+  const cursorRafRef = useRef<number>(0);
+
   const [routeGeometries, setRouteGeometries] = useState<Record<string, [number, number][]>>({});
   const [roadGeometries, setRoadGeometries] = useState<Record<string, [number, number][]>>({}); // Store actual road paths
   const [teamRouteGeometries, setTeamRouteGeometries] = useState<Record<string, [number, number][]>>({}); // OSRM-snapped per-team route paths
@@ -325,6 +332,7 @@ export default function InteractiveCommandMap({
 
     return () => {
       cancelled = true;
+      if (cursorRafRef.current) { cancelAnimationFrame(cursorRafRef.current); cursorRafRef.current = 0; }
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
@@ -441,7 +449,7 @@ export default function InteractiveCommandMap({
       zoom: 11.5,
       minZoom: 8.0,
       maxBounds: WHOLE_CEBU_BOUNDS,
-      attributionControl: { compact: true },
+      attributionControl: { compact: false },
     });
 
     // Claim the ref synchronously so a re-entrant initMap() (StrictMode remount)
@@ -865,6 +873,24 @@ export default function InteractiveCommandMap({
 
       setTimeout(() => map.resize(), 100);
     });
+
+    // Cursor coordinate readout: capture on every move, flush to React once per frame.
+    const flushCursor = () => {
+      cursorRafRef.current = 0;
+      setCursorLngLat(cursorLatestRef.current);
+    };
+    map.on('mousemove', (e: MapMouseEvent) => {
+      cursorLatestRef.current = e.lngLat;
+      if (!cursorRafRef.current) cursorRafRef.current = requestAnimationFrame(flushCursor);
+    });
+    map.on('mouseout', () => {
+      if (cursorRafRef.current) { cancelAnimationFrame(cursorRafRef.current); cursorRafRef.current = 0; }
+      cursorLatestRef.current = null;
+      setCursorLngLat(null);
+    });
+
+    // Metric scale bar (MapLibre built-in control) — telemetry accent, retinted in the <style> block.
+    map.addControl(new maplibregl.ScaleControl({ maxWidth: 96, unit: 'metric' }), 'bottom-left');
   };
 
   // ── Update Barangay Polygons ──
@@ -1926,6 +1952,13 @@ export default function InteractiveCommandMap({
         /* CARTO attribution chip — required by their terms; retinted to graphite. */
         .maplibregl-ctrl-attrib { background: rgba(10, 11, 13, 0.7) !important; font: 10px/1.4 var(--font-sans); }
         .maplibregl-ctrl-attrib, .maplibregl-ctrl-attrib a { color: var(--color-muted) !important; }
+        /* Metric scale bar — telemetry accent, retinted to graphite. */
+        .maplibregl-ctrl-scale {
+          background: rgba(10, 11, 13, 0.7) !important;
+          border-color: var(--color-muted) !important;
+          color: var(--color-muted) !important;
+          font: 10px/1.6 var(--font-mono) !important;
+        }
       `}</style>
 
       {/* Header */}
@@ -1948,6 +1981,11 @@ export default function InteractiveCommandMap({
         </div>
 
         <div className="flex items-center gap-0.5 text-[12px]">
+          {cursorLngLat && (
+            <span className="mr-2 hidden xl:inline text-[11px] font-mono tabular-nums text-muted select-none">
+              {cursorLngLat.lat.toFixed(4)}°N {cursorLngLat.lng.toFixed(4)}°E
+            </span>
+          )}
           {onBlockRoadAt && (
             <button
               onClick={() => setBlockMode((v) => !v)}
