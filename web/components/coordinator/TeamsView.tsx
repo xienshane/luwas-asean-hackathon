@@ -245,7 +245,7 @@ export default function TeamsView({ teams, routes, barangays, onDispatchTeam, fo
                     data-testid="dispatch-destination"
                     value={dest}
                     onChange={(e) => setDest(e.target.value)}
-                    className="flex-1 bg-bg border border-line rounded-control px-2.5 py-1.5 text-[13px] text-fg focus:outline-none focus:border-muted cursor-pointer"
+                    className="flex-1 bg-bg border border-line-strong rounded-control px-2.5 py-1.5 text-[13px] text-fg focus:outline-none focus:border-muted cursor-pointer"
                   >
                     <option value="" disabled>
                       Select destination…

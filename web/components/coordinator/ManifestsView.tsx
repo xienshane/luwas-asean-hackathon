@@ -67,12 +67,12 @@ function ConfirmationDialog({
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-surface border border-line rounded-card max-w-sm w-full mx-4 overflow-hidden">
-        <div className="px-5 py-4 border-b border-line">
-          <h3 className="text-[16px] font-medium text-fg">{title}</h3>
+      <div className="bg-surface border border-line rounded-card shadow-modal max-w-sm w-full mx-4 overflow-hidden">
+        <div className="px-4 py-3 border-b border-line">
+          <h3 className="text-[15px] font-medium text-fg">{title}</h3>
         </div>
-        <p className="px-5 py-4 text-[14px] text-muted leading-relaxed">{message}</p>
-        <div className="px-5 py-4 border-t border-line flex gap-2 justify-end">
+        <p className="px-4 py-3 text-[14px] text-muted leading-relaxed">{message}</p>
+        <div className="px-4 py-3 border-t border-line flex gap-2 justify-end">
           <button
             onClick={onCancel}
             disabled={isProcessing}
@@ -212,16 +212,16 @@ export default function ManifestsView({ barangays, manifests, predictions, onUpd
         <div className="ml-auto flex items-center gap-3 text-[13px] text-muted">
           <span className="flex items-center gap-1.5">
             <StatusDot tone="warning" />
-            {pending.length} pending
+            <span className="font-mono tabular-nums">{pending.length}</span> pending
           </span>
           <span className="flex items-center gap-1.5">
             <StatusDot tone="active" />
-            {approved.length} approved
+            <span className="font-mono tabular-nums">{approved.length}</span> approved
           </span>
           {totalShortfall > 0 && (
-            <span className="text-critical">{totalShortfall.toLocaleString()} short</span>
+            <span className="text-critical"><span className="font-mono tabular-nums">{totalShortfall.toLocaleString()}</span> short</span>
           )}
-          <div className="flex border border-line rounded-control overflow-hidden">
+          <div className="flex border border-line-strong rounded-control overflow-hidden">
             {(['pending', 'all'] as const).map((f) => (
               <button
                 key={f}
@@ -237,7 +237,7 @@ export default function ManifestsView({ barangays, manifests, predictions, onUpd
           <button
             onClick={() => setShowHistory((s) => !s)}
             className={`px-2.5 py-1 rounded-control border transition-colors duration-100 cursor-pointer ${
-              showHistory ? 'bg-raised border-line text-fg' : 'border-line text-muted hover:text-fg'
+              showHistory ? 'bg-raised border-line-strong text-fg' : 'border-line-strong text-muted hover:text-fg'
             }`}
           >
             History

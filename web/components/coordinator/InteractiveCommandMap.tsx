@@ -1602,7 +1602,7 @@ export default function InteractiveCommandMap({
       
       el.innerHTML = `
         <div style="
-          background: #151e31;
+          background: #131418;
           border: 1px solid rgba(255,255,255,0.06);
           border-radius: 3px;
           padding: 3px 5px;
@@ -1612,7 +1612,7 @@ export default function InteractiveCommandMap({
           box-shadow: 0 1px 3px rgba(0,0,0,0.4);
         ">
           ${iconMarkup}
-          <span style="color:#92a0b8;font-size:9px;font-weight:600;font-family:var(--font-plex-mono),monospace;">${label}</span>
+          <span style="color:#8C93A0;font-size:9px;font-weight:600;font-family:var(--font-plex-mono),monospace;">${label}</span>
         </div>
       `;
 
@@ -1660,7 +1660,7 @@ export default function InteractiveCommandMap({
       
       el.innerHTML = `
         <div style="
-          background: #151e31;
+          background: #131418;
           border: 1.5px solid ${fill};
           border-radius: 50%;
           width: 18px;
