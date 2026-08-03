@@ -72,17 +72,30 @@ const COLUMNS =
   'hours_since_contact,last_confirmed_contact,time_factor,' +
   'structural_vuln_frac,impact_affected,impact_frac,nearby_report_km,nearby_norm,inputs';
 
+// PostgREST silently caps any un-paginated select at 1,000 rows and the view holds
+// ~1,200 barangays, so a single select() drops ~200 of them — and with no order by,
+// WHICH ones drop shifts every time the score cron rewrites the table. Page through
+// with an explicit order so every barangay reaches the map.
+const PAGE_SIZE = 1000;
+
 // Fetch the live Silent Area scores joined to barangay identity + boundary for the
 // coordinator map. RLS (via the security_invoker view) returns rows only to a signed-in
 // coordinator; a volunteer/anon gets an empty set rather than an error.
 export async function fetchCoordinatorMapData(): Promise<CoordinatorMapData> {
   const supabase = createClient();
-  const { data, error } = await supabase
-    .from('coordinator_barangay_scores')
-    .select(COLUMNS);
+  const rows: ScoreViewRow[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('coordinator_barangay_scores')
+      .select(COLUMNS)
+      .order('id', { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
 
-  if (error) throw error;
-  const rows = (data ?? []) as unknown as ScoreViewRow[];
+    if (error) throw error;
+    const batch = (data ?? []) as unknown as ScoreViewRow[];
+    rows.push(...batch);
+    if (batch.length < PAGE_SIZE) break;
+  }
 
   const barangays: Barangay[] = rows
     .filter((r) => r.latitude != null && r.longitude != null)

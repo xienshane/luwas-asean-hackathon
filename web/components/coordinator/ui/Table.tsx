@@ -55,7 +55,7 @@ export function TH({
 }) {
   return (
     <th
-      className={`px-3 py-2 font-medium text-[12px] text-muted border-b border-line ${
+      className={`px-2.5 py-1.5 font-medium text-[12px] text-muted border-b border-line ${
         align === 'right' ? 'text-right' : 'text-left'
       }`}
     >
@@ -79,7 +79,7 @@ export function TD({
 }) {
   return (
     <td
-      className={`px-3 py-2 ${muted ? 'text-muted' : 'text-fg'} ${
+      className={`px-2.5 py-1.5 ${muted ? 'text-muted' : 'text-fg'} ${
         align === 'right' ? 'text-right' : 'text-left'
       } ${mono ? 'font-mono tabular-nums' : ''} ${className}`}
     >

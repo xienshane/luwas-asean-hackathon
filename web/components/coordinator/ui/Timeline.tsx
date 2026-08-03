@@ -18,7 +18,7 @@ export default function Timeline({ items }: { items: TimelineItem[] }) {
       {items.map((it) => (
         <li
           key={it.id}
-          className="flex gap-3 px-4 py-1.5 hover:bg-raised/40 transition-colors duration-100"
+          className="flex gap-3 px-4 py-1 hover:bg-raised/40 transition-colors duration-100"
         >
           <span className="font-mono tabular-nums text-muted shrink-0 w-10 pt-px">
             {it.time}

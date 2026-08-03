@@ -100,7 +100,7 @@ export default function ReportsView({ reports, onConfirmReport, onFlagReport, on
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search reports…"
-              className="w-56 bg-surface border border-line rounded-control pl-8 pr-7 py-1.5 text-[13px] text-fg placeholder:text-muted focus:outline-none focus:border-muted"
+              className="w-56 bg-surface border border-line-strong rounded-control pl-8 pr-7 py-1.5 text-[13px] text-fg placeholder:text-muted focus:outline-none focus:border-muted"
             />
             {searchQuery && (
               <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-fg">
@@ -112,7 +112,7 @@ export default function ReportsView({ reports, onConfirmReport, onFlagReport, on
           <select
             value={filterSeverity}
             onChange={(e) => setFilterSeverity(e.target.value as typeof filterSeverity)}
-            className="bg-surface border border-line text-[13px] text-fg rounded-control px-2.5 py-1.5 focus:outline-none focus:border-muted cursor-pointer"
+            className="bg-surface border border-line-strong text-[13px] text-fg rounded-control px-2.5 py-1.5 focus:outline-none focus:border-muted cursor-pointer"
           >
             <option value="all">All severities</option>
             <option value="critical">Critical</option>
@@ -123,7 +123,7 @@ export default function ReportsView({ reports, onConfirmReport, onFlagReport, on
           <select
             value={filterSource}
             onChange={(e) => setFilterSource(e.target.value as typeof filterSource)}
-            className="bg-surface border border-line text-[13px] text-fg rounded-control px-2.5 py-1.5 focus:outline-none focus:border-muted cursor-pointer"
+            className="bg-surface border border-line-strong text-[13px] text-fg rounded-control px-2.5 py-1.5 focus:outline-none focus:border-muted cursor-pointer"
           >
             <option value="all">All sources</option>
             <option value="app">Mobile App</option>
@@ -258,7 +258,7 @@ export default function ReportsView({ reports, onConfirmReport, onFlagReport, on
                 <div className="space-y-1.5">
                   {hasTranslation && (
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] uppercase tracking-wide text-muted">
+                      <span className="text-[11px] text-muted">
                         {showingOriginal ? 'Original' : 'Translated · machine'}
                       </span>
                       <button
@@ -337,7 +337,7 @@ function Row({
   return (
     <div
       onClick={onSelect}
-      className={`group relative flex items-center gap-3 px-4 py-2 border-b border-line cursor-pointer transition-colors duration-100 ${
+      className={`group relative flex items-center gap-3 px-4 py-1.5 border-b border-line cursor-pointer transition-colors duration-100 ${
         selected ? 'bg-raised' : 'hover:bg-raised/40'
       } ${muted ? 'opacity-70 hover:opacity-100' : ''}`}
     >

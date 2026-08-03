@@ -6,30 +6,37 @@
    stays under 5% of the screen. No glows, no gradients, no rainbow.
    Exposed as Tailwind v4 theme tokens, so use them as utilities:
      bg-bg  bg-surface  bg-raised  text-fg  text-muted  border-line
+     border-line-strong (interactive control borders — the stronger hairline tier)
      bg-critical  text-warning  border-active  rounded-card  rounded-control
+     shadow-overlay (popups/banners)  shadow-modal (modals)
    ───────────────────────────────────────────────────────────────────────── */
 @theme {
-  /* Neutrals */
-  --color-bg: #0e1424;        /* app background */
-  --color-surface: #151e31;   /* panels, tables, rows */
-  --color-raised: #1a2438;    /* selected row, popover, detail panel */
-  --color-fg: #e8eef9;        /* primary text */
-  --color-muted: #92a0b8;     /* secondary text / metadata */
-  --color-line: rgba(255, 255, 255, 0.06); /* hairline dividers */
+  /* Neutrals — graphite instrument housing (hue ~220°, sat ≤12%) */
+  --color-bg: #0B0C0E;        /* app background */
+  --color-surface: #131418;   /* panels, tables, rows */
+  --color-raised: #1C1E23;    /* selected row, popover, detail panel */
+  --color-fg: #E6E8EB;        /* primary text */
+  --color-muted: #8C93A0;     /* secondary text / metadata */
+  --color-line: rgba(255, 255, 255, 0.08);        /* hairline dividers */
+  --color-line-strong: rgba(255, 255, 255, 0.14); /* interactive control borders */
 
   /* Semantic — use sparingly (dots, rails, single values) */
-  --color-critical: #e2524a;  /* critical / urgent */
-  --color-warning: #d9a23a;   /* pending / escalating */
-  --color-active: #3fa35b;    /* active / confirmed / healthy */
-  --color-reached: #c5d0e2;   /* reached / contacted (neutral light) */
+  --color-critical: #EF5B50;  /* critical / urgent */
+  --color-warning: #E0A63D;   /* pending / escalating */
+  --color-active: #43AD63;    /* active / confirmed / healthy */
+  --color-reached: #C7CBD2;   /* reached / contacted (neutral light) */
 
-  /* Radius */
-  --radius-control: 8px;      /* inputs, buttons, small controls */
-  --radius-card: 12px;        /* panels, cards, popovers */
+  /* Radius — square-cornered instrument chrome */
+  --radius-control: 3px;      /* inputs, buttons, small controls */
+  --radius-card: 4px;         /* panels, cards, popovers */
+
+  /* Shadows — overlays only; panels are hairline-defined and flat */
+  --shadow-overlay: 0 2px 10px rgba(0, 0, 0, 0.45);
+  --shadow-modal: 0 8px 28px rgba(0, 0, 0, 0.55);
 
   /* Typography */
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
 }
 
 :root {
@@ -64,10 +71,10 @@ body {
 *::-webkit-scrollbar-thumb {
   background-color: var(--color-raised);
   border: 2px solid var(--color-bg);
-  border-radius: 9999px;
+  border-radius: 0;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background-color: #2a3954;
+  background-color: #262A31;
 }
 *::-webkit-scrollbar-corner {
   background: transparent;
@@ -81,22 +88,22 @@ select {
 /* Route-endpoint emphasis (LUWAS Part B). */
 @keyframes luwas-pulse-ring { 0% { transform: scale(0.8); opacity: 0.7; } 70% { transform: scale(1.9); opacity: 0; } 100% { opacity: 0; } }
 .luwas-endpoint { position: relative; display: flex; align-items: center; justify-content: center; }
-.luwas-endpoint__label { position: absolute; top: -22px; white-space: nowrap; font: 600 11px/1 ui-monospace, monospace; letter-spacing: 0.08em; padding: 2px 6px; border-radius: 6px; background: rgba(11,17,32,0.85); }
+.luwas-endpoint__label { position: absolute; top: -22px; white-space: nowrap; font: 600 11px/1 ui-monospace, monospace; letter-spacing: 0.08em; padding: 2px 6px; border-radius: 3px; background: rgba(8,9,11,0.85); }
 .luwas-end__ring { position: absolute; inset: 0; border-radius: 9999px; }
 .luwas-end--active .luwas-end__ring { animation: luwas-pulse-ring 1.8s ease-out infinite; }
 @media (prefers-reduced-motion: reduce) { .luwas-end--active .luwas-end__ring { animation: none; } }
 
 /* Blocked-road chip emphasis (reuses luwas-pulse-ring; gated by .luwas-block--pulse, which is
    only applied in JS when prefers-reduced-motion is NOT set). */
-.luwas-block--pulse::after { content: ''; position: absolute; inset: -3px; border-radius: 9px;
+.luwas-block--pulse::after { content: ''; position: absolute; inset: -3px; border-radius: 4px;
   box-shadow: 0 0 0 2px var(--color-critical); animation: luwas-pulse-ring 1.8s ease-out infinite; }
 @media (prefers-reduced-motion: reduce) { .luwas-block--pulse::after { animation: none; } }
 
 /* Demo convoy marker (LUWAS Part A) — a SIMULATED vehicle chip; the "sim" pill keeps it honest. */
-.luwas-convoy { position: relative; display: flex; align-items: center; gap: 4px; padding: 4px 5px; border-radius: 9px; background: var(--color-active); border: 1px solid rgba(11,17,32,0.55); box-shadow: 0 0 0 3px rgba(11,17,32,0.85), 0 2px 8px rgba(0,0,0,0.5); will-change: transform; }
+.luwas-convoy { position: relative; display: flex; align-items: center; gap: 4px; padding: 4px 5px; border-radius: 3px; background: var(--color-active); border: 1px solid rgba(8,9,11,0.55); box-shadow: 0 0 0 3px rgba(8,9,11,0.85), 0 2px 8px rgba(0,0,0,0.5); will-change: transform; }
 .luwas-convoy__icon { display: flex; align-items: center; justify-content: center; transition: transform 0.2s linear; }
 .luwas-convoy__sim { font: 600 8px/1 ui-monospace, monospace; text-transform: uppercase; letter-spacing: 0.1em; color: #06281f; opacity: 0.7; padding-right: 1px; }
-.luwas-convoy--parked::after { content: ''; position: absolute; inset: -3px; border-radius: 11px; box-shadow: 0 0 0 2px var(--color-active); animation: luwas-pulse-ring 1.8s ease-out infinite; }
+.luwas-convoy--parked::after { content: ''; position: absolute; inset: -3px; border-radius: 5px; box-shadow: 0 0 0 2px var(--color-active); animation: luwas-pulse-ring 1.8s ease-out infinite; }
 @media (prefers-reduced-motion: reduce) { .luwas-convoy--parked::after { animation: none; } }
 
 /* Rail crossfade (LUWAS Part B) — fade the incoming triage/barangay/route panel in on mount. */

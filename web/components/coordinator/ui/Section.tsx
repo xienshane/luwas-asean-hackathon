@@ -18,11 +18,11 @@ export default function Section({
   className?: string;
 }) {
   return (
-    <section className={`px-4 py-4 ${divider ? 'border-t border-line' : ''} ${className}`}>
+    <section className={`px-4 py-3 ${divider ? 'border-t border-line' : ''} ${className}`}>
       {(title || action) && (
-        <div className="flex items-center justify-between gap-3 mb-3">
+        <div className="flex items-center justify-between gap-3 mb-2.5">
           {title && (
-            <h3 className="text-[12px] font-medium uppercase tracking-wider text-muted">{title}</h3>
+            <h3 className="text-[12px] font-medium text-muted">{title}</h3>
           )}
           {action && <div className="shrink-0">{action}</div>}
         </div>

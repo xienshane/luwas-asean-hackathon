@@ -77,14 +77,14 @@ export default function OperationsPanel({
             <button
               key={c.label}
               onClick={() => onViewChange(c.view)}
-              className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-raised/40 transition-colors duration-100 cursor-pointer"
+              className="w-full flex items-center justify-between px-4 py-2 hover:bg-raised/40 transition-colors duration-100 cursor-pointer"
             >
               <span className="flex items-center gap-2 text-[14px] text-fg">
                 {c.critical && <StatusDot tone="critical" />}
                 {c.label}
               </span>
               <span className="flex items-center gap-2">
-                <span className={`text-[14px] tabular-nums ${c.critical && c.count > 0 ? 'text-critical' : 'text-muted'}`}>
+                <span className={`text-[14px] font-mono tabular-nums ${c.critical && c.count > 0 ? 'text-critical' : 'text-muted'}`}>
                   {c.count}
                 </span>
                 <ChevronRight className="w-3.5 h-3.5 text-muted" />
@@ -102,7 +102,7 @@ export default function OperationsPanel({
             <div
               key={r.id}
               onClick={() => onSelectReport(r)}
-              className="group relative px-4 py-3 border-t border-line hover:bg-raised/40 transition-colors duration-100 cursor-pointer"
+              className="group relative px-4 py-2.5 border-t border-line hover:bg-raised/40 transition-colors duration-100 cursor-pointer"
             >
               <SeverityRail tone={SEVERITY_TONE[r.needsSeverity] ?? 'neutral'} />
               <div className="flex items-baseline justify-between gap-2 mb-1">

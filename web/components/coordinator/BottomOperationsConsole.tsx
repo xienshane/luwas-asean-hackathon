@@ -114,11 +114,14 @@ export default function BottomOperationsConsole({
                 setActiveTab(t.id);
                 if (isCollapsed) setIsCollapsed(false);
               }}
-              className={`px-4 py-2 border-b-2 transition-colors duration-100 cursor-pointer ${
-                activeTab === t.id ? 'border-fg/50 text-fg' : 'border-transparent text-muted hover:text-fg'
+              className={`relative px-4 py-2 transition-colors duration-100 cursor-pointer ${
+                activeTab === t.id ? 'text-fg' : 'text-muted hover:text-fg'
               }`}
             >
               {t.label}
+              {activeTab === t.id && (
+                <span aria-hidden className="absolute left-2 right-2 -bottom-px h-0.5 bg-active" />
+              )}
             </button>
           ))}
         </div>
@@ -143,7 +146,7 @@ export default function BottomOperationsConsole({
           <div className="flex flex-col h-full">
             <div className="flex-1 overflow-y-auto">
               {comms.map((msg) => (
-                <div key={msg.id} className="flex items-start gap-3 px-4 py-2 border-b border-line">
+                <div key={msg.id} className="flex items-start gap-3 px-4 py-1.5 border-b border-line">
                   <span className="text-[11px] text-muted font-mono shrink-0 w-9 pt-0.5">{msg.agency}</span>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
@@ -160,11 +163,11 @@ export default function BottomOperationsConsole({
                 value={newMsgText}
                 onChange={(e) => setNewMsgText(e.target.value)}
                 placeholder="Send an operational notice…"
-                className="flex-1 bg-bg border border-line rounded-control px-3 py-1.5 text-[13px] text-fg placeholder:text-muted focus:outline-none focus:border-muted"
+                className="flex-1 bg-bg border border-line-strong rounded-control px-3 py-1.5 text-[13px] text-fg placeholder:text-muted focus:outline-none focus:border-muted"
               />
               <button
                 type="submit"
-                className="px-3 py-1.5 border border-line text-fg hover:bg-raised rounded-control text-[13px] flex items-center gap-1.5 transition-colors duration-100 cursor-pointer"
+                className="px-3 py-1.5 border border-line-strong text-fg hover:bg-raised rounded-control text-[13px] flex items-center gap-1.5 transition-colors duration-100 cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5" /> Send
               </button>

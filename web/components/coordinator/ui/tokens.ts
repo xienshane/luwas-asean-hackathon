@@ -3,16 +3,30 @@
 // the @theme block in app/globals.css.
 
 export const COLOR = {
-  bg: '#0e1424',
-  surface: '#151e31',
-  raised: '#1a2438',
-  fg: '#e8eef9',
-  muted: '#92a0b8',
-  line: 'rgba(255,255,255,0.06)',
-  critical: '#e2524a',
-  warning: '#d9a23a',
-  active: '#3fa35b',
-  reached: '#c5d0e2',
+  bg: '#0B0C0E',
+  surface: '#131418',
+  raised: '#1C1E23',
+  fg: '#E6E8EB',
+  muted: '#8C93A0',
+  line: 'rgba(255,255,255,0.08)',
+  critical: '#EF5B50',
+  warning: '#E0A63D',
+  active: '#43AD63',
+  reached: '#C7CBD2',
+} as const;
+
+// Map linework palette — the map-canvas siblings of COLOR, consumed by
+// InteractiveCommandMap for MapLibre paint expressions and the legend. Kept here
+// (single source of truth) so the map layers and the legend swatches can't disagree.
+// Keep in sync with §1.3 of the UI refresh plan.
+export const MAP = {
+  ROAD_OPEN: '#4C5563',       // desaturated slate — infrastructure, below routes
+  ROUTE_ACTIVE: '#2DD4BF',    // the one vivid accent (teal on graphite)
+  ROUTE_PLANNED: '#8590A3',   // muted dashed planned
+  ROUTE_DONE: '#41454E',      // dimmed graphite completed
+  ROUTE_CASING: '#08090B',    // route casing, tracks the basemap bg
+  BARANGAY_OUTLINE: '#343841',// graphite boundary
+  HUB: '#41454E',             // hub markers + legend swatch (infrastructure, not a route)
 } as const;
 
 export type Tone = 'critical' | 'warning' | 'active' | 'neutral';

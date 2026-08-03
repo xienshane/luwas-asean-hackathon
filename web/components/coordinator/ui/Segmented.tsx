@@ -8,7 +8,7 @@ export interface SegmentedTab {
 }
 
 // Segmented tab control with a STRONG filled active state (bg-raised + 2px accent underline),
-// optional count badge, 44px hit height, roving arrow-key focus, and a visible focus ring.
+// optional count badge, 36px hit height, roving arrow-key focus, and a visible focus ring.
 // Replaces the barely-visible `border-b-2 border-fg/50` tab affordance.
 export default function Segmented({
   tabs,
@@ -44,7 +44,7 @@ export default function Segmented({
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange(tab.id)}
             onKeyDown={(e) => onKeyDown(e, idx)}
-            className={`relative flex-1 min-h-[44px] px-3 flex items-center justify-center gap-1.5
+            className={`relative flex-1 min-h-[36px] px-3 flex items-center justify-center gap-1.5
               text-[13px] font-medium rounded-control cursor-pointer transition-colors duration-150
               focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/40
               ${selected ? 'bg-raised text-fg' : 'text-muted hover:text-fg'}`}
@@ -53,7 +53,7 @@ export default function Segmented({
             <span className="truncate">{tab.label}</span>
             {typeof tab.count === 'number' && (
               <span
-                className={`ml-0.5 px-1.5 py-px rounded-full text-[11px] font-mono tabular-nums
+                className={`ml-0.5 px-1.5 py-px rounded-control text-[11px] font-mono tabular-nums
                   ${selected ? 'bg-fg/10 text-fg' : 'bg-line text-muted'}`}
               >
                 {tab.count}

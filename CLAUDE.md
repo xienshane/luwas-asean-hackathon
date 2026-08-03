@@ -30,35 +30,9 @@ supply_manifests, road_edges.
 Organized by deploy target. No monorepo tooling (no Turborepo/Nx/pnpm workspaces) —
 one JS app, the rest is Python and SQL, so plain folders are cleaner.
 
-```text
-luwas/
-  CLAUDE.md  README.md  .env.example
-  web/                       -> Vercel (Next.js 16, App Router)
-    app/(coordinator)/       coordinator dashboard (auth-gated)
-    app/(volunteer)/         volunteer PWA (auth-gated)
-    app/api/sms/             Semaphore inbound webhook
-    components/
-    lib/supabase/            client + typed queries
-    lib/ai/                  thin fetch wrappers calling ai-services
-    lib/types/               TS types MIRRORING the Pydantic contracts
-    public/                  PWA manifest, service worker
-  ai-services/               -> ONE Hugging Face Space (Docker)
-    app/main.py              FastAPI entry; mounts the 3 routers
-    app/routers/impact.py    TabPFN    -> POST /predict-impact
-    app/routers/routing.py   OR-Tools  -> POST /optimize-routes
-    app/routers/parse.py     SEA-LION (+Gemini fallback) -> POST /parse
-    app/core/                shared: config, supabase client, logging, rate-limiter
-    app/models/              Pydantic schemas = SOURCE OF TRUTH for all API contracts
-    app/services/            the actual logic (importable, unit-testable)
-    tests/  Dockerfile  requirements.txt  README.md (HF Space SDK header)
-  supabase/                  -> Supabase (database as code)
-    migrations/              schema, PostGIS, pgRouting edge table, RLS
-    functions/               SQL: silent_area_score(), dynamic edge updates
-    seed/                    demo Cebu data
-  data-pipeline/             one-off ETL, NOT deployed
-    ingest_static.py  build_road_graph.py  build_training_table.py
-  docs/                      PRIVACY.md  DEPLOY.md  
-```
+Deploy targets: `web/` -> Vercel; `ai-services/` -> ONE Hugging Face Space (Docker,
+FastAPI mounting the 3 routers); `supabase/` -> Supabase (schema as versioned SQL in
+migrations/ + functions/); `data-pipeline/` -> NOT deployed (local one-off ETL).
 
 Key structural decisions:
 

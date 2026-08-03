@@ -216,13 +216,13 @@ export default function RightIntelligencePanel({
           <div className="p-3 flex items-center gap-2">
             <button
               onClick={() => onUpdateManifestStatus(selectedBarangay.id, 'approved')}
-              className="flex-1 min-h-[44px] py-2 bg-active text-bg hover:brightness-110 rounded-control font-medium transition-[filter] duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-active/50"
+              className="flex-1 min-h-[38px] py-2 bg-active text-bg hover:brightness-110 rounded-control font-medium transition-[filter] duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-active/50"
             >
               Approve manifest
             </button>
             <button
               onClick={() => onUpdateManifestStatus(selectedBarangay.id, 'rejected')}
-              className="px-3 min-h-[44px] py-2 text-muted hover:text-critical rounded-control text-[13px] transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-critical/40"
+              className="px-3 min-h-[38px] py-2 text-muted hover:text-critical rounded-control text-[13px] transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-critical/40"
             >
               Reject
             </button>
@@ -363,7 +363,7 @@ export default function RightIntelligencePanel({
               <button
                 onClick={() => setIsEditing((e) => !e)}
                 aria-expanded={isEditing}
-                className="w-full flex items-center justify-between min-h-[44px] py-2 px-3 bg-raised rounded-control text-muted hover:text-fg transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/40"
+                className="w-full flex items-center justify-between min-h-[38px] py-2 px-3 bg-raised rounded-control text-muted hover:text-fg transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/40"
               >
                 <span>Adjust affected count or per-item targets</span>
                 <span className="text-[12px] text-muted">{isEditing ? 'Collapse' : 'Configure'}</span>
@@ -382,7 +382,7 @@ export default function RightIntelligencePanel({
                   </div>
                   <button
                     onClick={handleSaveOverrides}
-                    className="w-full min-h-[44px] py-2 border border-line text-fg hover:bg-raised rounded-control transition-colors duration-150 cursor-pointer font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/40"
+                    className="w-full min-h-[38px] py-2 border border-line text-fg hover:bg-raised rounded-control transition-colors duration-150 cursor-pointer font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/40"
                   >
                     Apply overrides
                   </button>
@@ -414,7 +414,7 @@ export default function RightIntelligencePanel({
                     </p>
                     <button
                       onClick={() => onMarkReached(activeRoute.id)}
-                      className="mt-3 w-full min-h-[44px] py-2 bg-active text-bg hover:brightness-110 rounded-control font-medium transition-[filter] duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-active/50"
+                      className="mt-3 w-full min-h-[38px] py-2 bg-active text-bg hover:brightness-110 rounded-control font-medium transition-[filter] duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-active/50"
                     >
                       Mark area reached
                     </button>
@@ -464,7 +464,7 @@ export default function RightIntelligencePanel({
                           </span>
                           <button
                             onClick={() => onDispatchTeam(team.id, selectedBarangay.id)}
-                            className="px-3 py-1.5 border border-line text-fg hover:bg-raised rounded-control text-[12px] transition-colors duration-150 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/40"
+                            className="px-3 py-1.5 border border-line-strong text-fg hover:bg-raised rounded-control text-[12px] transition-colors duration-150 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/40"
                           >
                             Dispatch
                           </button>
@@ -528,7 +528,7 @@ function Field({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full bg-bg border border-line rounded-control px-2 py-1.5 text-[13px] text-fg font-mono tabular-nums placeholder:text-muted focus:outline-none focus:border-muted"
+        className="w-full bg-bg border border-line-strong rounded-control px-2 py-1.5 text-[13px] text-fg font-mono tabular-nums placeholder:text-muted focus:outline-none focus:border-muted"
       />
     </div>
   );

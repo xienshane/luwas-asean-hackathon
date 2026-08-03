@@ -50,8 +50,8 @@ export default function CoverageBar({
           </span>
         </span>
       </div>
-      <div className={`h-1.5 rounded-full overflow-hidden ${track}`} aria-hidden>
-        <div className={`h-full rounded-full ${fill} transition-[width] duration-300`} style={{ width: `${coverage * 100}%` }} />
+      <div className={`h-1 overflow-hidden ${track}`} aria-hidden>
+        <div className={`h-full ${fill} transition-[width] duration-300`} style={{ width: `${coverage * 100}%` }} />
       </div>
     </div>
   );

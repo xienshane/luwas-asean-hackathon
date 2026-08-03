@@ -11,7 +11,7 @@ export default function Toolbar({
 }) {
   return (
     <div
-      className={`shrink-0 flex items-center gap-3 px-4 h-12 border-b border-line bg-surface/40 ${className}`}
+      className={`shrink-0 flex items-center gap-3 px-4 h-10 border-b border-line bg-surface ${className}`}
     >
       {children}
     </div>
