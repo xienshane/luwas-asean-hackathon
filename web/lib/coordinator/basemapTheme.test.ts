@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { applyGraphiteBasemap, BASEMAP } from './basemapTheme';
+import { applyGraphiteBasemap, BASEMAP, type StyleLayer } from './basemapTheme';
 
-function fakeMap(layers: Array<Record<string, unknown>>) {
+function fakeMap(layers: StyleLayer[]) {
   return {
     getStyle: () => ({ layers }),
     setPaintProperty: vi.fn(),

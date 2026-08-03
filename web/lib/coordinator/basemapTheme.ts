@@ -16,7 +16,7 @@ export const BASEMAP = {
   labelHalo: '#0A0B0D',
 } as const;
 
-type StyleLayer = {
+export type StyleLayer = {
   id: string;
   type: string;
   source?: string;
