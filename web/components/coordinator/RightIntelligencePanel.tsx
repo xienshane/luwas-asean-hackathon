@@ -31,6 +31,7 @@ const MANIFEST_TONE: Record<string, ChipTone> = {
 };
 import { lowConfidenceReason } from '@/lib/coordinator/confidence';
 import { pickAffected, affectedSource } from '@/lib/pipeline/affected';
+import { canDispatch, dispatchBlockedReason } from '@/lib/coordinator/dispatchGate';
 
 interface RightIntelligencePanelProps {
   selectedBarangay: Barangay | null;
@@ -83,6 +84,7 @@ export default function RightIntelligencePanel({
 
   useEffect(() => {
     if (selectedBarangay) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setAffectedInput(prediction?.overrideValue?.toString() || '');
       setWaterInput('');
       setFoodInput('');
@@ -193,11 +195,13 @@ export default function RightIntelligencePanel({
 
   const dispatchableTeams = teams.filter((t) => t.status === 'active' || t.status === 'idle');
 
-  // Estimated cargo mass for the capacity-fit signal. Water (1 L ≈ 1 kg) is the dominant mass of
-  // a relief load, so we use the manifest's water requirement as the estimate — clearly "est."
-  // in the UI (the manifest carries no per-unit weights to sum exactly; honest + free-tier).
-  const estCargoKg = finalWater;
+  // Cargo mass for the capacity-fit signal: the manifest's summed line weights when the
+  // pipeline produced them, else water alone (1 L approx. 1 kg) as a floor.
+  const estCargoKg = manifest?.totalWeightKg ?? finalWater;
   const recommendedTeam = recommendTeam(dispatchableTeams, selectedBarangay, estCargoKg);
+
+  const dispatchOpen = canDispatch(manifest);
+  const dispatchBlocked = dispatchBlockedReason(manifest);
 
   return (
     <DetailPanel
@@ -267,8 +271,8 @@ export default function RightIntelligencePanel({
                       </span>
                     )}
                     {prediction.isDay0 && (
-                      <span title="Day-0 forecast from a uniform storm scenario (no per-barangay wind footprint). Override-able; not yet confirmed by a field report.">
-                        <Chip tone="warning">Predicted · Day 0</Chip>
+                      <span title="Anticipatory forecast from a uniform storm scenario (no per-barangay wind footprint). Override-able; not yet confirmed by a field report.">
+                        <Chip tone="warning">Anticipatory - unconfirmed</Chip>
                       </span>
                     )}
                     {isAffectedOverridden && (
@@ -428,12 +432,17 @@ export default function RightIntelligencePanel({
               action={
                 <span
                   className="text-muted cursor-help"
-                  title="Distance is straight-line from the team base (est., not the pgRouting road distance). Fit compares team capacity to the estimated water-dominant cargo mass. OR-Tools computes the real route on dispatch; nothing dispatches automatically."
+                  title="Distance is straight-line from the team base (est., not the pgRouting road distance). Fit compares team capacity to the manifest's total cargo weight - water alone when the manifest carries no per-line weights. OR-Tools computes the real route on dispatch; nothing dispatches automatically."
                 >
                   <Info className="w-3.5 h-3.5" aria-hidden />
                 </span>
               }
             >
+              {dispatchBlocked && (
+                <p className="mb-2 rounded-control border border-warning/30 bg-warning/10 px-3 py-2 text-[12px] text-warning">
+                  {dispatchBlocked}
+                </p>
+              )}
               {dispatchableTeams.length === 0 ? (
                 <p className="text-[12px] text-muted">No dispatchable teams right now.</p>
               ) : (
@@ -464,7 +473,9 @@ export default function RightIntelligencePanel({
                           </span>
                           <button
                             onClick={() => onDispatchTeam(team.id, selectedBarangay.id)}
-                            className="px-3 py-1.5 border border-line-strong text-fg hover:bg-raised rounded-control text-[12px] transition-colors duration-150 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/40"
+                            disabled={!dispatchOpen}
+                            title={dispatchBlocked ?? undefined}
+                            className="px-3 py-1.5 border border-line-strong text-fg hover:bg-raised rounded-control text-[12px] transition-colors duration-150 cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg/40"
                           >
                             Dispatch
                           </button>
@@ -498,7 +509,7 @@ export default function RightIntelligencePanel({
 function SeverityBadge({ severity }: { severity: 'severe' | 'moderate' | 'minor' }) {
   const style: Record<typeof severity, { cls: string; label: string }> = {
     severe: { cls: 'border-critical/40 bg-critical/10 text-critical', label: 'Severe' },
-    moderate: { cls: 'border-warning/30 bg-warning/10 text-warning', label: 'Moderate' },
+    moderate: { cls: 'border-warning/30 bg-warning/10 text-warning', label: 'Elevated' },
     minor: { cls: 'border-line bg-raised/30 text-muted', label: 'Minor' },
   };
   const { cls, label } = style[severity];

@@ -143,7 +143,7 @@ export default function LeftSidebar({
               disabled={day0Running || !online}
               title={
                 online
-                  ? 'Run Day 0 Predictions — forecast impact before any field report'
+                  ? 'Anticipatory plan - forecast impact before any field report arrives'
                   : 'Offline — reconnect to run AI forecasting'
               }
               className={`w-full flex items-center rounded-control border border-active/30 text-active hover:bg-active/10 transition-colors duration-100 cursor-pointer disabled:opacity-50 disabled:cursor-default ${
@@ -151,7 +151,7 @@ export default function LeftSidebar({
               }`}
             >
               <CloudLightning className={`w-[18px] h-[18px] shrink-0 ${day0Running ? 'animate-pulse' : ''}`} />
-              {!collapsed && <span>{day0Running ? 'Forecasting…' : 'Run Day 0'}</span>}
+              {!collapsed && <span>{day0Running ? 'Forecasting…' : 'Anticipatory plan'}</span>}
             </button>
           )}
           <button
