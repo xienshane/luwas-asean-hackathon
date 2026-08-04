@@ -2,9 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Capture the service-role RPC so we can assert the block/restore call + attribution.
 const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
+let mockRerouteError: { message: string } | null = null;
 const rpc = vi.fn(async (fn: string, args: Record<string, unknown>) => {
   rpcCalls.push({ fn, args });
   if (fn === 'nearest_road_edge_at') return { data: 99, error: null };
+  if (fn === 'reroute_active_dispatch_routes') {
+    return mockRerouteError ? { data: null, error: mockRerouteError } : { data: 2, error: null };
+  }
   return { data: null, error: null };
 });
 
@@ -14,7 +18,7 @@ vi.mock('@/lib/supabase/server', () => ({ createClient: async () => ({
   rpc: async () => ({ data: true, error: null }), // is_coordinator
 }) }));
 
-beforeEach(() => { rpcCalls.length = 0; });
+beforeEach(() => { rpcCalls.length = 0; mockRerouteError = null; });
 
 const post = async (body: unknown) => {
   const { POST } = await import('./route');
@@ -57,5 +61,21 @@ describe('POST /api/road-status', () => {
     const res = await post({ impassable: true });
     expect(res.status).toBe(400);
     expect(rpcCalls.find((c) => c.fn === 'set_edge_impassable')).toBeUndefined();
+  });
+
+  it('reports rerouted active routes on a clean block', async () => {
+    const res = await post({ edgeId: 42, impassable: true });
+    expect(res.status).toBe(200);
+    expect((await res.json()).reroutedActive).toBe(2);
+  });
+
+  it('keeps the block truthful but names a failed active-route reroute', async () => {
+    mockRerouteError = { message: 'pgr_dijkstra: no path' };
+    const res = await post({ edgeId: 42, impassable: true });
+    expect(res.status).toBe(200); // the edge write landed; the block did not fail
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.reroutedActive).toBe(0);
+    expect(body.note).toContain('pgr_dijkstra: no path');
   });
 });

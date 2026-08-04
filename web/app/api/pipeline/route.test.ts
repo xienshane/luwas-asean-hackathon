@@ -9,12 +9,15 @@ const rpc = vi.fn(async (fn: string) => {
     score: 0.7, province_housing_units: 1058512, province_households: 1077180,
     structural_vuln_frac: 0.395, unimproved_water_frac: 0.0779 }], error: null };
   if (fn === 'pipeline_cost_matrix') return { data: { vids: [10, 20], seconds: [[0, 300], [300, 0]] }, error: null };
-  if (fn === 'pipeline_save_route') return { data: 'route-1', error: null };
+  if (fn === 'pipeline_save_route') {
+    return mockSaveRouteError ? { data: null, error: mockSaveRouteError } : { data: 'route-1', error: null };
+  }
   if (fn === 'silent_area_score') return { data: 1, error: null };
   return { data: null, error: null };
 });
 
 let mockOverrideValue: number | null = null;
+let mockSaveRouteError: { message: string } | null = null;
 let mockConfirmedReports: { barangay_id: string; population_estimate: number; created_at: string }[] = [];
 
 const upsertsByTable: Record<string, Record<string, unknown>[]> = {};
@@ -63,6 +66,7 @@ vi.mock('@/lib/ai/routing', () => ({ optimizeRoutes: async () => ({
 beforeEach(() => {
   calls.length = 0;
   mockOverrideValue = null;
+  mockSaveRouteError = null;
   mockConfirmedReports = [];
   for (const k of Object.keys(upsertsByTable)) delete upsertsByTable[k];
 });
@@ -129,5 +133,18 @@ describe('POST /api/pipeline', () => {
     }));
     expect(res.status).toBe(200);
     expect(upsertsByTable['impact_predictions'][0].is_day0).toBe(false);
+  });
+
+  it('returns 500 naming the cause when no route persisted', async () => {
+    mockSaveRouteError = { message: 'permission denied for table routes' };
+    const { POST } = await import('./route');
+    const res = await POST(new Request('http://x/api/pipeline?', {
+      method: 'POST', body: JSON.stringify({ barangayId: 'b1' }),
+      headers: { 'content-type': 'application/json' },
+    }));
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toContain('permission denied for table routes');
+    expect(body.predictions).toBe(1); // the stages that did land are still reported
   });
 });

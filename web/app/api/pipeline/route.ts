@@ -210,10 +210,18 @@ export async function POST(request: Request) {
   const solved = await optimizeRoutes({ stops, cost_matrix: matrix, vehicles, depot_index: 0, allow_dropping_stops: true });
 
   // 8) Replace planned routes; persist each vehicle route with real-road geometry.
-  await admin.from('routes').delete().eq('status', 'planned');
+  {
+    // A failed delete leaves the previous plan in place and stacks the new one on top —
+    // duplicate routes on the map, from a query that returned no error to anyone.
+    const { error } = await admin.from('routes').delete().eq('status', 'planned');
+    if (error) return Response.json({ error: `clear planned routes: ${error.message}` }, { status: 500 });
+  }
   let routeCount = 0;
+  let attempted = 0;
+  const saveErrors: string[] = [];
   for (const vr of solved.routes) {
     if (vr.stops.length === 0) continue;
+    attempted += 1;
     // ordered vids: depot -> each served stop -> depot (vids aligned to `points`/`stops`)
     const orderedVids = [vids[0]];
     for (const sv of vr.stops) {
@@ -229,10 +237,17 @@ export async function POST(request: Request) {
     const { error } = await admin.rpc('pipeline_save_route', {
       p_team_id: vr.vehicle_id, p_stops: stopsJson, p_vids: orderedVids,
     });
-    if (!error) routeCount += 1;
+    if (error) {
+      // Swallowing this reads as a thinner plan rather than a broken one — the coordinator
+      // dispatches against routes that were never written.
+      console.error('pipeline_save_route failed', error);
+      saveErrors.push(error.message);
+    } else {
+      routeCount += 1;
+    }
   }
 
-  return Response.json({
+  const payload = {
     mode,
     rescored: true,
     predictions: predictionRows.length,
@@ -240,5 +255,13 @@ export async function POST(request: Request) {
     routes: routeCount,
     dropped: solved.dropped_stop_ids,
     solver_status: solved.solver_status,
-  });
+    ...(saveErrors.length > 0
+      ? { note: `${saveErrors.length} of ${attempted} route saves failed — ${saveErrors[0]}` }
+      : {}),
+  };
+  // Nothing persisted at all is a failed run, not a thin one.
+  if (attempted > 0 && routeCount === 0) {
+    return Response.json({ ...payload, error: `route save: ${saveErrors[0]}` }, { status: 500 });
+  }
+  return Response.json(payload);
 }
