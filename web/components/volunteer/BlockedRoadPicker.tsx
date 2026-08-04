@@ -44,7 +44,9 @@ export default function BlockedRoadPicker({
       map = new maplibregl.Map({
         container: containerRef.current!,
         style: MAP_STYLE,
-        attributionControl: false,
+        // OSM/CARTO tile licences require visible attribution; compact keeps it out of the
+        // way on a small picker. The coordinator map already renders the full form.
+        attributionControl: { compact: true },
       });
       mapRef.current = map;
       map.on('load', () => {

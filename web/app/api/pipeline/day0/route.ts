@@ -3,9 +3,11 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { predictImpact } from '@/lib/ai/impact';
 import { buildManifest } from '@/lib/ai/supply';
 import { toFeatures, severityFromDamageRate, boundedAffected, boundedAffectedRange, type TargetRow } from '@/lib/pipeline/features';
+import { mapWithConcurrency } from '@/lib/pipeline/concurrency';
 
 const DAYS = 3;
 const MAX_TARGETS = 50;
+const MANIFEST_CONCURRENCY = 8; // deterministic formula behind one HTTP hop; bound the sockets.
 const DEFAULT_CATEGORY = 4; // PAGASA intensity assumed when the coordinator picks no scenario.
 
 // Day-0 forecast: run TabPFN impact + Sphere manifests across communities BEFORE any
@@ -99,30 +101,39 @@ export async function POST(request: Request) {
   }
 
   // 5) Sphere manifest per barangay -> upsert. Deterministic, coordinator-override-able.
-  const manifestUpsert = [];
-  for (const t of targets) {
-    const existingPred = existingPredsMap.get(t.barangay_id);
-    const affected = (existingPred !== null && existingPred !== undefined)
-      ? existingPred
-      : boundedAffected(predByBrgy.get(t.barangay_id)!, t.population);
+  interface ManifestUpsertRow {
+    barangay_id: string; days: number; access_modifier: number;
+    water_l: number; food_packs: number; shelter_kits: number; blankets: number;
+    breakdown: unknown; overridden: boolean;
+  }
 
-    const existingManifest = existingManifestsMap.get(t.barangay_id);
-    if (existingManifest && existingManifest.overridden) {
-      manifestUpsert.push({
-        barangay_id: t.barangay_id,
-        days: existingManifest.days,
-        access_modifier: Number(existingManifest.access_modifier ?? 1.0),
-        water_l: Number(existingManifest.water_l ?? 0),
-        food_packs: Number(existingManifest.food_packs ?? 0),
-        shelter_kits: Number(existingManifest.shelter_kits ?? 0),
-        blankets: Number(existingManifest.blankets ?? 0),
-        breakdown: existingManifest.breakdown,
-        overridden: true,
-      });
-    } else {
+  const manifestUpsert: ManifestUpsertRow[] = await mapWithConcurrency(
+    targets,
+    MANIFEST_CONCURRENCY,
+    async (t) => {
+      const existingPred = existingPredsMap.get(t.barangay_id);
+      const affected = (existingPred !== null && existingPred !== undefined)
+        ? existingPred
+        : boundedAffected(predByBrgy.get(t.barangay_id)!, t.population);
+
+      const existingManifest = existingManifestsMap.get(t.barangay_id);
+      if (existingManifest && existingManifest.overridden) {
+        return {
+          barangay_id: t.barangay_id,
+          days: existingManifest.days,
+          access_modifier: Number(existingManifest.access_modifier ?? 1.0),
+          water_l: Number(existingManifest.water_l ?? 0),
+          food_packs: Number(existingManifest.food_packs ?? 0),
+          shelter_kits: Number(existingManifest.shelter_kits ?? 0),
+          blankets: Number(existingManifest.blankets ?? 0),
+          breakdown: existingManifest.breakdown,
+          overridden: true,
+        };
+      }
+
       const m = await buildManifest({ predicted_affected: affected, days: DAYS, id: t.barangay_id });
       const qty = (cat: string) => m.lines.find((l) => l.category === cat)?.quantity ?? 0;
-      manifestUpsert.push({
+      return {
         barangay_id: t.barangay_id,
         days: DAYS,
         access_modifier: m.access_modifier,
@@ -132,9 +143,9 @@ export async function POST(request: Request) {
         blankets: m.lines.find((l) => l.item.toLowerCase().includes('blanket'))?.quantity ?? 0,
         breakdown: m,
         overridden: false,
-      });
-    }
-  }
+      };
+    },
+  );
   {
     const { error } = await admin.from('supply_manifests').upsert(manifestUpsert, { onConflict: 'barangay_id' });
     if (error) return Response.json({ error: `manifests: ${error.message}` }, { status: 500 });
