@@ -6,11 +6,14 @@ import { optimizeRoutes } from '@/lib/ai/routing';
 import { toFeatures, severityFromDamageRate, boundedAffected, boundedAffectedRange, type TargetRow } from '@/lib/pipeline/features';
 import { pickAffected } from '@/lib/pipeline/affected';
 import { parsePipelineMode } from '@/lib/pipeline/mode';
+import { mapWithConcurrency } from '@/lib/pipeline/concurrency';
+import { manifestDemandKg } from '@/lib/pipeline/manifestDemand';
 import type { RouteStop, Vehicle } from '@/lib/types/routing';
 
 const DAYS = 3;
 const MAX_TARGETS = 10;
 const SERVICE_SECONDS = 600; // unload time per stop
+const MANIFEST_CONCURRENCY = 8; // deterministic formula behind one HTTP hop; bound the sockets.
 
 // Orchestrates the full LUWAS pipeline for the barangays with active needs:
 // rescore -> TabPFN impact -> Sphere manifest -> OR-Tools route -> persist.
@@ -125,9 +128,13 @@ export async function POST(request: Request) {
   }
 
   // 5) Sphere manifest per barangay -> upsert. demand_kg feeds OR-Tools next.
-  const demandByBrgy = new Map<string, number>();
-  const manifestRows = [];
-  for (const t of targets) {
+  interface ManifestUpsertRow {
+    barangay_id: string; days: number; access_modifier: number;
+    water_l: number; food_packs: number; shelter_kits: number; blankets: number;
+    breakdown: unknown; overridden: boolean;
+  }
+
+  const built = await mapWithConcurrency(targets, MANIFEST_CONCURRENCY, async (t) => {
     const affected = pickAffected({
       override: existingPredsMap.get(t.barangay_id),
       reported: reportedByBrgy.get(t.barangay_id),
@@ -136,15 +143,8 @@ export async function POST(request: Request) {
 
     const existingManifest = existingManifestsMap.get(t.barangay_id);
     if (existingManifest && existingManifest.overridden) {
-      // Use the existing overridden manifest!
-      const totalWeight = existingManifest.breakdown?.total_weight_kg ?? (
-        Number(existingManifest.water_l ?? 0) * 1.0 +
-        Number(existingManifest.food_packs ?? 0) * 0.6 +
-        Number(existingManifest.shelter_kits ?? 0) * 5.0 +
-        Number(existingManifest.blankets ?? 0) * 1.5
-      );
-      demandByBrgy.set(t.barangay_id, totalWeight);
-      manifestRows.push({
+      // A coordinator override is authoritative: reuse it verbatim, never rebuild over it.
+      const row: ManifestUpsertRow = {
         barangay_id: t.barangay_id,
         days: existingManifest.days,
         access_modifier: Number(existingManifest.access_modifier ?? 1.0),
@@ -154,25 +154,30 @@ export async function POST(request: Request) {
         blankets: Number(existingManifest.blankets ?? 0),
         breakdown: existingManifest.breakdown,
         overridden: true,
-      });
-    } else {
-      // Generate standard Sphere manifest using (possibly overridden) affected count
-      const m = await buildManifest({ predicted_affected: affected, days: DAYS, id: t.barangay_id });
-      demandByBrgy.set(t.barangay_id, m.total_weight_kg);
-      const qty = (cat: string) => m.lines.find((l) => l.category === cat)?.quantity ?? 0;
-      manifestRows.push({
-        barangay_id: t.barangay_id,
-        days: DAYS,
-        access_modifier: m.access_modifier,
-        water_l: qty('water'),
-        food_packs: qty('food'),
-        shelter_kits: m.lines.find((l) => l.item.toLowerCase().includes('tarp'))?.quantity ?? 0,
-        blankets: m.lines.find((l) => l.item.toLowerCase().includes('blanket'))?.quantity ?? 0,
-        breakdown: m,
-        overridden: false,
-      });
+      };
+      return { demandKg: manifestDemandKg(existingManifest), row };
     }
-  }
+
+    const m = await buildManifest({ predicted_affected: affected, days: DAYS, id: t.barangay_id });
+    const qty = (cat: string) => m.lines.find((l) => l.category === cat)?.quantity ?? 0;
+    const row: ManifestUpsertRow = {
+      barangay_id: t.barangay_id,
+      days: DAYS,
+      access_modifier: m.access_modifier,
+      water_l: qty('water'),
+      food_packs: qty('food'),
+      shelter_kits: m.lines.find((l) => l.item.toLowerCase().includes('tarp'))?.quantity ?? 0,
+      blankets: m.lines.find((l) => l.item.toLowerCase().includes('blanket'))?.quantity ?? 0,
+      breakdown: m,
+      overridden: false,
+    };
+    return { demandKg: m.total_weight_kg, row };
+  });
+
+  const demandByBrgy = new Map<string, number>(
+    built.map((b, i) => [targets[i].barangay_id, b.demandKg]),
+  );
+  const manifestRows = built.map((b) => b.row);
   {
     // `status` is deliberately absent from manifestRows: PostgREST only writes the
     // supplied columns on conflict, so a re-run refreshes quantities without resetting
