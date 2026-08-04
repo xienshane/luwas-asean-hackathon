@@ -1,21 +1,11 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import type { Feature, MultiPolygon, Polygon } from 'geojson';
 import { useConnectivity } from '@/lib/live/connectivity';
 import { toggleEdge } from '@/lib/volunteer/roadSelection';
-import 'maplibre-gl/dist/maplibre-gl.css';
 
 const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
-
-type PolygonGeometry =
-  | { type: 'Polygon'; coordinates: number[][][] }
-  | { type: 'MultiPolygon'; coordinates: number[][][][] };
-
-type BoundaryFeature = {
-  type: 'Feature';
-  properties: { name: string };
-  geometry: PolygonGeometry;
-};
 
 // A rounded 12-gon "section" around the barangay centroid — fallback only, used when the real
 // PostGIS boundary isn't available. Radius adapts to enclose the roads.
@@ -55,7 +45,6 @@ export default function BlockedRoadPicker({
       if (!res?.ok) { setStatus('error'); return; }
       const fc = await res.json();
       if (!fc.features?.length) { setStatus('empty'); return; }
-      if (cancelled || !containerRef.current) return;
 
       map = new maplibregl.Map({
         container: containerRef.current!,
