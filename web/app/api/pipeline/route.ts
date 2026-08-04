@@ -2,17 +2,15 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { predictImpact } from '@/lib/ai/impact';
 import { buildManifest } from '@/lib/ai/supply';
-import { optimizeRoutes } from '@/lib/ai/routing';
 import { toFeatures, severityFromDamageRate, boundedAffected, boundedAffectedRange, type TargetRow } from '@/lib/pipeline/features';
 import { pickAffected } from '@/lib/pipeline/affected';
 import { parsePipelineMode } from '@/lib/pipeline/mode';
 import { mapWithConcurrency } from '@/lib/pipeline/concurrency';
-import { manifestDemandKg } from '@/lib/pipeline/manifestDemand';
-import type { RouteStop, Vehicle } from '@/lib/types/routing';
+import { manifestDemandKg, type ManifestQuantities } from '@/lib/pipeline/manifestDemand';
+import { planAndSaveRoutes, type PlanRoutesResult } from '@/lib/pipeline/routes';
 
 const DAYS = 3;
 const MAX_TARGETS = 10;
-const SERVICE_SECONDS = 600; // unload time per stop
 const MANIFEST_CONCURRENCY = 8; // deterministic formula behind one HTTP hop; bound the sockets.
 
 // Orchestrates the full LUWAS pipeline for the barangays with active needs:
@@ -31,11 +29,48 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const barangayId: string | null = body?.barangayId ?? null;
   const categoryOrdinal: number = Number.isFinite(body?.categoryOrdinal) ? body.categoryOrdinal : 4;
-  // Accepted contract; the reroute fast path itself is not implemented yet, so both
-  // modes still run the full stack. Every response echoes the mode it ran.
+  // Every response echoes the mode it ran.
   const mode = parsePipelineMode(body);
 
   const admin = createAdminClient();
+
+  // Reroute fast path: blocking a road changes the graph, not the need. Predictions and
+  // manifests are already persisted and contact recency has not moved, so this skips the
+  // rescore and both AI stages — and therefore still works with TabPFN and SEA-LION down.
+  if (mode === 'reroute') {
+    const { data: targetRows, error: tErr } = await admin.rpc('pipeline_targets', {
+      p_barangay_id: null, p_limit: MAX_TARGETS,
+    });
+    if (tErr) return Response.json({ error: `targets: ${tErr.message}` }, { status: 500 });
+    const targets = (targetRows ?? []) as TargetRow[];
+
+    const { data: stored } = await admin
+      .from('supply_manifests')
+      .select('barangay_id, water_l, food_packs, shelter_kits, blankets, breakdown')
+      .in('barangay_id', targets.map((t) => t.barangay_id));
+
+    const demandByBrgy = new Map<string, number>();
+    for (const m of (stored ?? []) as (ManifestQuantities & { barangay_id: string })[]) {
+      demandByBrgy.set(m.barangay_id, manifestDemandKg(m));
+    }
+    const routable = targets.filter((t) => demandByBrgy.has(t.barangay_id));
+    if (routable.length === 0) {
+      return Response.json({
+        mode, rescored: false, predictions: 0, manifests: 0, routes: 0,
+        note: 'nothing to reroute — no stored manifests; run the full pipeline first',
+      });
+    }
+
+    const plan = await planAndSaveRoutes(admin, routable, demandByBrgy);
+    const skipped = targets.length - routable.length;
+    if (skipped > 0) {
+      const skippedNote = `${skipped} target(s) skipped: no stored manifest`;
+      plan.note = plan.note ? `${plan.note}; ${skippedNote}` : skippedNote;
+    }
+    return respond({
+      mode, rescored: false, predictions: 0, manifests: routable.length, plan,
+    });
+  }
 
   // 2) Rescore Silent Areas (idempotent; reflects the just-confirmed contact).
   {
@@ -186,87 +221,31 @@ export async function POST(request: Request) {
     if (error) return Response.json({ error: `manifests: ${error.message}` }, { status: 500 });
   }
 
-  // 6) Depot + teams. Build the real-road cost matrix for [depot, ...targets].
-  const { data: depot } = await admin.from('coordinator_facilities').select('latitude,longitude').eq('is_depot', true).maybeSingle();
-  const { data: teamRows } = await admin.from('coordinator_teams').select('id,capacity_kg').not('capacity_kg', 'is', null);
-  if (!depot || !teamRows || teamRows.length === 0) {
-    return Response.json({ mode, rescored: true, predictions: predictionRows.length, manifests: manifestRows.length, routes: 0, note: 'no depot or teams' });
-  }
-  const points = [
-    { lat: depot.latitude, lng: depot.longitude },
-    ...targets.map((t) => ({ lat: t.lat, lng: t.lng })),
-  ];
-  const { data: cm, error: cmErr } = await admin.rpc('pipeline_cost_matrix', { p_points: points, p_speed_kmh: 30 });
-  if (cmErr) return Response.json({ error: `cost_matrix: ${cmErr.message}` }, { status: 500 });
-  const vids: number[] = cm.vids;
-  const matrix: number[][] = cm.seconds;
-
-  // 7) OR-Tools: depot is stop 0; demand from manifests; priority from Silent-Area score.
-  const stops: RouteStop[] = [
-    { id: '__depot__', name: 'Depot' },
-    ...targets.map((t) => ({
-      id: t.barangay_id, name: t.name,
-      demand_kg: demandByBrgy.get(t.barangay_id) ?? 0,
-      priority: Math.round((t.score ?? 0) * 1000),
-      service_seconds: SERVICE_SECONDS,
-    })),
-  ];
-  const vehicles: Vehicle[] = teamRows.map((t) => ({ id: t.id as string, capacity_kg: Number(t.capacity_kg) }));
-  const solved = await optimizeRoutes({ stops, cost_matrix: matrix, vehicles, depot_index: 0, allow_dropping_stops: true });
-
-  // 8) Replace planned routes; persist each vehicle route with real-road geometry.
-  {
-    // A failed delete leaves the previous plan in place and stacks the new one on top —
-    // duplicate routes on the map, from a query that returned no error to anyone.
-    const { error } = await admin.from('routes').delete().eq('status', 'planned');
-    if (error) return Response.json({ error: `clear planned routes: ${error.message}` }, { status: 500 });
-  }
-  let routeCount = 0;
-  let attempted = 0;
-  const saveErrors: string[] = [];
-  for (const vr of solved.routes) {
-    if (vr.stops.length === 0) continue;
-    attempted += 1;
-    // ordered vids: depot -> each served stop -> depot (vids aligned to `points`/`stops`)
-    const orderedVids = [vids[0]];
-    for (const sv of vr.stops) {
-      const idx = stops.findIndex((s) => s.id === sv.stop_id);
-      if (idx > 0) orderedVids.push(vids[idx]);
-    }
-    orderedVids.push(vids[0]);
-    const stopsJson = vr.stops.map((sv) => ({
-      sequence: sv.seq, barangayId: sv.stop_id,
-      barangayName: stops.find((s) => s.id === sv.stop_id)?.name ?? '',
-      action: 'Relief delivery', arrivalSeconds: sv.arrival_seconds, demandKg: sv.demand_kg,
-    }));
-    const { error } = await admin.rpc('pipeline_save_route', {
-      p_team_id: vr.vehicle_id, p_stops: stopsJson, p_vids: orderedVids,
-    });
-    if (error) {
-      // Swallowing this reads as a thinner plan rather than a broken one — the coordinator
-      // dispatches against routes that were never written.
-      console.error('pipeline_save_route failed', error);
-      saveErrors.push(error.message);
-    } else {
-      routeCount += 1;
-    }
-  }
-
-  const payload = {
-    mode,
-    rescored: true,
+  const plan = await planAndSaveRoutes(admin, targets, demandByBrgy);
+  return respond({
+    mode, rescored: true,
     predictions: predictionRows.length,
     manifests: manifestRows.length,
-    routes: routeCount,
-    dropped: solved.dropped_stop_ids,
-    solver_status: solved.solver_status,
-    ...(saveErrors.length > 0
-      ? { note: `${saveErrors.length} of ${attempted} route saves failed — ${saveErrors[0]}` }
-      : {}),
+    plan,
+  });
+}
+
+/** One response shape for both modes; `plan.error` means nothing persisted -> 500. */
+function respond(o: {
+  mode: string; rescored: boolean; predictions: number; manifests: number;
+  plan: PlanRoutesResult;
+}) {
+  const payload = {
+    mode: o.mode,
+    rescored: o.rescored,
+    predictions: o.predictions,
+    manifests: o.manifests,
+    routes: o.plan.routes,
+    ...(o.plan.dropped ? { dropped: o.plan.dropped } : {}),
+    ...(o.plan.solverStatus ? { solver_status: o.plan.solverStatus } : {}),
+    ...(o.plan.note ? { note: o.plan.note } : {}),
   };
-  // Nothing persisted at all is a failed run, not a thin one.
-  if (attempted > 0 && routeCount === 0) {
-    return Response.json({ ...payload, error: `route save: ${saveErrors[0]}` }, { status: 500 });
-  }
-  return Response.json(payload);
+  return o.plan.error
+    ? Response.json({ ...payload, error: o.plan.error }, { status: 500 })
+    : Response.json(payload);
 }

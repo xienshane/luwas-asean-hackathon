@@ -18,6 +18,7 @@ const rpc = vi.fn(async (fn: string) => {
 
 let mockOverrideValue: number | null = null;
 let mockSaveRouteError: { message: string } | null = null;
+let mockStoredManifests: Record<string, unknown>[] = [];
 let mockConfirmedReports: { barangay_id: string; population_estimate: number; created_at: string }[] = [];
 
 const upsertsByTable: Record<string, Record<string, unknown>[]> = {};
@@ -36,6 +37,7 @@ const fromFn = vi.fn((table: string) => ({
       if (table === 'impact_predictions' && mockOverrideValue !== null) {
         return { data: [{ barangay_id: 'b1', override_value: mockOverrideValue }], error: null };
       }
+      if (table === 'supply_manifests') return { data: mockStoredManifests, error: null };
       return { data: [], error: null };
     },
     not: async () => ({ data: [{ id: 't1', capacity_kg: 5000 }], error: null })
@@ -67,6 +69,7 @@ beforeEach(() => {
   calls.length = 0;
   mockOverrideValue = null;
   mockSaveRouteError = null;
+  mockStoredManifests = [];
   mockConfirmedReports = [];
   for (const k of Object.keys(upsertsByTable)) delete upsertsByTable[k];
 });
@@ -146,5 +149,39 @@ describe('POST /api/pipeline', () => {
     const body = await res.json();
     expect(body.error).toContain('permission denied for table routes');
     expect(body.predictions).toBe(1); // the stages that did land are still reported
+  });
+
+  it('reroute mode skips rescore, prediction and manifest building', async () => {
+    mockStoredManifests = [{
+      barangay_id: 'b1', water_l: 22500, food_packs: 0, shelter_kits: 0, blankets: 0,
+      breakdown: { total_weight_kg: 22500 }, overridden: false, days: 3, access_modifier: 1,
+    }];
+    const { POST } = await import('./route');
+    const res = await POST(new Request('http://x/api/pipeline?', {
+      method: 'POST', body: JSON.stringify({ mode: 'reroute' }),
+      headers: { 'content-type': 'application/json' },
+    }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.mode).toBe('reroute');
+    expect(body.rescored).toBe(false);
+    expect(body.predictions).toBe(0);
+    expect(body.routes).toBe(1);
+    expect(calls).not.toContain('rpc:silent_area_score');
+    expect(calls.some((c) => c.startsWith('buildManifest:'))).toBe(false);
+    expect(calls).toContain('rpc:pipeline_save_route');
+  });
+
+  it('reroute mode reports when there is nothing persisted to reroute', async () => {
+    mockStoredManifests = [];
+    const { POST } = await import('./route');
+    const res = await POST(new Request('http://x/api/pipeline?', {
+      method: 'POST', body: JSON.stringify({ mode: 'reroute' }),
+      headers: { 'content-type': 'application/json' },
+    }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.routes).toBe(0);
+    expect(body.note).toMatch(/full pipeline/i);
   });
 });
