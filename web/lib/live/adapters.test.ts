@@ -4,7 +4,7 @@ import { dbReportToUi, mergeReport, timeAgo, type CoordinatorFieldReport } from 
 // Rows now come from the coordinator_field_reports view: the barangay name is
 // joined server-side and lat/lng are already resolved (report location → barangay
 // centroid fallback), so the adapter no longer needs a client-side directory.
-const row: CoordinatorFieldReport = {
+const baseRow: CoordinatorFieldReport = {
   id: 'aaaaaaaa-0000-0000-0000-000000000001',
   barangay_id: 'b-uuid-1',
   barangay_name: 'Guadalupe',
@@ -25,7 +25,7 @@ const row: CoordinatorFieldReport = {
 
 describe('dbReportToUi', () => {
   it('maps a row into the UI shape, resolving the name from the row', () => {
-    const ui = dbReportToUi(row)!;
+    const ui = dbReportToUi(baseRow)!;
     expect(ui.latitude).toBe(10.31);
     expect(ui.longitude).toBe(123.9);
     expect(ui.barangayName).toBe('Guadalupe'); // from the server-side join, not a capped client map
@@ -36,23 +36,33 @@ describe('dbReportToUi', () => {
   });
 
   it('falls back to "Unknown barangay" only when the joined name is null', () => {
-    expect(dbReportToUi({ ...row, barangay_name: null })!.barangayName).toBe('Unknown barangay');
+    expect(dbReportToUi({ ...baseRow, barangay_name: null })!.barangayName).toBe('Unknown barangay');
   });
 
   it('labels offline-synced and SMS reports for the coordinator', () => {
-    expect(dbReportToUi({ ...row, offline_synced: true })!.reporterName).toBe(
+    expect(dbReportToUi({ ...baseRow, offline_synced: true })!.reporterName).toBe(
       'Field App · offline sync',
     );
-    expect(dbReportToUi({ ...row, source: 'sms' })!.reporterName).toBe('SMS Intake');
+    expect(dbReportToUi({ ...baseRow, source: 'sms' })!.reporterName).toBe('SMS Intake');
   });
 
   it('returns null when no coordinates are resolvable', () => {
-    expect(dbReportToUi({ ...row, lat: null, lng: null })).toBeNull();
+    expect(dbReportToUi({ ...baseRow, lat: null, lng: null })).toBeNull();
+  });
+
+  it('reports a missing severity as unknown, not low', () => {
+    const ui = dbReportToUi({ ...baseRow, needs_severity: null });
+    expect(ui?.needsSeverity).toBe('unknown');
+  });
+
+  it('reports an unrecognised severity as unknown', () => {
+    const ui = dbReportToUi({ ...baseRow, needs_severity: 'catastrophic' });
+    expect(ui?.needsSeverity).toBe('unknown');
   });
 });
 
 describe('mergeReport', () => {
-  const a = dbReportToUi(row)!;
+  const a = dbReportToUi(baseRow)!;
   it('prepends a new report', () => {
     expect(mergeReport([], a)).toEqual([a]);
   });

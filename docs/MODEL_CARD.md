@@ -14,6 +14,19 @@ Based on the Leave-One-Typhoon-Out (LOTO) cross-validation over 85 storms (2010â
 
 ### Interval Calibration
 The model outputs probabilistic predictions rather than just point estimates.
+
+### Damage-severity binning
+
+The model emits `severe | high | moderate | low`. The dashboard bins these into three
+display bands so adjacent model classes never read as the same badge:
+
+| Model output | Dashboard badge |
+| --- | --- |
+| `severe` | Severe damage |
+| `high` | Elevated damage |
+| `moderate`, `low` | Minor damage |
+
+The binning is display-only; the stored `damage_severity` is the model's own value.
 - **Affected Population 80% Coverage:** **0.8588** (Actual values fall within the predicted 80% confidence interval ~86% of the time).
 - **Damage Rate 80% Coverage:** **0.9040**
 

@@ -44,7 +44,8 @@ export interface FieldReport {
   /** English translation of rawText; null if already English or not yet translated. */
   translatedText: string | null;
   populationEstimate: number;
-  needsSeverity: 'critical' | 'high' | 'medium' | 'low';
+  // 'unknown' = the parser produced no severity. Never silently render that as 'low'.
+  needsSeverity: 'critical' | 'high' | 'medium' | 'low' | 'unknown';
   roadStatus: string;
   roadImpassable: boolean;
   impassableEdgeId: string | null;
@@ -139,6 +140,8 @@ export interface SupplyManifest {
   hygieneKits: SupplyItem;
   medicalSupplies: SupplyItem;
   shelterMaterials: SupplyItem;
+  /** Summed line weights from the manifest breakdown; null when the breakdown has none. */
+  totalWeightKg: number | null;
   overridden: boolean;
 }
 

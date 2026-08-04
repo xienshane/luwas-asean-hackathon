@@ -74,4 +74,5 @@ export const SEVERITY_TONE: Record<string, Tone> = {
   high: 'critical',
   medium: 'warning',
   low: 'neutral',
+  unknown: 'neutral',
 };

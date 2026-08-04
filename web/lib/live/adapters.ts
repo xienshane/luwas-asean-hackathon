@@ -54,7 +54,7 @@ export function dbReportToUi(row: CoordinatorFieldReport): FieldReport | null {
     rawText: row.raw_text ?? '',
     translatedText: row.translated_text ?? null,
     populationEstimate: row.population_estimate ?? 0,
-    needsSeverity: SEVERITY_UI[row.needs_severity ?? ''] ?? 'low',
+    needsSeverity: SEVERITY_UI[row.needs_severity ?? ''] ?? 'unknown',
     roadStatus: row.road_status ?? 'unknown',
     roadImpassable: row.road_impassable,
     impassableEdgeId: null,
