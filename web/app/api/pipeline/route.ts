@@ -5,6 +5,7 @@ import { buildManifest } from '@/lib/ai/supply';
 import { optimizeRoutes } from '@/lib/ai/routing';
 import { toFeatures, severityFromDamageRate, boundedAffected, boundedAffectedRange, type TargetRow } from '@/lib/pipeline/features';
 import { pickAffected } from '@/lib/pipeline/affected';
+import { parsePipelineMode } from '@/lib/pipeline/mode';
 import type { RouteStop, Vehicle } from '@/lib/types/routing';
 
 const DAYS = 3;
@@ -14,8 +15,8 @@ const SERVICE_SECONDS = 600; // unload time per stop
 // Orchestrates the full LUWAS pipeline for the barangays with active needs:
 // rescore -> TabPFN impact -> Sphere manifest -> OR-Tools route -> persist.
 // Coordinator-gated; all writes use the service-role client. Re-runnable: predictions
-// and manifests upsert by barangay_id (override_value preserved); planned routes are
-// regenerated wholesale (active/completed routes are untouched).
+// and manifests upsert by barangay_id (override_value and the manifest review status are
+// preserved); planned routes are regenerated wholesale (active/completed are untouched).
 export async function POST(request: Request) {
   // 1) AuthZ: only a signed-in coordinator may trigger the (compute-heavy) pipeline.
   const ssr = await createClient();
@@ -27,6 +28,9 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const barangayId: string | null = body?.barangayId ?? null;
   const categoryOrdinal: number = Number.isFinite(body?.categoryOrdinal) ? body.categoryOrdinal : 4;
+  // Accepted contract; the reroute fast path itself is not implemented yet, so both
+  // modes still run the full stack. Every response echoes the mode it ran.
+  const mode = parsePipelineMode(body);
 
   const admin = createAdminClient();
 
@@ -43,7 +47,7 @@ export async function POST(request: Request) {
   if (tErr) return Response.json({ error: `targets: ${tErr.message}` }, { status: 500 });
   const targets = (targetRows ?? []) as TargetRow[];
   if (targets.length === 0) {
-    return Response.json({ rescored: true, predictions: 0, manifests: 0, routes: 0, note: 'no active targets' });
+    return Response.json({ mode, rescored: true, predictions: 0, manifests: 0, routes: 0, note: 'no active targets' });
   }
 
   // Fetch existing predictions to get any override_value
@@ -167,6 +171,9 @@ export async function POST(request: Request) {
     }
   }
   {
+    // `status` is deliberately absent from manifestRows: PostgREST only writes the
+    // supplied columns on conflict, so a re-run refreshes quantities without resetting
+    // the coordinator's review decision (same contract as override_value above).
     const { error } = await admin.from('supply_manifests').upsert(manifestRows, { onConflict: 'barangay_id' });
     if (error) return Response.json({ error: `manifests: ${error.message}` }, { status: 500 });
   }
@@ -175,7 +182,7 @@ export async function POST(request: Request) {
   const { data: depot } = await admin.from('coordinator_facilities').select('latitude,longitude').eq('is_depot', true).maybeSingle();
   const { data: teamRows } = await admin.from('coordinator_teams').select('id,capacity_kg').not('capacity_kg', 'is', null);
   if (!depot || !teamRows || teamRows.length === 0) {
-    return Response.json({ rescored: true, predictions: predictionRows.length, manifests: manifestRows.length, routes: 0, note: 'no depot or teams' });
+    return Response.json({ mode, rescored: true, predictions: predictionRows.length, manifests: manifestRows.length, routes: 0, note: 'no depot or teams' });
   }
   const points = [
     { lat: depot.latitude, lng: depot.longitude },
@@ -223,6 +230,7 @@ export async function POST(request: Request) {
   }
 
   return Response.json({
+    mode,
     rescored: true,
     predictions: predictionRows.length,
     manifests: manifestRows.length,
