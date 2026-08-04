@@ -1,6 +1,6 @@
 import React from 'react';
 
-// Inline status chip — the existing confidence / Day-0 / override / en-route / sim badges
+// Inline status chip - the existing confidence / anticipatory / override / en-route / sim badges
 // collapse onto this one primitive. Tone drives a left dot + tinted text (color-not-only:
 // the dot is shape+color, never color alone).
 export type ChipTone = 'active' | 'warning' | 'critical' | 'muted';

@@ -2038,20 +2038,27 @@ export default function InteractiveCommandMap({
 
         {/* Zoom controls */}
         <div className="absolute top-3 right-3 z-10 flex flex-col gap-1">
-          {[
-            { label: '+', title: 'Zoom In',  action: zoomIn },
-            { label: '−', title: 'Zoom Out', action: zoomOut },
-            { label: '⌂', title: 'Reset',    action: resetView },
-          ].map(({ label, title, action }) => (
-            <button
-              key={title}
-              onClick={action}
-              title={title}
-              className="w-7 h-7 bg-surface border border-line hover:bg-raised text-muted hover:text-fg rounded-control flex items-center justify-center text-sm cursor-pointer transition-colors duration-100 select-none"
-            >
-              {label}
-            </button>
-          ))}
+          <button
+            onClick={zoomIn}
+            title="Zoom In"
+            className="w-7 h-7 bg-surface border border-line hover:bg-raised text-muted hover:text-fg rounded-control flex items-center justify-center text-sm cursor-pointer transition-colors duration-100 select-none"
+          >
+            +
+          </button>
+          <button
+            onClick={zoomOut}
+            title="Zoom Out"
+            className="w-7 h-7 bg-surface border border-line hover:bg-raised text-muted hover:text-fg rounded-control flex items-center justify-center text-sm cursor-pointer transition-colors duration-100 select-none"
+          >
+            −
+          </button>
+          <button
+            onClick={resetView}
+            title="Reset"
+            className="w-7 h-7 bg-surface border border-line hover:bg-raised text-muted hover:text-fg rounded-control flex items-center justify-center text-sm cursor-pointer transition-colors duration-100 select-none"
+          >
+            ⌂
+          </button>
         </div>
 
         {/* Road edge popup (Adjusted left position to sit right beside the top-left fullscreen icon) */}
