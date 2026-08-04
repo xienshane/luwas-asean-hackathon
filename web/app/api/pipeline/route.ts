@@ -114,6 +114,9 @@ export async function POST(request: Request) {
       confidence: Number(p.confidence.toFixed(3)),
       inputs: features.find((f) => f.id === t.barangay_id) ?? {},
       reported_affected: reportedByBrgy.get(t.barangay_id) ?? null,
+      // A confirmed report supersedes the anticipatory forecast. Omitting this leaves the
+      // Day-0 flag true on conflict, so the "Anticipatory — unconfirmed" chip never clears.
+      is_day0: false,
     };
   });
   {

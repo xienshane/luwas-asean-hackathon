@@ -17,8 +17,12 @@ const rpc = vi.fn(async (fn: string) => {
 let mockOverrideValue: number | null = null;
 let mockConfirmedReports: { barangay_id: string; population_estimate: number; created_at: string }[] = [];
 
+const upsertsByTable: Record<string, Record<string, unknown>[]> = {};
+
 const upsert = vi.fn(async () => { calls.push('upsert'); return { error: null }; });
-const fromFn = vi.fn((table: string) => ({ upsert, delete: () => ({ eq: async () => ({ error: null }) }),
+const fromFn = vi.fn((table: string) => ({
+  upsert: (rows: Record<string, unknown>[]) => { upsertsByTable[table] = rows; return upsert(); },
+  delete: () => ({ eq: async () => ({ error: null }) }),
   select: () => ({
     eq: () => ({
       maybeSingle: async () => ({ data: { latitude: 10.31, longitude: 123.89 }, error: null }),
@@ -60,6 +64,7 @@ beforeEach(() => {
   calls.length = 0;
   mockOverrideValue = null;
   mockConfirmedReports = [];
+  for (const k of Object.keys(upsertsByTable)) delete upsertsByTable[k];
 });
 
 describe('POST /api/pipeline', () => {
@@ -114,5 +119,15 @@ describe('POST /api/pipeline', () => {
     }));
     expect(res.status).toBe(200);
     expect(calls).toContain('buildManifest:999'); // override beats report
+  });
+
+  it('clears is_day0 so an anticipatory chip cannot survive a report-driven run', async () => {
+    const { POST } = await import('./route');
+    const res = await POST(new Request('http://x/api/pipeline?', {
+      method: 'POST', body: JSON.stringify({ barangayId: 'b1', categoryOrdinal: 4 }),
+      headers: { 'content-type': 'application/json' },
+    }));
+    expect(res.status).toBe(200);
+    expect(upsertsByTable['impact_predictions'][0].is_day0).toBe(false);
   });
 });
