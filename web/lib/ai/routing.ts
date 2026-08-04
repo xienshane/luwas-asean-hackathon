@@ -1,15 +1,7 @@
 import type { OptimizeRoutesRequest, OptimizeRoutesResponse } from '@/lib/types/routing';
+import { postAiJson } from './fetchJson';
 
-export async function optimizeRoutes(req: OptimizeRoutesRequest): Promise<OptimizeRoutesResponse> {
-  const base = process.env.AI_SERVICE_URL;
-  if (!base) throw new Error('AI_SERVICE_URL is not set');
-
-  const res = await fetch(`${base.replace(/\/$/, '')}/optimize-routes`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(req),
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!res.ok) throw new Error(`optimize-routes responded ${res.status}`);
-  return (await res.json()) as OptimizeRoutesResponse;
+// OR-Tools VRP. The cost matrix is always the pgRouting real-road matrix, never Euclidean.
+export function optimizeRoutes(req: OptimizeRoutesRequest): Promise<OptimizeRoutesResponse> {
+  return postAiJson<OptimizeRoutesResponse>('/optimize-routes', req, 'optimize-routes');
 }
