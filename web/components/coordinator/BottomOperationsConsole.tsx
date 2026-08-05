@@ -114,7 +114,7 @@ export default function BottomOperationsConsole({
                 setActiveTab(t.id);
                 if (isCollapsed) setIsCollapsed(false);
               }}
-              className={`relative px-4 py-2 transition-colors duration-100 cursor-pointer ${
+              className={`relative px-8 py-2 transition-colors duration-100 cursor-pointer ${
                 activeTab === t.id ? 'text-fg' : 'text-muted hover:text-fg'
               }`}
             >

@@ -52,17 +52,25 @@ interface ManifestLine { item?: string; quantity?: number }
 export interface ManifestRow {
   barangay_id: string; days: number; water_l: number | null; food_packs: number | null;
   shelter_kits: number | null; blankets: number | null;
-  breakdown: { lines?: ManifestLine[] } | null; overridden: boolean;
+  breakdown: { lines?: ManifestLine[]; total_weight_kg?: number } | null; overridden: boolean;
+  status?: string | null;
 }
+const MANIFEST_STATUSES: SupplyManifest['status'][] = ['pending', 'approved', 'modified', 'rejected'];
 export function manifestRowToUi(r: ManifestRow): SupplyManifest {
   const item = (recommended: number) => ({ recommended, inventory: 0, shortfall: recommended });
   const water = Number(r.water_l ?? 0), food = Number(r.food_packs ?? 0);
   const hygiene = (r.breakdown?.lines ?? []).find((l) => l.item?.toLowerCase().includes('hygiene'))?.quantity ?? 0;
   return {
-    barangayId: r.barangay_id, days: r.days, status: r.overridden ? 'modified' : 'pending',
+    barangayId: r.barangay_id, days: r.days,
+    // Persisted review status wins; rows written before the column existed fall back to
+    // the override flag. The pipeline upsert omits `status`, so runs never reset a review.
+    status: MANIFEST_STATUSES.includes(r.status as SupplyManifest['status'])
+      ? (r.status as SupplyManifest['status'])
+      : (r.overridden ? 'modified' : 'pending'),
     waterL: item(water), foodPacks: item(food),
     hygieneKits: item(hygiene), medicalSupplies: item(0),
     shelterMaterials: item(Number(r.shelter_kits ?? 0)),
+    totalWeightKg: r.breakdown?.total_weight_kg ?? null,
     overridden: r.overridden,
   };
 }

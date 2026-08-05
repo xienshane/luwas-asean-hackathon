@@ -8,6 +8,8 @@ import { DetailPanel, SeverityRail, StatusDot, Toolbar, SEVERITY_TONE } from './
 interface ReportsViewProps {
   reports: FieldReport[];
   onConfirmReport: (id: string) => void;
+  /** Batched confirm — one DB update and one pipeline run for the whole selection. */
+  onConfirmReports: (ids: string[]) => void;
   onFlagReport: (reportId: string) => void;
   // Lazily fills the English translation for a report that lacks one, so the
   // detail panel can default to translated text even while a report is unconfirmed.
@@ -20,14 +22,14 @@ const SOURCE_LABEL: Record<string, string> = {
   parsed: 'AI-Parsed',
 };
 
-const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, unknown: 4 };
 
 function ago(iso: string): string {
   const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
   return m < 60 ? `${m}m ago` : `${Math.round(m / 60)}h ago`;
 }
 
-export default function ReportsView({ reports, onConfirmReport, onFlagReport, onTranslateReport }: ReportsViewProps) {
+export default function ReportsView({ reports, onConfirmReport, onConfirmReports, onFlagReport, onTranslateReport }: ReportsViewProps) {
   const [filterSeverity, setFilterSeverity] = useState<'all' | 'critical' | 'high' | 'medium' | 'low'>('all');
   const [filterSource, setFilterSource] = useState<'all' | 'app' | 'sms' | 'parsed'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -146,7 +148,7 @@ export default function ReportsView({ reports, onConfirmReport, onFlagReport, on
           <div className="flex items-center gap-3 px-4 h-10 border-b border-line bg-raised/40 text-[13px]">
             <span className="text-muted">{checked.size} selected</span>
             <button
-              onClick={() => bulk(onConfirmReport)}
+              onClick={() => { onConfirmReports([...checked]); setChecked(new Set()); }}
               className="flex items-center gap-1 px-2.5 py-1 border border-active/40 bg-active/10 text-active hover:bg-active/20 rounded-control transition-colors duration-100 cursor-pointer"
             >
               <Check className="w-3.5 h-3.5" /> Confirm

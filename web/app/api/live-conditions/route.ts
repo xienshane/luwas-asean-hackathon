@@ -18,8 +18,8 @@ const DEFAULT_TTL_SECONDS = 600; // 10 min — comfortably under Open-Meteo free
 // cache that survives cold starts: see plan Appendix A.)
 let cache: { at: number; value: LiveConditions } | null = null;
 
-// Phase 4.7 — one free, keyless live wind/rain reading for the active-storm area.
-// The Day-0 forecast maps `category_ordinal` from this into TabPFN's intensity input.
+// Phase 4.7 - one free, keyless live wind/rain reading for the active-storm area.
+// The anticipatory forecast maps `category_ordinal` from this into TabPFN's intensity input.
 // Always returns HTTP 200 with `{ available }` so the UI degrades without breaking.
 export async function GET() {
   // AuthZ: only a signed-in coordinator sees the operating picture.

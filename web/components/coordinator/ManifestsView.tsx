@@ -112,13 +112,19 @@ export default function ManifestsView({ barangays, manifests, predictions, onUpd
 
   useEffect(() => {
     const firstPending = barangays.find((b) => manifests[b.id]?.status === 'pending');
-    if (firstPending && !selectedId) setSelectedId(firstPending.id);
+    if (firstPending && !selectedId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSelectedId(firstPending.id);
+    }
   }, [barangays, manifests, selectedId]);
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem('manifest-history');
-      if (raw) setHistory(JSON.parse(raw).map((e: HistoryEntry) => ({ ...e, timestamp: new Date(e.timestamp) })));
+      if (raw) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setHistory(JSON.parse(raw).map((e: HistoryEntry) => ({ ...e, timestamp: new Date(e.timestamp) })));
+      }
     } catch {
       /* ignore */
     }
@@ -195,8 +201,8 @@ export default function ManifestsView({ barangays, manifests, predictions, onUpd
         title={dialog.action === 'approve' ? 'Approve manifest' : 'Reject manifest'}
         message={
           dialog.action === 'approve'
-            ? 'This manifest will be marked ready for dispatch.'
-            : 'The manifest will be archived and the barangay notified.'
+            ? 'Are you sure? This manifest has overrides applied. The manifest will lock and become ready for dispatch.'
+            : 'Are you sure? This manifest has overrides applied. The manifest will be archived. Nothing is sent to the barangay.'
         }
         onConfirm={confirmAction}
         onCancel={() => {
@@ -431,12 +437,10 @@ export default function ManifestsView({ barangays, manifests, predictions, onUpd
                 ) : (
                   <div className="shrink-0 border-t border-line px-4 py-3 text-[13px] flex items-center gap-2">
                     <StatusDot tone={STATUS_TONE[selectedManifest.status] ?? 'neutral'} />
-                    <span className="text-muted">
+                    <span className="text-muted text-[13px] mt-1 italic">
                       {selectedManifest.status === 'approved'
-                        ? 'Approved and queued for dispatch.'
-                        : selectedManifest.status === 'rejected'
-                        ? 'Rejected — barangay notified.'
-                        : 'Modified by coordinator.'}
+                        ? 'Approved and ready for dispatch.'
+                        : 'Rejected — archived.'}
                     </span>
                   </div>
                 )}

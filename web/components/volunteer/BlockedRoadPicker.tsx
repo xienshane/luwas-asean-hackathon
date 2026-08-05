@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import type { Feature, MultiPolygon, Polygon } from 'geojson';
 import { useConnectivity } from '@/lib/live/connectivity';
 import { toggleEdge } from '@/lib/volunteer/roadSelection';
 
@@ -27,8 +28,12 @@ export default function BlockedRoadPicker({
   const tier = useConnectivity();
 
   // Keep onChange/selection in refs so the click handler (bound once) sees current values.
-  const selRef = useRef(selectedEdgeIds); selRef.current = selectedEdgeIds;
-  const onChangeRef = useRef(onChange); onChangeRef.current = onChange;
+  const selRef = useRef(selectedEdgeIds);
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    selRef.current = selectedEdgeIds;
+    onChangeRef.current = onChange;
+  }, [selectedEdgeIds, onChange]);
 
   useEffect(() => {
     let cancelled = false;

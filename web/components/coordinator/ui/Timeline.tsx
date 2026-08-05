@@ -20,7 +20,7 @@ export default function Timeline({ items }: { items: TimelineItem[] }) {
           key={it.id}
           className="flex gap-3 px-4 py-1 hover:bg-raised/40 transition-colors duration-100"
         >
-          <span className="font-mono tabular-nums text-muted shrink-0 w-10 pt-px">
+          <span className="font-mono tabular-nums text-muted shrink-0 w-[90px] pt-px">
             {it.time}
           </span>
           <span className="pt-1.5">

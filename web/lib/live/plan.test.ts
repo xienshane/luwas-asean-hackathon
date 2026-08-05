@@ -45,3 +45,36 @@ it('converts a manifest row to the UI SupplyManifest', () => {
   expect(m.waterL.recommended).toBe(45000);
   expect(m.status).toBe('pending');
 });
+
+it('reads the persisted manifest review status', () => {
+  const m = manifestRowToUi({ barangay_id: 'b1', days: 3, water_l: 45000, food_packs: 500,
+    shelter_kits: 100, blankets: 200, breakdown: { lines: [] }, overridden: false,
+    status: 'approved' });
+  expect(m.status).toBe('approved');
+});
+
+it('falls back to overridden-derived status when the column is absent', () => {
+  const m = manifestRowToUi({ barangay_id: 'b1', days: 3, water_l: 1, food_packs: 1,
+    shelter_kits: 0, blankets: 0, breakdown: { lines: [] }, overridden: true });
+  expect(m.status).toBe('modified');
+});
+
+it('ignores an unrecognised status value', () => {
+  const m = manifestRowToUi({ barangay_id: 'b1', days: 3, water_l: 1, food_packs: 1,
+    shelter_kits: 0, blankets: 0, breakdown: { lines: [] }, overridden: false,
+    status: 'garbage' });
+  expect(m.status).toBe('pending');
+});
+
+it('carries the manifest total weight when the breakdown has one', () => {
+  const m = manifestRowToUi({ barangay_id: 'b1', days: 3, water_l: 45000, food_packs: 500,
+    shelter_kits: 100, blankets: 200, overridden: false,
+    breakdown: { lines: [], total_weight_kg: 48200 } });
+  expect(m.totalWeightKg).toBe(48200);
+});
+
+it('reports a null total weight when the breakdown has none', () => {
+  const m = manifestRowToUi({ barangay_id: 'b1', days: 3, water_l: 45000, food_packs: 500,
+    shelter_kits: 100, blankets: 200, overridden: false, breakdown: { lines: [] } });
+  expect(m.totalWeightKg).toBeNull();
+});

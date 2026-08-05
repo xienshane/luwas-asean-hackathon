@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type {
   Barangay,
   FieldReport,
@@ -30,6 +30,9 @@ import { useLiveReports } from '@/lib/live/useLiveReports';
 import { useLiveVolunteers } from '@/lib/live/useLiveVolunteers';
 import { roadBlockRequest, isLiveImpassableReport } from '@/lib/coordinator/roadStatus';
 import { PAGASA_CATEGORY_LABELS, type LiveConditions } from '@/lib/live/conditions';
+import DemoConsole from './DemoConsole';
+import { capacityAlert } from '@/lib/coordinator/capacityAlert';
+import { createSerialRunner } from '@/lib/coordinator/serialRunner';
 
 export default function CommandDashboard() {
   const [currentView, setCurrentView] = useState('map');
@@ -41,6 +44,8 @@ export default function CommandDashboard() {
   const connectivity = useConnectivity({ realtimeHealthy });
 
   const [barangays, setBarangays] = useState<Barangay[]>([]);
+  const barangaysRef = useRef<Barangay[]>([]);
+  useEffect(() => { barangaysRef.current = barangays; }, [barangays]);
   const [reports, setReports] = useState<FieldReport[]>([]);
   useLiveReports(setReports);
   const liveVolunteers = useLiveVolunteers();
@@ -57,13 +62,17 @@ export default function CommandDashboard() {
   // Drop the provisional hub->area line once the real pgRouting route for that team lands.
   useEffect(() => {
     if (dispatchPreview && routes.some((r) => r.teamId === dispatchPreview.teamId && r.status === 'active')) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDispatchPreview(null);
     }
   }, [routes, dispatchPreview]);
   const [predictions, setPredictions] = useState<Record<string, ImpactPrediction>>({});
   const [manifests, setManifests] = useState<Record<string, SupplyManifest>>({});
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setRoutes(live.routes); }, [live.routes]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setPredictions(live.predictions); }, [live.predictions]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setManifests(live.manifests); }, [live.manifests]);
 
   const [selectedBarangay, setSelectedBarangay] = useState<Barangay | null>(null);
@@ -98,6 +107,66 @@ export default function CommandDashboard() {
       cancelled = true;
     };
   }, []);
+
+  // A3: Every pipeline action rescores server-side; the map only reflects it after a refetch.
+  // Setters are stable, so this is safe to call from anywhere in the component.
+  const refreshMap = async () => {
+    try {
+      const map = await fetchCoordinatorMapData();
+      setBarangays(map.barangays);
+      setScores(map.scores);
+    } catch (err) {
+      console.error('Failed to refresh coordinator map data', err);
+      addActivityLog('MAP: scores could not be refreshed — showing the last known values.', 'warn');
+    }
+  };
+
+  const translateRequested = useRef<Set<string>>(new Set());
+
+  const addActivityLog = (event: string, type: 'info' | 'warn' | 'success' | 'alert' = 'info') => {
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    setActivityLogs(prev => [
+      { id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, time: timeStr, event, type },
+      ...prev
+    ]);
+  };
+
+  // A4: Serial pipeline runner — collapses concurrent triggers into at most one re-run.
+  // useMemo with [] creates this once on mount. barangaysRef.current is only accessed
+  // inside the async task (called from event handlers), never synchronously during render.
+  /* eslint-disable react-hooks/refs */
+  const runPipeline = useMemo(
+    () => createSerialRunner(async (barangayId: string | undefined) => {
+      try {
+        const res = await fetch('/api/pipeline', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(barangayId ? { barangayId } : {}),
+        });
+        if (!res.ok) throw new Error(`pipeline responded ${res.status}`);
+        const out = await res.json();
+        addActivityLog(
+          `PIPELINE: ${out.predictions ?? 0} predictions, ${out.routes ?? 0} routes generated.`,
+          'info',
+        );
+        if (out.note) addActivityLog(`PIPELINE: ${out.note}.`, 'warn');
+        const capacity = capacityAlert(out.dropped, (id) =>
+          barangaysRef.current.find((b) => b.id === id)?.name ?? id);
+        if (capacity) addActivityLog(capacity, 'alert');
+        await fetchCoordinatorMapData().then((map) => {
+          setBarangays(map.barangays);
+          setScores(map.scores);
+        }).catch((err) => {
+          console.error('Failed to refresh map after pipeline', err);
+        });
+      } catch (err) {
+        console.error('Pipeline run failed', err);
+        addActivityLog('PIPELINE: failed to run (AI service unreachable).', 'alert');
+      }
+    }),
+    [],
+  );
+  /* eslint-enable react-hooks/refs */
 
   const handleSelectBarangay = (b: Barangay) => {
     setSelectedBarangay(b);
@@ -314,23 +383,13 @@ export default function CommandDashboard() {
 
       // Re-run pipeline to propagate parameters downstream
       addActivityLog(`PIPELINE: Recalculating routes with overridden values…`, 'info');
-      const res = await fetch('/api/pipeline', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ barangayId }),
-      });
-      if (!res.ok) {
-        throw new Error(`pipeline responded ${res.status}`);
-      }
-      const out = await res.json();
-      addActivityLog(`PIPELINE: Overrides propagated. Generated ${out.predictions ?? 0} predictions, ${out.routes ?? 0} routes.`, 'success');
+      await runPipeline(barangayId);
     } catch (err) {
       console.error('Failed to save override or run pipeline:', err);
       addActivityLog('PIPELINE: failed to run downstream (AI service unreachable).', 'alert');
     }
   };
 
-  const translateRequested = useRef<Set<string>>(new Set());
   const translateReport = async (reportId: string) => {
     const report = reports.find(r => r.id === reportId);
     if (!report || report.translatedText || translateRequested.current.has(reportId)) return;
@@ -354,36 +413,53 @@ export default function CommandDashboard() {
     }
   };
 
+  // A4: Marks reports confirmed (DB + local state) without running the pipeline.
+  // A bulk action marks N then triggers one run.
+  const markReportsConfirmed = async (reportIds: string[]): Promise<boolean> => {
+    const targets = reports.filter(r => reportIds.includes(r.id));
+    if (targets.length === 0) return false;
+    const stamp = new Date().toISOString();
+    const ids = targets.map(r => r.id);
+    const barangayIds = new Set(targets.map(r => r.barangayId).filter(Boolean) as string[]);
+
+    setReports(prev => prev.map(r => (ids.includes(r.id) ? { ...r, status: 'confirmed' } : r)));
+    setBarangays(prev => prev.map(b =>
+      barangayIds.has(b.id) ? { ...b, lastConfirmedContact: stamp } : b));
+    setSelectedBarangay(prev =>
+      prev && barangayIds.has(prev.id) ? { ...prev, lastConfirmedContact: stamp } : prev);
+
+    const supabase = createClient();
+    const { error } = await supabase.from('field_reports').update({ status: 'confirmed' }).in('id', ids);
+    if (error) {
+      setReports(prev => prev.map(r => {
+        const original = targets.find(t => t.id === r.id);
+        return original ? original : r;
+      }));
+      addActivityLog(`REPORT CONFIRM FAILED: ${error.message}. Nothing was confirmed; try again.`, 'alert');
+      return false;
+    }
+
+    targets.forEach(r => void translateReport(r.id));
+    addActivityLog(
+      targets.length === 1
+        ? `REPORT CONFIRMED: ${targets[0].barangayName}. Running pipeline…`
+        : `REPORTS CONFIRMED: ${targets.length} reports. Running one pipeline…`,
+      'success',
+    );
+    return true;
+  };
+
   const handleConfirmReport = async (reportId: string) => {
     const report = reports.find(r => r.id === reportId);
     if (!report) return;
-
-    setReports(prev => prev.map(r => r.id === reportId ? { ...r, status: 'confirmed' } : r));
-    if (report.barangayId) {
-      setBarangays(prev => prev.map(b =>
-        b.id === report.barangayId ? { ...b, lastConfirmedContact: new Date().toISOString() } : b
-      ));
-      const updatedB = barangays.find(b => b.id === report.barangayId);
-      if (updatedB) {
-        setSelectedBarangay({ ...updatedB, lastConfirmedContact: new Date().toISOString() });
-      }
+    if (await markReportsConfirmed([reportId])) {
+      await runPipeline(report.barangayId ?? undefined);
     }
+  };
 
-    const supabase = createClient();
-    await supabase.from('field_reports').update({ status: 'confirmed' }).eq('id', reportId);
-    addActivityLog(`REPORT CONFIRMED: ${report.barangayName}. Running pipeline…`, 'success');
-
-    await translateReport(reportId);
-
-    try {
-      const res = await fetch('/api/pipeline', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ barangayId: report.barangayId }),
-      });
-      const out = await res.json();
-      addActivityLog(`PIPELINE: ${out.predictions ?? 0} predictions, ${out.routes ?? 0} routes generated.`, 'info');
-    } catch {
-      addActivityLog('PIPELINE: failed to run (AI service unreachable).', 'alert');
+  const handleConfirmReports = async (reportIds: string[]) => {
+    if (await markReportsConfirmed(reportIds)) {
+      await runPipeline(undefined); // one whole-region run covers every confirmed barangay
     }
   };
 
@@ -398,12 +474,18 @@ export default function CommandDashboard() {
   const runReroute = async (reasonLabel: string) => {
     try {
       const res = await fetch('/api/pipeline', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        // B4ui: Predictions and manifests are already persisted; this beat only redraws routes.
+        // W2's B4 turns this into the fast path — until then the route ignores the key.
+        body: JSON.stringify({ mode: 'reroute' }),
       });
       const out = await res.json().catch(() => ({}));
       try { setEdges(await fetchRoadStatus()); } catch { /* best-effort */ }
       setRerouteNotice(`Re-routed: ${reasonLabel}`);
       addActivityLog(`RE-ROUTE: ${reasonLabel} — ${out.routes ?? 0} route(s) redrawn on real roads.`, 'warn');
+      const capLine = capacityAlert(out.dropped, (id) => barangaysRef.current.find(b => b.id === id)?.name ?? id);
+      if (capLine) addActivityLog(capLine, 'alert');
+      await refreshMap();
       window.setTimeout(() => setRerouteNotice(null), 8000);
     } catch {
       addActivityLog('RE-ROUTE: pipeline unreachable — graph updated, routes not redrawn.', 'alert');
@@ -466,21 +548,41 @@ export default function CommandDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reports]);
 
-  const handleUpdateManifestStatus = (barangayId: string, status: 'approved' | 'modified' | 'rejected') => {
+  const handleUpdateManifestStatus = async (
+    barangayId: string,
+    status: 'approved' | 'modified' | 'rejected',
+  ) => {
+    const previous = manifests[barangayId]?.status ?? 'pending';
     setManifests(prev => {
       const current = prev[barangayId];
       if (!current) return prev;
-      return {
-        ...prev,
-        [barangayId]: {
-          ...current,
-          status
-        }
-      };
+      return { ...prev, [barangayId]: { ...current, status } };
     });
 
     const bName = barangays.find(b => b.id === barangayId)?.name;
-    addActivityLog(`SUPPLY PLANNING: Relief manifest for ${bName} was [${status.toUpperCase()}] by coordinator.`, status === 'approved' ? 'success' : 'alert');
+    const supabase = createClient();
+    const { error } = await supabase
+      .from('supply_manifests')
+      .update({ status })
+      .eq('barangay_id', barangayId);
+
+    if (error) {
+      setManifests(prev => {
+        const current = prev[barangayId];
+        if (!current) return prev;
+        return { ...prev, [barangayId]: { ...current, status: previous } };
+      });
+      addActivityLog(
+        `SUPPLY PLANNING: could not save the review for ${bName} — ${error.message}. Status left at ${previous}; try again.`,
+        'alert',
+      );
+      return;
+    }
+
+    addActivityLog(
+      `SUPPLY PLANNING: Relief manifest for ${bName} was [${status.toUpperCase()}] by coordinator.`,
+      status === 'approved' ? 'success' : 'alert',
+    );
   };
 
   // Route-click opens an in-rail Route/Convoy detail (keeps the map in view) instead of jumping
@@ -498,14 +600,14 @@ export default function CommandDashboard() {
   };
 
   const handleDispatchTeam = async (teamId: string, barangayId: string) => {
-    const tName = teams.find(t => t.id === teamId)?.name;
+    const previousTeam = teams.find(t => t.id === teamId);
+    const tName = previousTeam?.name;
     const brgy = barangays.find(b => b.id === barangayId);
 
     setTeams(prev => prev.map(t => t.id === teamId
       ? { ...t, status: 'dispatched', currentAssignment: `Relief Delivery to ${brgy?.name}` } : t));
 
-    // Instant provisional hub->area line while the real road route is computed. dispatch_route
-    // uses the authoritative depot server-side; the client preview uses the loaded hub.
+    // Instant provisional hub->area line while the real road route is computed.
     const hub = facilities[0];
     if (hub && brgy) {
       setDispatchPreview({ teamId, from: { lat: hub.latitude, lng: hub.longitude }, to: { lat: brgy.latitude, lng: brgy.longitude } });
@@ -523,36 +625,44 @@ export default function CommandDashboard() {
       }
       addActivityLog(`ROUTING: real-road route generated for ${tName} → ${brgy?.name}.`, 'info');
     } catch (err) {
+      // A6: Nothing was written — the optimistic dispatch must not survive as a phantom convoy.
       setDispatchPreview(null);
-      addActivityLog(`ROUTING: route generation failed — ${err instanceof Error ? err.message : 'service unreachable'}.`, 'alert');
+      if (previousTeam) setTeams(prev => prev.map(t => (t.id === teamId ? previousTeam : t)));
+      addActivityLog(
+        `ROUTING: dispatch failed — ${err instanceof Error ? err.message : 'service unreachable'}. ${tName} is not dispatched; retry when the service is back.`,
+        'alert',
+      );
     }
   };
 
   const handleMarkReached = async (routeId: string) => {
-    const route = routes.find(r => r.id === routeId);
-    const bName = route?.stops?.[0]?.barangayName ?? 'area';
+    const previousRoute = routes.find(r => r.id === routeId);
+    const previousTeam = previousRoute?.teamId
+      ? teams.find(t => t.id === previousRoute.teamId)
+      : undefined;
+    const bName = previousRoute?.stops?.[0]?.barangayName ?? 'area';
+
     setRoutes(prev => prev.map(r => r.id === routeId ? { ...r, status: 'completed' } : r));
-    if (route?.teamId) setTeams(prev => prev.map(t => t.id === route.teamId ? { ...t, status: 'active', currentAssignment: undefined } : t));
+    if (previousRoute?.teamId) {
+      setTeams(prev => prev.map(t => t.id === previousRoute.teamId
+        ? { ...t, status: 'active', currentAssignment: undefined } : t));
+    }
     addActivityLog(`AREA REACHED: ${bName} marked reached. Route completed; contact updated.`, 'success');
+
     try {
       const res = await fetch('/api/routes/complete', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ routeId }),
       });
       if (!res.ok) throw new Error(`complete ${res.status}`);
-      const map = await fetchCoordinatorMapData();
-      setBarangays(map.barangays);
-      setScores(map.scores);
+      await refreshMap();
     } catch (err) {
-      addActivityLog(`AREA REACHED: failed to persist — ${err instanceof Error ? err.message : 'service unreachable'}.`, 'alert');
+      if (previousRoute) setRoutes(prev => prev.map(r => (r.id === routeId ? previousRoute : r)));
+      if (previousTeam) setTeams(prev => prev.map(t => (t.id === previousTeam.id ? previousTeam : t)));
+      addActivityLog(
+        `AREA REACHED: not recorded — ${err instanceof Error ? err.message : 'service unreachable'}. ${bName} is still en route; mark it again once the service is back.`,
+        'alert',
+      );
     }
-  };
-
-  const addActivityLog = (event: string, type: 'info' | 'warn' | 'success' | 'alert' = 'info') => {
-    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    setActivityLogs(prev => [
-      { id: `log-${Date.now()}`, time: timeStr, event, type },
-      ...prev
-    ]);
   };
 
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -618,7 +728,7 @@ export default function CommandDashboard() {
 
   const confirmDay0 = async () => {
     setDay0Running(true);
-    addActivityLog(`DAY 0 FORECAST: running ${PAGASA_CATEGORY_LABELS[day0Category]} scenario…`, 'info');
+    addActivityLog(`ANTICIPATORY PLAN: running ${PAGASA_CATEGORY_LABELS[day0Category]} scenario...`, 'info');
     try {
       const res = await fetch('/api/pipeline/day0', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -630,11 +740,11 @@ export default function CommandDashboard() {
       }
       const out = await res.json();
       addActivityLog(
-        `DAY 0 FORECAST: ${out.predictions ?? 0} predictions, ${out.manifests ?? 0} manifests (${out.source ?? 'model'}).`,
+        `ANTICIPATORY PLAN: ${out.predictions ?? 0} predictions, ${out.manifests ?? 0} manifests (${out.source ?? 'model'}).`,
         'success',
       );
     } catch (err) {
-      addActivityLog(`DAY 0 FORECAST: failed — ${err instanceof Error ? err.message : 'AI service unreachable'}.`, 'alert');
+      addActivityLog(`ANTICIPATORY PLAN: failed — ${err instanceof Error ? err.message : 'AI service unreachable'}.`, 'alert');
     } finally {
       setDay0Running(false);
       setShowDay0Modal(false);
@@ -682,6 +792,7 @@ export default function CommandDashboard() {
   return (
     <div className="flex h-screen w-screen bg-bg text-fg font-sans overflow-hidden">
       <ConnectivityBanner tier={connectivity} />
+      {process.env.NEXT_PUBLIC_DEMO_CONSOLE === 'true' && <DemoConsole onLog={addActivityLog} />}
       {/* E2E hook (Phase 5.2): deterministic "map data + scores loaded" signal,
           so tests never depend on the MapLibre canvas. Renders nothing. */}
       <div
@@ -772,6 +883,7 @@ export default function CommandDashboard() {
               routes={routes}
               manifests={manifests}
               barangays={barangays}
+              scores={scores}
               onSelectReport={handleSelectReport}
               onConfirmReport={handleConfirmReport}
               onFlagReport={handleFlagReport}
@@ -786,6 +898,7 @@ export default function CommandDashboard() {
             reports={reports}
             onFlagReport={handleFlagReport}
             onConfirmReport={handleConfirmReport}
+            onConfirmReports={handleConfirmReports}
             onTranslateReport={translateReport}
           />
         )}
@@ -849,7 +962,7 @@ export default function CommandDashboard() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-surface border border-line rounded-card shadow-modal max-w-md w-full mx-4 overflow-hidden">
             <div className="px-4 py-3 border-b border-line">
-              <h3 className="text-[15px] font-medium text-fg">Run Day 0 Predictions</h3>
+              <h3 className="text-[15px] font-medium text-fg">Anticipatory plan</h3>
               <p className="text-[13px] text-muted mt-1">
                 Forecast impact across communities before any field report arrives.
               </p>
@@ -910,7 +1023,7 @@ export default function CommandDashboard() {
               <p className="text-[12px] text-muted leading-relaxed">
                 Runs TabPFN over static vulnerability features for the chosen storm category, then
                 builds Sphere manifests. The hazard signal is a single uniform category, so estimates are scenario-based. Results appear as
-                <span className="text-fg"> Predicted — Unconfirmed (Day 0)</span> and stay override-able;
+                <span className="text-fg"> Anticipatory — unconfirmed</span> and stay override-able;
                 nothing is dispatched.
               </p>
             </div>
@@ -925,9 +1038,9 @@ export default function CommandDashboard() {
               <button
                 onClick={confirmDay0}
                 disabled={day0Running}
-                className="px-4 py-2 text-[13px] font-medium text-active bg-active/10 hover:bg-active/20 border border-active/30 rounded-control transition-colors duration-100 cursor-pointer disabled:opacity-50"
+                className="px-4 py-2 text-[13px] font-medium text-bg bg-active hover:brightness-110 rounded-control transition-colors duration-100 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {day0Running ? 'Forecasting…' : 'Run forecast'}
+                {day0Running ? 'Forecasting…' : 'Run anticipatory plan'}
               </button>
             </div>
           </div>
