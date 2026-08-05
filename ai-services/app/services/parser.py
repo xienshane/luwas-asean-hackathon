@@ -309,12 +309,18 @@ class Parser:
         errors: list[str] = []
 
         if self.primary is not None:
-            try:
-                self.rate_limiter.acquire()  # gates SEA-LION's 10-calls/min free tier
-                return extract_json(self.primary.complete(system, user)), self.primary.name
-            except Exception as exc:  # noqa: BLE001 — any failure should fall back
-                errors.append(f"{self.primary.name}: {exc}")
-                logger.warning("primary call failed (%s); trying fallback", exc)
+            if self.rate_limiter.try_acquire():  # SEA-LION free tier: 10 calls/min
+                try:
+                    return extract_json(self.primary.complete(system, user)), self.primary.name
+                except Exception as exc:  # noqa: BLE001 — any failure should fall back
+                    errors.append(f"{self.primary.name}: {exc}")
+                    logger.warning("primary call failed (%s); trying fallback", exc)
+            else:
+                errors.append(
+                    f"{self.primary.name}: rate-limited "
+                    f"({self.settings.sea_lion_max_calls_per_min}/min free tier)"
+                )
+                logger.info("primary rate-limited; routing to fallback")
 
         if self.fallback is not None:
             try:

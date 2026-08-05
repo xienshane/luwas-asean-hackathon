@@ -44,3 +44,43 @@ def test_window_slides_no_unnecessary_wait():
     grants_before = state["t"]
     rl.acquire()                         # should be immediate (window cleared)
     assert state["t"] == grants_before
+
+
+# --- try_acquire(): non-blocking counterpart (Phase 5.2 / B2) ---------------
+# A caller holding a Gemini fallback must never sit on a 60s wait; it asks for a slot and
+# routes elsewhere when refused. `state["t"] == 0.0` is the proof that nothing slept.
+
+def test_try_acquire_grants_up_to_limit_without_sleeping():
+    state, now, sleep = fake_clock()
+    rl = RateLimiter(max_calls=10, period_s=60, now=now, sleep=sleep)
+    assert [rl.try_acquire() for _ in range(10)] == [True] * 10
+    assert state["t"] == 0.0
+
+
+def test_try_acquire_refuses_when_window_is_full():
+    state, now, sleep = fake_clock()
+    rl = RateLimiter(max_calls=10, period_s=60, now=now, sleep=sleep)
+    for _ in range(10):
+        rl.try_acquire()
+    assert rl.try_acquire() is False
+    assert state["t"] == 0.0
+
+
+def test_try_acquire_grants_again_after_window_slides():
+    state, now, sleep = fake_clock()
+    rl = RateLimiter(max_calls=10, period_s=60, now=now, sleep=sleep)
+    for _ in range(10):
+        rl.try_acquire()
+    assert rl.try_acquire() is False
+    state["t"] = 61
+    assert rl.try_acquire() is True
+
+
+def test_refused_call_does_not_consume_a_slot():
+    state, now, sleep = fake_clock()
+    rl = RateLimiter(max_calls=2, period_s=60, now=now, sleep=sleep)
+    rl.try_acquire()
+    rl.try_acquire()
+    assert rl.try_acquire() is False
+    state["t"] = 61
+    assert [rl.try_acquire() for _ in range(3)] == [True, True, False]

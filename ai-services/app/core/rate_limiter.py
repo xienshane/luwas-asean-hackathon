@@ -1,8 +1,9 @@
 """Sliding-window rate limiter for the SEA-LION free tier (10 calls/min).
 
-`acquire()` blocks until a slot is free, guaranteeing no more than `max_calls` are granted
-in any `period_s` window even under burst. `now`/`sleep` are injectable so tests can drive
-time deterministically without real waiting.
+`acquire()` blocks until a slot is free; `try_acquire()` returns False immediately when the
+window is full, so a caller with a fallback backend can switch instead of waiting. Both
+guarantee no more than `max_calls` are granted in any `period_s` window, even under burst.
+`now`/`sleep` are injectable so tests can drive time deterministically without real waiting.
 """
 import threading
 import time
@@ -41,3 +42,18 @@ class RateLimiter:
                     return
                 # Wait exactly until the oldest in-window call expires.
                 self._sleep(self.period_s - (t - self._calls[0]))
+
+    def try_acquire(self) -> bool:
+        """Record a call if a slot is free; otherwise return False immediately.
+
+        Non-blocking counterpart to `acquire()`: callers with a fallback backend should not
+        sit on a 60s wait when a second backend can answer now.
+        """
+        with self._lock:
+            t = self._now()
+            while self._calls and t - self._calls[0] >= self.period_s:
+                self._calls.popleft()
+            if len(self._calls) < self.max_calls:
+                self._calls.append(t)
+                return True
+            return False

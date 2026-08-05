@@ -267,8 +267,9 @@ def test_rate_limiter_gates_sea_lion_calls():
     acquired = {"n": 0}
 
     class CountingLimiter:
-        def acquire(self):
+        def try_acquire(self) -> bool:
             acquired["n"] += 1
+            return True
 
     primary = FakeBackend("sea-lion", reply=HIGH_CONF)
     parser = Parser(Settings(), primary=primary, fallback=FakeBackend("gemini", reply="{}"),
@@ -393,3 +394,32 @@ def test_build_parser_sends_thinking_mode_only_when_configured():
     assert parser.primary.extra_body == {
         "chat_template_kwargs": {"thinking_mode": "off"}
     }
+
+
+# --- fail-fast rate limiting (Phase 5.2 / B2) -------------------------------
+
+def full_limiter() -> RateLimiter:
+    limiter = RateLimiter(max_calls=1, period_s=60, now=lambda: 0.0, sleep=lambda dt: None)
+    limiter.try_acquire()
+    return limiter
+
+
+def test_rate_limited_primary_falls_back_to_gemini_without_calling_it():
+    primary = FakeBackend("sea-lion", reply=HIGH_CONF)
+    fallback = FakeBackend("gemini", reply=HIGH_CONF)
+    parser = Parser(
+        Settings(), primary=primary, fallback=fallback, rate_limiter=full_limiter()
+    )
+    resp = parser.parse("baha sa Apas")
+    assert resp.provider == "gemini"
+    assert primary.calls == 0
+    assert fallback.calls == 1
+
+
+def test_rate_limited_with_no_fallback_raises_llm_error():
+    primary = FakeBackend("sea-lion", reply=HIGH_CONF)
+    parser = Parser(
+        Settings(), primary=primary, fallback=None, rate_limiter=full_limiter()
+    )
+    with pytest.raises(LLMError, match="rate-limited"):
+        parser.parse("baha sa Apas")
