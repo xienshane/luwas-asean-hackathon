@@ -128,18 +128,41 @@ class LLMBackend(Protocol):
 class OpenAICompatBackend:
     """Calls any OpenAI-compatible chat endpoint (SEA-LION or Gemini's compat layer)."""
 
-    def __init__(self, name: str, base_url: str, api_key: str, model: str, timeout: float = 30.0):
+    def __init__(
+        self,
+        name: str,
+        base_url: str,
+        api_key: str,
+        model: str,
+        timeout: float = 30.0,
+        max_tokens: Optional[int] = None,
+        extra_body: Optional[dict] = None,
+    ):
         from openai import OpenAI  # lazy: app boots even if the wheel/keys are absent
 
         self.name = name
         self.model = model
-        self._client = OpenAI(base_url=base_url, api_key=api_key, timeout=timeout)
+        self.max_tokens = max_tokens
+        self.extra_body = extra_body or {}
+        # max_retries=0: the SDK otherwise retries a 429 after the server's `Retry-After`
+        # (SEA-LION sends 60s). That sleep is NOT covered by `timeout`, so a rate-limited
+        # burst blocks for a minute and still reports success — the exact stall the
+        # fail-fast limiter exists to avoid. Raise instead, and let the fallback answer.
+        self._client = OpenAI(
+            base_url=base_url, api_key=api_key, timeout=timeout, max_retries=0
+        )
 
     def complete(self, system: str, user: str) -> str:
+        kwargs: dict = {}
+        if self.max_tokens is not None:
+            kwargs["max_tokens"] = self.max_tokens
+        if self.extra_body:
+            kwargs["extra_body"] = self.extra_body
         resp = self._client.chat.completions.create(
             model=self.model,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
             temperature=0,
+            **kwargs,
         )
         return resp.choices[0].message.content or ""
 
@@ -328,14 +351,40 @@ class Parser:
 
 def build_parser(settings: Settings) -> Parser:
     """Construct the production parser from settings (SEA-LION primary, Gemini fallback)."""
+    thinking = (
+        {"chat_template_kwargs": {"thinking_mode": settings.sea_lion_thinking_mode}}
+        if settings.sea_lion_thinking_mode
+        else None
+    )
     primary = (
-        OpenAICompatBackend("sea-lion", settings.sea_lion_base_url,
-                            settings.sea_lion_api_key, settings.sea_lion_model)
+        OpenAICompatBackend(
+            "sea-lion",
+            settings.sea_lion_base_url,
+            settings.sea_lion_api_key,
+            settings.sea_lion_model,
+            timeout=settings.sea_lion_timeout_s,
+            max_tokens=settings.sea_lion_max_tokens,
+            extra_body=thinking,
+        )
         if settings.sea_lion_api_key else None
     )
+    # Gemini's OpenAI-compat layer takes the thinking budget nested under `extra_body.google`.
+    gemini_thinking = (
+        {"extra_body": {"google": {"thinking_config": {
+            "thinking_budget": settings.gemini_thinking_budget}}}}
+        if settings.gemini_thinking_budget >= 0
+        else None
+    )
     fallback = (
-        OpenAICompatBackend("gemini", settings.gemini_base_url,
-                            settings.gemini_api_key, settings.gemini_model)
+        OpenAICompatBackend(
+            "gemini",
+            settings.gemini_base_url,
+            settings.gemini_api_key,
+            settings.gemini_model,
+            timeout=settings.gemini_timeout_s,
+            max_tokens=settings.gemini_max_tokens,
+            extra_body=gemini_thinking,
+        )
         if settings.gemini_api_key else None
     )
     limiter = RateLimiter(settings.sea_lion_max_calls_per_min, 60.0)

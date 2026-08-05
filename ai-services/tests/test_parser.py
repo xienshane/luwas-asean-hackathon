@@ -276,3 +276,120 @@ def test_rate_limiter_gates_sea_lion_calls():
     parser.parse("a")
     parser.parse("b")
     assert acquired["n"] == 2
+
+
+# --- bounded generation (Phase 5.2 / B1) ------------------------------------
+
+from types import SimpleNamespace
+
+from app.services.parser import OpenAICompatBackend, build_parser
+
+
+class _RecordingCompletions:
+    def __init__(self):
+        self.kwargs = {}
+
+    def create(self, **kwargs):
+        self.kwargs = kwargs
+        message = SimpleNamespace(content='{"location": "Tisa"}')
+        return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+
+def _stub_client(backend: OpenAICompatBackend) -> _RecordingCompletions:
+    completions = _RecordingCompletions()
+    backend._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    return completions
+
+
+def test_backend_forwards_max_tokens_when_set():
+    backend = OpenAICompatBackend(
+        "sea-lion", "http://example/v1", "k", "some-model", max_tokens=400
+    )
+    completions = _stub_client(backend)
+    backend.complete("sys", "usr")
+    assert completions.kwargs["max_tokens"] == 400
+    assert completions.kwargs["temperature"] == 0
+
+
+def test_backend_omits_generation_kwargs_when_unset():
+    backend = OpenAICompatBackend("gemini", "http://example/v1", "k", "some-model")
+    completions = _stub_client(backend)
+    backend.complete("sys", "usr")
+    assert "max_tokens" not in completions.kwargs
+    assert "extra_body" not in completions.kwargs
+
+
+def test_backend_forwards_thinking_mode_extra_body():
+    backend = OpenAICompatBackend(
+        "sea-lion", "http://example/v1", "k", "some-model",
+        extra_body={"chat_template_kwargs": {"thinking_mode": "off"}},
+    )
+    completions = _stub_client(backend)
+    backend.complete("sys", "usr")
+    assert completions.kwargs["extra_body"] == {
+        "chat_template_kwargs": {"thinking_mode": "off"}
+    }
+
+
+def test_build_parser_applies_bounded_generation_settings():
+    parser = build_parser(
+        Settings(
+            sea_lion_api_key="k",
+            gemini_api_key="g",
+            sea_lion_model="aisingapore/Gemma-SEA-LION-v4-27B-IT",
+            sea_lion_max_tokens=400,
+            sea_lion_timeout_s=12.0,
+            gemini_max_tokens=400,
+            gemini_timeout_s=6.0,
+        )
+    )
+    assert parser.primary.model == "aisingapore/Gemma-SEA-LION-v4-27B-IT"
+    assert parser.primary.max_tokens == 400
+    assert parser.primary.extra_body == {}
+    assert parser.fallback.max_tokens == 400
+
+
+def test_backends_do_not_retry_internally():
+    """A 429 from SEA-LION must raise so the parser can fall back NOW.
+
+    The OpenAI SDK defaults to max_retries=2 and honours the server's `Retry-After: 60`
+    — that sleep is not covered by the client `timeout`, so a rate-limited burst blocked
+    for 61s and still reported provider='sea-lion'. Observed live before this was pinned.
+    """
+    backend = OpenAICompatBackend("sea-lion", "http://example/v1", "k", "some-model")
+    assert backend._client.max_retries == 0
+
+
+def test_build_parser_disables_client_retries_on_both_backends():
+    parser = build_parser(Settings(sea_lion_api_key="k", gemini_api_key="g"))
+    assert parser.primary._client.max_retries == 0
+    assert parser.fallback._client.max_retries == 0
+
+
+def test_build_parser_disables_gemini_thinking_by_default():
+    """Gemini 2.5 Flash bills thinking tokens against max_tokens but returns them as
+    reasoning, so at 400 the visible JSON is truncated (finish_reason='length') and the
+    fallback NEVER parses. Budget 0 keeps the reply whole. Observed live before pinning."""
+    parser = build_parser(Settings(sea_lion_api_key="k", gemini_api_key="g"))
+    assert parser.fallback.extra_body == {
+        "extra_body": {"google": {"thinking_config": {"thinking_budget": 0}}}
+    }
+
+
+def test_build_parser_omits_gemini_thinking_config_when_budget_negative():
+    """-1 = hand the budget back to the model (its dynamic default)."""
+    parser = build_parser(Settings(gemini_api_key="g", gemini_thinking_budget=-1))
+    assert parser.fallback.extra_body == {}
+
+
+def test_build_parser_sends_thinking_mode_only_when_configured():
+    parser = build_parser(
+        Settings(
+            sea_lion_api_key="k",
+            sea_lion_model="aisingapore/Llama-SEA-LION-v3.5-70B-R",
+            sea_lion_thinking_mode="off",
+        )
+    )
+    assert parser.primary.extra_body == {
+        "chat_template_kwargs": {"thinking_mode": "off"}
+    }

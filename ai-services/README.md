@@ -163,10 +163,22 @@ normalized `field_reports` payload: `location_text`, `population_estimate`, `nee
 (low/moderate/high/critical), `road_status` (passable/impassable/unknown), each with a
 confidence, plus an overall confidence.
 
-- **SEA-LION primary, Gemini fallback.** Calls SEA-LION (`aisingapore/Llama-SEA-LION-v3.5-70B-R`,
+- **SEA-LION primary, Gemini fallback.** Calls SEA-LION (`aisingapore/Gemma-SEA-LION-v4-27B-IT`,
   OpenAI-compatible) rate-limited to the **10-calls/min** free tier; on any error or
   unparseable output it falls back to **Gemini 2.5 Flash** (also OpenAI-compatible). The
   response's `provider` says which answered.
+- **Bounded generation.** Both backends are capped at `*_MAX_TOKENS` (the reply is one small
+  JSON object) with client timeouts of 12s (SEA-LION) + 6s (Gemini) — the pair fits inside
+  the web layer's 20s abort, so a primary failure still lands a fallback answer in-window.
+  Two pins keep that budget honest, both found by live testing:
+  - **No SDK-level retries** (`max_retries=0`). The OpenAI client otherwise retries a 429
+    after the server's `Retry-After` — SEA-LION sends **60s** — and that sleep is *not*
+    covered by `timeout`. A burst blocked for 61s and still reported `provider: sea-lion`.
+    Now it raises and the fallback answers instead.
+  - **Gemini thinking disabled** (`GEMINI_THINKING_BUDGET=0`). Gemini 2.5 Flash charges
+    thinking tokens against `max_tokens` while returning only the visible reply, so at 400
+    every fallback truncated mid-JSON (`finish_reason: length`) and failed to parse. With
+    thinking off the reply lands whole in ~1.5s using ~150 of the 400 tokens.
 - **Review gating.** Extractions with overall confidence below
   `PARSE_CONFIDENCE_THRESHOLD` are returned with `needs_review=true` and `status="flagged"`
   — surfaced for coordinator review, **not** auto-committed (CLAUDE.md > Rules: assistive).
@@ -191,10 +203,16 @@ The Pydantic models in `app/models/parse.py` are the **canonical contract**;
 | `TABPFN_CONTEXT_SIZE`  | `128`                    | In-context rows; raise for accuracy where CPU allows.|
 | `DISABLE_TABPFN`       | `false`                  | Force the heuristic (skips torch); used by tests.   |
 | `SEA_LION_API_KEY`     | _(none)_                 | SEA-LION key; parser primary is disabled if unset.  |
-| `SEA_LION_MODEL`       | `aisingapore/Llama-SEA-LION-v3.5-70B-R` | Parser model.                        |
+| `SEA_LION_MODEL`       | `aisingapore/Gemma-SEA-LION-v4-27B-IT` | Parser model (v4 instruct).          |
 | `SEA_LION_MAX_CALLS_PER_MIN` | `10`               | Free-tier rate limit enforced by the limiter.       |
+| `SEA_LION_MAX_TOKENS`  | `400`                    | Caps the JSON reply.                                |
+| `SEA_LION_TIMEOUT_S`   | `12`                     | Client timeout; 12 + Gemini 6 < the web's 20s abort.|
+| `SEA_LION_THINKING_MODE` | _(empty)_              | Set `off` only for a `-R` reasoning model.          |
 | `GEMINI_API_KEY`       | _(none)_                 | Gemini key; fallback is disabled if unset.          |
 | `GEMINI_MODEL`         | `gemini-2.5-flash`       | Fallback model (OpenAI-compat endpoint).            |
+| `GEMINI_MAX_TOKENS`    | `400`                    | Caps the fallback reply.                            |
+| `GEMINI_TIMEOUT_S`     | `6`                      | Fallback client timeout.                            |
+| `GEMINI_THINKING_BUDGET` | `0`                    | `0` disables thinking (see below); `-1` = model default. |
 | `PARSE_CONFIDENCE_THRESHOLD` | `0.6`              | Below this, extractions are flagged for review.     |
 
 ## Local development
