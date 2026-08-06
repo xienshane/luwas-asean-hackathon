@@ -101,6 +101,7 @@ assistive — the coordinator can override every prediction, manifest, and route
 | How is volunteer PII protected? | [`docs/PRIVACY.md`](docs/PRIVACY.md) |
 | What's built vs. honestly deferred? | [`docs/ROADMAP.md`](docs/ROADMAP.md) |
 | What does it take to run this in another country? | [`docs/COUNTRY_PACKS.md`](docs/COUNTRY_PACKS.md) |
+| Is this a Digital Public Good? | [`docs/DPG.md`](docs/DPG.md) — mapped to the 9 DPG Standard indicators |
 
 ---
 
@@ -339,6 +340,7 @@ NOAH hazard layers — all geometry at EPSG:4326.
 | [`docs/PRIVACY.md`](docs/PRIVACY.md) | Volunteer PII: minimization, access control, retention. |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Built vs. near-term vs. honestly deferred. |
 | [`docs/COUNTRY_PACKS.md`](docs/COUNTRY_PACKS.md) | The six country-specific data surfaces; `packs/vn-danang.pack.yaml` stub. |
+| [`docs/DPG.md`](docs/DPG.md) | DPG Standard mapping: indicator → evidence, with the gaps named. |
 
 ---
 

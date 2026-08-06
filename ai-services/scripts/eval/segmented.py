@@ -38,6 +38,22 @@ from scripts.eval.metrics import mae, rmse
 
 TERCILE_LABELS: tuple[str, str, str] = ("low", "medium", "high")
 
+# Materiality threshold: a bucket is *flagged* only when its signed bias reaches
+# this fraction of that bucket's own MAE.
+#
+# Why relative to MAE rather than an absolute number of people or damage points:
+# an absolute cut is arbitrary across buckets of different size and error scale,
+# and it cannot be justified when asked. MAE is the bucket's own typical error
+# magnitude, so `|bias| / MAE` asks the operationally meaningful question — is
+# the error *directional enough* to shift an allocation, or is it a small signed
+# residue inside ordinary noise? At 0.25, a bucket flags when a quarter or more
+# of its typical error points the same way.
+#
+# The threshold governs only the FLAG. `mean_signed_error` and the raw direction
+# are reported for every bucket regardless — this calibrates the monitor, it does
+# not suppress a finding.
+MATERIALITY_BIAS_RATIO: float = 0.25
+
 
 def _arr(x) -> np.ndarray:
     return np.asarray(x, dtype=float)
@@ -89,6 +105,68 @@ def mean_signed_error(y_true, y_pred) -> float:
 
 
 # ---------------------------------------------------------------------------
+# Materiality
+# ---------------------------------------------------------------------------
+
+def _with_materiality(bucket: dict) -> dict:
+    """Add ``bias_ratio`` and ``material_under_prediction`` to a bucket in place.
+
+    ``bias_ratio = mean_signed_error / mae`` — signed, so negative means
+    under-prediction and the magnitude says how much of the bucket's typical
+    error points that way. A zero-MAE bucket is perfect, so its ratio is 0.
+    """
+    b_mae = bucket.get("mae")
+    bias = bucket.get("mean_signed_error")
+    if b_mae is None or bias is None:
+        bucket["bias_ratio"] = None
+        bucket["material_under_prediction"] = False
+        return bucket
+    ratio = 0.0 if b_mae == 0 else float(bias) / float(b_mae)
+    bucket["bias_ratio"] = ratio
+    bucket["material_under_prediction"] = bool(ratio <= -MATERIALITY_BIAS_RATIO)
+    return bucket
+
+
+def apply_materiality(report: dict) -> dict:
+    """Recompute materiality flags for a stored :func:`segmented_report` dict.
+
+    Works from the per-bucket stats alone, so a published report can be
+    re-flagged without re-running the (expensive) LOTO harness that produced it.
+    Mutates and returns *report*.
+    """
+    for seg in report.get("segments", {}).values():
+        for bucket in seg.get("buckets", []):
+            _with_materiality(bucket)
+    return report
+
+
+def interpretation_line(seg: dict) -> str:
+    """One sentence answering "is anything in this segment actionable?"."""
+    flagged = [
+        b for b in seg.get("buckets", [])
+        if b.get("material_under_prediction")
+    ]
+    if not flagged:
+        return (
+            "**Reading:** no bucket exceeds the materiality threshold "
+            f"(|bias| ≥ {MATERIALITY_BIAS_RATIO:g} × that bucket's MAE); the residual "
+            "signed bias is within noise for this sample size. Nothing here is actionable."
+        )
+    names = ", ".join(f"`{b['label']}`" for b in flagged)
+    detail = "; ".join(
+        f"{b['label']}: bias {_fmt(b['mean_signed_error'])} = "
+        f"{_fmt(b.get('bias_ratio'), 2)}× its MAE"
+        for b in flagged
+    )
+    return (
+        f"**Reading:** {names} exceeds the materiality threshold "
+        f"(|bias| ≥ {MATERIALITY_BIAS_RATIO:g} × that bucket's MAE) — {detail}. "
+        "Under-prediction of this size would under-allocate relief for that group; "
+        "act on it."
+    )
+
+
+# ---------------------------------------------------------------------------
 # Per-feature segmentation
 # ---------------------------------------------------------------------------
 
@@ -131,20 +209,21 @@ def segment_errors(y_true, y_pred, segment_values, *, edges=None, labels=TERCILE
                 "label": label, "n": 0,
                 "mae": None, "rmse": None,
                 "mean_signed_error": None, "under_predicting": False,
+                "bias_ratio": None, "material_under_prediction": False,
             })
             continue
         bt, bp = yt[mask], yp[mask]
         b_mae = mae(bt, bp)
         bias = mean_signed_error(bt, bp)
         bucket_maes.append(b_mae)
-        buckets.append({
+        buckets.append(_with_materiality({
             "label": label,
             "n": n,
             "mae": b_mae,
             "rmse": rmse(bt, bp),
             "mean_signed_error": bias,
             "under_predicting": bool(bias < 0.0),
-        })
+        }))
 
     max_gap = float(max(bucket_maes) - min(bucket_maes)) if len(bucket_maes) >= 2 else 0.0
 
@@ -218,31 +297,90 @@ def render_segmented_markdown(report: dict) -> str:
             "",
             f"Tercile edges: low ≤ {_fmt(edges[0])} < medium ≤ {_fmt(edges[1])} < high",
             "",
-            "| Bucket | n | MAE | RMSE | Mean signed error | Under-predicting? |",
-            "|--------|---|-----|------|-------------------|-------------------|",
+            "| Bucket | n | MAE | RMSE | Mean signed error | Bias ÷ MAE | Material under-prediction? |",
+            "|--------|---|-----|------|-------------------|------------|----------------------------|",
         ]
         for b in seg.get("buckets", []):
-            flag = "⚠️ yes" if b.get("under_predicting") else "no"
+            flag = "⚠️ yes" if b.get("material_under_prediction") else "no"
             lines.append(
                 f"| {b['label']} | {b['n']} | {_fmt(b['mae'])} | {_fmt(b['rmse'])} | "
-                f"{_fmt(b['mean_signed_error'])} | {flag} |"
+                f"{_fmt(b['mean_signed_error'])} | {_fmt(b.get('bias_ratio'), 2)} | {flag} |"
             )
         lines += [
             "",
             f"Disparity (worst − best bucket MAE): **{_fmt(seg.get('max_gap_mae'))}**",
+            "",
+            interpretation_line(seg),
             "",
         ]
 
     lines += [
         "## How to read this",
         "",
-        "- **Under-predicting = ⚠️ yes** on a high-vulnerability bucket is the flag to act on:",
-        "  the model systematically guesses lower than reality for that group, which would",
-        "  under-allocate relief. Pair with the coordinator's always-on override (all AI",
-        "  outputs are assistive) and feed it into the Phase 6.3 fairness framework.",
+        "- **Materiality threshold.** A bucket is flagged only when its signed bias reaches",
+        f"  **{MATERIALITY_BIAS_RATIO:g} × that bucket's own MAE** in the under-predicting",
+        "  direction. The threshold is relative rather than absolute because buckets differ in",
+        "  size and error scale, and an absolute cut (in damage points or people) could not be",
+        "  justified across them. MAE is the bucket's own typical error, so the ratio asks the",
+        "  operational question: is the error directional enough to shift an allocation, or is",
+        "  it a small signed residue inside ordinary noise?",
+        "- **Nothing is hidden.** The threshold changes what gets *flagged*, never what gets",
+        "  *reported*. Raw `mean signed error` is printed for every bucket, in every table,",
+        "  regardless of the flag — this calibrates the monitor, it does not suppress a finding.",
+        "- **⚠️ yes** on a high-vulnerability bucket is the flag to act on: the model",
+        "  systematically guesses lower than reality for that group by an amount large enough to",
+        "  matter, which would under-allocate relief. Pair with the coordinator's always-on",
+        "  override (all AI outputs are assistive) and feed it into the fairness framework",
+        "  (`docs/FAIRNESS.md`).",
         "- **Disparity** quantifies how uneven accuracy is across buckets; smaller is fairer.",
         "- Province-level training data is sparse, so treat single-bucket swings as signals to",
         "  watch, not verdicts. The monitor is designed to be re-run as data grows.",
         "",
     ]
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# CLI: re-flag and re-render a published report (no model inference)
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    """Re-apply the materiality rule to an existing report and re-render it.
+
+    The per-bucket stats in the JSON are sufficient to re-derive the flags, so a
+    threshold change does not require re-running the LOTO harness that produced
+    them (~1 h on CPU). The underlying numbers are untouched.
+
+        python -m scripts.eval.segmented docs/impact_segmented_error.json
+    """
+    import argparse
+    import json
+    from pathlib import Path
+
+    ap = argparse.ArgumentParser(description=main.__doc__)
+    ap.add_argument("json_path", type=str,
+                    help="Path to an existing impact_segmented_error.json.")
+    ap.add_argument("--out-md", type=str, default=None,
+                    help="Markdown output path (default: sibling .md of json_path).")
+    args = ap.parse_args()
+
+    json_path = Path(args.json_path)
+    report = apply_materiality(json.loads(json_path.read_text(encoding="utf-8")))
+    md_path = Path(args.out_md) if args.out_md else json_path.with_suffix(".md")
+
+    json_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    md_path.write_text(render_segmented_markdown(report), encoding="utf-8")
+
+    flagged = [
+        f"{name}/{b['label']}"
+        for name, seg in report.get("segments", {}).items()
+        for b in seg.get("buckets", [])
+        if b.get("material_under_prediction")
+    ]
+    print(f"Re-flagged at threshold {MATERIALITY_BIAS_RATIO:g} x MAE.")
+    print(f"  material under-predictions: {', '.join(flagged) if flagged else 'none'}")
+    print(f"  written: {json_path}\n           {md_path}")
+
+
+if __name__ == "__main__":
+    main()
