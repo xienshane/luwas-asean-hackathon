@@ -100,6 +100,7 @@ assistive — the coordinator can override every prediction, manifest, and route
 | How is the human kept in the loop? | [`docs/ETHICS.md`](docs/ETHICS.md) |
 | How is volunteer PII protected? | [`docs/PRIVACY.md`](docs/PRIVACY.md) |
 | What's built vs. honestly deferred? | [`docs/ROADMAP.md`](docs/ROADMAP.md) |
+| What does it take to run this in another country? | [`docs/COUNTRY_PACKS.md`](docs/COUNTRY_PACKS.md) |
 
 ---
 
@@ -147,6 +148,7 @@ luwas-asean-hackathon/
 │   ├── functions/     # SQL: silent_area_score(), dynamic edge updates.
 │   └── seed/          # Demo Cebu data.
 ├── data-pipeline/     # One-off ETL / import / validation scripts (not deployed).
+├── packs/             # Country packs: the region-specific data surfaces (see docs/COUNTRY_PACKS.md).
 └── docs/              # Deploy notes, model card, fairness, ethics, privacy, roadmap.
 ```
 
@@ -336,6 +338,7 @@ NOAH hazard layers — all geometry at EPSG:4326.
 | [`docs/ETHICS.md`](docs/ETHICS.md) | Human-in-the-loop model; every output is assistive. |
 | [`docs/PRIVACY.md`](docs/PRIVACY.md) | Volunteer PII: minimization, access control, retention. |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Built vs. near-term vs. honestly deferred. |
+| [`docs/COUNTRY_PACKS.md`](docs/COUNTRY_PACKS.md) | The six country-specific data surfaces; `packs/vn-danang.pack.yaml` stub. |
 
 ---
 

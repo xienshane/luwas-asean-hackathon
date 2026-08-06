@@ -20,13 +20,13 @@
   "overall": {
     "tabpfn": {
       "damage_rate": {
-        "mae": 0.10560781108881143,
-        "rmse": 0.2000190867273124
+        "mae": 0.10560781956520252,
+        "rmse": 0.20001905949884544
       },
       "affected": {
-        "log_mae": 2.6284507657359906,
-        "log_rmse": 3.7387861921077676,
-        "smape": 0.6178986328363872
+        "log_mae": 2.628450580648122,
+        "log_rmse": 3.738785845602774,
+        "smape": 0.6178985628638514
       },
       "severity": {
         "accuracy": 0.8850118953211736,
@@ -61,8 +61,8 @@
       "calibration": {
         "affected_80_coverage": 0.8588421887390959,
         "damage_rate_80_coverage": 0.9040444091990484,
-        "mean_width_affected": 93098.11140138398,
-        "mean_width_damage_rate": 0.3011472157568155
+        "mean_width_affected": 93098.10529091129,
+        "mean_width_damage_rate": 0.30114724309701385
       }
     },
     "population_only": {
@@ -150,24 +150,24 @@
     "deltas": {
       "tabpfn_vs_population": {
         "damage_rate": {
-          "mae": -0.3176407281788449,
-          "rmse": -0.23674981172405468
+          "mae": -0.3176407197024538,
+          "rmse": -0.23674983895252164
         },
         "affected": {
-          "log_mae": -2.024969283716698,
-          "log_rmse": -1.7507320859909608,
-          "smape": -0.24264226381391985
+          "log_mae": -2.0249694688045667,
+          "log_rmse": -1.7507324324959543,
+          "smape": -0.24264233378645572
         }
       },
       "tabpfn_vs_heuristic": {
         "damage_rate": {
-          "mae": -0.30275650294766754,
-          "rmse": -0.2757294823211144
+          "mae": -0.3027564944712765,
+          "rmse": -0.2757295095495813
         },
         "affected": {
-          "log_mae": -1.5414247940214545,
-          "log_rmse": -1.510042283238914,
-          "smape": -0.14440208889135753
+          "log_mae": -1.541424979109323,
+          "log_rmse": -1.5100426297439076,
+          "smape": -0.1444021588638934
         }
       }
     }
@@ -178,13 +178,13 @@
       "n": 16,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.11419868483496101,
-          "rmse": 0.16717766511595972
+          "mae": 0.1141987010066863,
+          "rmse": 0.16717752616437895
         },
         "affected": {
-          "log_mae": 3.1733332181790765,
-          "log_rmse": 4.161964094147817,
-          "smape": 0.7014905340977884
+          "log_mae": 3.1733372852601467,
+          "log_rmse": 4.161966916046149,
+          "smape": 0.7014912086739148
         },
         "severity": {
           "accuracy": 1.0,
@@ -219,8 +219,8 @@
         "calibration": {
           "affected_80_coverage": 0.8125,
           "damage_rate_80_coverage": 0.6875,
-          "mean_width_affected": 111486.63540649414,
-          "mean_width_damage_rate": 0.3394609745191701
+          "mean_width_affected": 111486.6810913086,
+          "mean_width_damage_rate": 0.33946100685352576
         }
       },
       "population_only": {
@@ -311,13 +311,13 @@
       "n": 5,
       "tabpfn": {
         "damage_rate": {
-          "mae": 9.043217578437179e-05,
-          "rmse": 9.551142811005206e-05
+          "mae": 9.031026856973768e-05,
+          "rmse": 9.541700296934585e-05
         },
         "affected": {
-          "log_mae": 1.0931612198170364,
-          "log_rmse": 1.3634564840214103,
-          "smape": 0.44261142878339593
+          "log_mae": 1.093135304045716,
+          "log_rmse": 1.3634274490994231,
+          "smape": 0.4426039751860319
         },
         "severity": {
           "accuracy": 1.0,
@@ -352,8 +352,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 13226.767065429687,
-          "mean_width_damage_rate": 0.0035460577113553883
+          "mean_width_affected": 13226.678918457032,
+          "mean_width_damage_rate": 0.003546055150218308
         }
       },
       "population_only": {
@@ -444,13 +444,13 @@
       "n": 6,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.17291931623549317,
-          "rmse": 0.32836556844476417
+          "mae": 0.17291920592833776,
+          "rmse": 0.3283649232384571
         },
         "affected": {
-          "log_mae": 1.8987750894232163,
-          "log_rmse": 2.5586288139118905,
-          "smape": 0.5514992750912593
+          "log_mae": 1.8987867881110079,
+          "log_rmse": 2.5586341087477544,
+          "smape": 0.5515033785330009
         },
         "severity": {
           "accuracy": 0.6666666666666666,
@@ -485,8 +485,8 @@
         "calibration": {
           "affected_80_coverage": 0.6666666666666666,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 20099.05158487956,
-          "mean_width_damage_rate": 0.3375970126556543
+          "mean_width_affected": 20098.991577148438,
+          "mean_width_damage_rate": 0.33759701317952323
         }
       },
       "population_only": {
@@ -577,13 +577,13 @@
       "n": 12,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.13438416238085,
-          "rmse": 0.21890794551689474
+          "mae": 0.1343842719391881,
+          "rmse": 0.21890770657131026
         },
         "affected": {
-          "log_mae": 2.622185658675805,
-          "log_rmse": 3.608298943866931,
-          "smape": 0.6476737605598498
+          "log_mae": 2.6222026638568594,
+          "log_rmse": 3.608308437073738,
+          "smape": 0.6476772728150468
         },
         "severity": {
           "accuracy": 0.6666666666666666,
@@ -618,8 +618,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 23762.185230255127,
-          "mean_width_damage_rate": 0.3881376865998997
+          "mean_width_affected": 23762.16044998169,
+          "mean_width_damage_rate": 0.3881377163149106
         }
       },
       "population_only": {
@@ -710,13 +710,13 @@
       "n": 6,
       "tabpfn": {
         "damage_rate": {
-          "mae": 3.257096447365863e-05,
-          "rmse": 4.0311002181373755e-05
+          "mae": 3.267664578743279e-05,
+          "rmse": 4.0447231175253556e-05
         },
         "affected": {
-          "log_mae": 2.207414738229925,
-          "log_rmse": 2.5419768890380303,
-          "smape": 0.6994376891500883
+          "log_mae": 2.2074212268201285,
+          "log_rmse": 2.5419836206342405,
+          "smape": 0.6994387570282132
         },
         "severity": {
           "accuracy": 1.0,
@@ -751,8 +751,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 18453.784734090168,
-          "mean_width_damage_rate": 0.003496292842707286
+          "mean_width_affected": 18453.78121439616,
+          "mean_width_damage_rate": 0.0034962904949982962
         }
       },
       "population_only": {
@@ -843,13 +843,13 @@
       "n": 21,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.16644827515576996,
-          "rmse": 0.2796958631681783
+          "mae": 0.16644811452501673,
+          "rmse": 0.27969593178979024
         },
         "affected": {
-          "log_mae": 3.450612084947425,
-          "log_rmse": 4.523796588905868,
-          "smape": 0.7572884250767841
+          "log_mae": 3.450612763357053,
+          "log_rmse": 4.523797752359028,
+          "smape": 0.7572880059479455
         },
         "severity": {
           "accuracy": 0.8095238095238095,
@@ -884,8 +884,8 @@
         "calibration": {
           "affected_80_coverage": 0.9523809523809523,
           "damage_rate_80_coverage": 0.9523809523809523,
-          "mean_width_affected": 27587.352300008137,
-          "mean_width_damage_rate": 0.4232874175456042
+          "mean_width_affected": 27587.354737054735,
+          "mean_width_damage_rate": 0.423287390503988
         }
       },
       "population_only": {
@@ -976,13 +976,13 @@
       "n": 37,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.08613171535811129,
-          "rmse": 0.1525699262794179
+          "mae": 0.08613176095319465,
+          "rmse": 0.15256990928145528
         },
         "affected": {
-          "log_mae": 2.3080608247498704,
-          "log_rmse": 3.5092643840406708,
-          "smape": 0.5766865541667995
+          "log_mae": 2.3080609882933163,
+          "log_rmse": 3.509260683101214,
+          "smape": 0.5766872777755625
         },
         "severity": {
           "accuracy": 0.918918918918919,
@@ -1017,8 +1017,8 @@
         "calibration": {
           "affected_80_coverage": 0.8378378378378378,
           "damage_rate_80_coverage": 0.918918918918919,
-          "mean_width_affected": 116713.34659390835,
-          "mean_width_damage_rate": 0.354424294298263
+          "mean_width_affected": 116713.31079101562,
+          "mean_width_damage_rate": 0.35442435663080196
         }
       },
       "population_only": {
@@ -1109,13 +1109,13 @@
       "n": 5,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.0001209694251883775,
-          "rmse": 0.00012629907363057065
+          "mae": 0.00012084179907105863,
+          "rmse": 0.00012618078583819092
         },
         "affected": {
-          "log_mae": 2.1843228890041493,
-          "log_rmse": 2.5788831892166875,
-          "smape": 0.6705947049090806
+          "log_mae": 2.1843322471813025,
+          "log_rmse": 2.57889924282889,
+          "smape": 0.6705944858925594
         },
         "severity": {
           "accuracy": 1.0,
@@ -1150,8 +1150,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 25261.239025878906,
-          "mean_width_damage_rate": 0.0035245118429884314
+          "mean_width_affected": 25261.253155517577,
+          "mean_width_damage_rate": 0.0035245074424892662
         }
       },
       "population_only": {
@@ -1242,13 +1242,13 @@
       "n": 3,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.05511630584355831,
-          "rmse": 0.09530214332934608
+          "mae": 0.055115870857708305,
+          "rmse": 0.0953017644691084
         },
         "affected": {
-          "log_mae": 2.9502147339403777,
-          "log_rmse": 3.712112992386556,
-          "smape": 0.7255566255362668
+          "log_mae": 2.9502140769713585,
+          "log_rmse": 3.7121139251280084,
+          "smape": 0.7255561399840972
         },
         "severity": {
           "accuracy": 1.0,
@@ -1283,8 +1283,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 26175.825276692707,
-          "mean_width_damage_rate": 0.333564294114088
+          "mean_width_affected": 26175.80576578776,
+          "mean_width_damage_rate": 0.3335642752160008
         }
       },
       "population_only": {
@@ -1375,13 +1375,13 @@
       "n": 15,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.1323097190046644,
-          "rmse": 0.25550590664354794
+          "mae": 0.13230970957356813,
+          "rmse": 0.2555059368320012
         },
         "affected": {
-          "log_mae": 2.683796727361721,
-          "log_rmse": 3.936283233737639,
-          "smape": 0.6011302904737759
+          "log_mae": 2.6838059479813645,
+          "log_rmse": 3.9362894507488013,
+          "smape": 0.6011316413356635
         },
         "severity": {
           "accuracy": 0.8666666666666667,
@@ -1416,8 +1416,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 0.8666666666666667,
-          "mean_width_affected": 163572.88998209636,
-          "mean_width_damage_rate": 0.3060415463289246
+          "mean_width_affected": 163572.90254720053,
+          "mean_width_damage_rate": 0.3060416369931772
         }
       },
       "population_only": {
@@ -1508,13 +1508,13 @@
       "n": 14,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.00031367400411649475,
-          "rmse": 0.00031433753463284156
+          "mae": 0.0003137623446361561,
+          "rmse": 0.00031441544706862395
         },
         "affected": {
-          "log_mae": 2.246327945489528,
-          "log_rmse": 3.1854312078974627,
-          "smape": 0.6062854914104042
+          "log_mae": 2.246329518748691,
+          "log_rmse": 3.185432717147667,
+          "smape": 0.6062860511261665
         },
         "severity": {
           "accuracy": 1.0,
@@ -1549,8 +1549,8 @@
         "calibration": {
           "affected_80_coverage": 0.5714285714285714,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 15426.293526785714,
-          "mean_width_damage_rate": 0.002954560016015811
+          "mean_width_affected": 15426.325539725167,
+          "mean_width_damage_rate": 0.0029545604317848173
         }
       },
       "population_only": {
@@ -1641,13 +1641,13 @@
       "n": 2,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.07034006187829656,
-          "rmse": 0.09941034724967296
+          "mae": 0.07033973994627596,
+          "rmse": 0.09941034695053708
         },
         "affected": {
-          "log_mae": 2.4165886444493876,
-          "log_rmse": 2.4637402015202134,
-          "smape": 0.8217930170150018
+          "log_mae": 2.4165829620878454,
+          "log_rmse": 2.4637355748223095,
+          "smape": 0.8217918152758147
         },
         "severity": {
           "accuracy": 1.0,
@@ -1682,8 +1682,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 89776.19635009766,
-          "mean_width_damage_rate": 0.23464720678748563
+          "mean_width_affected": 89776.11810302734,
+          "mean_width_damage_rate": 0.23464712093118578
         }
       },
       "population_only": {
@@ -1774,13 +1774,13 @@
       "n": 8,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.00010007757737184875,
-          "rmse": 0.00010488209161347812
+          "mae": 0.00010015629050030839,
+          "rmse": 0.00010479350117885703
         },
         "affected": {
-          "log_mae": 7.067611847380427,
-          "log_rmse": 7.409302819581472,
-          "smape": 0.9814190462772909
+          "log_mae": 7.067598557768893,
+          "log_rmse": 7.409287090667219,
+          "smape": 0.9814190575773543
         },
         "severity": {
           "accuracy": 1.0,
@@ -1815,8 +1815,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 13218.573143005371,
-          "mean_width_damage_rate": 0.003452279808698222
+          "mean_width_affected": 13218.532135009766,
+          "mean_width_damage_rate": 0.0034522803471190855
         }
       },
       "population_only": {
@@ -1907,13 +1907,13 @@
       "n": 5,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.14999264876823873,
-          "rmse": 0.32515273642617465
+          "mae": 0.14999278750910888,
+          "rmse": 0.3251522340122829
         },
         "affected": {
-          "log_mae": 4.236408357277026,
-          "log_rmse": 4.6544604079168685,
-          "smape": 0.9127095062513236
+          "log_mae": 4.236435908880404,
+          "log_rmse": 4.654480604473921,
+          "smape": 0.9127105422782723
         },
         "severity": {
           "accuracy": 0.6,
@@ -1948,8 +1948,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 11762.847930908203,
-          "mean_width_damage_rate": 0.40423494186252357
+          "mean_width_affected": 11762.837493896484,
+          "mean_width_damage_rate": 0.4042349500814453
         }
       },
       "population_only": {
@@ -2040,13 +2040,13 @@
       "n": 5,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.013111356042134582,
-          "rmse": 0.028951050533494144
+          "mae": 0.013111379901454789,
+          "rmse": 0.02895110382203338
         },
         "affected": {
-          "log_mae": 6.371973365131849,
-          "log_rmse": 6.5693649015229765,
-          "smape": 0.988973662288052
+          "log_mae": 6.37198450955318,
+          "log_rmse": 6.569375995227462,
+          "smape": 0.9889738290658998
         },
         "severity": {
           "accuracy": 1.0,
@@ -2081,8 +2081,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 45838.4964050293,
-          "mean_width_damage_rate": 0.08164903852157294
+          "mean_width_affected": 45838.45158691406,
+          "mean_width_damage_rate": 0.08164905963931232
         }
       },
       "population_only": {
@@ -2173,13 +2173,13 @@
       "n": 11,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.04022050774084319,
-          "rmse": 0.08857491568941668
+          "mae": 0.0402202013926009,
+          "rmse": 0.08857484022651203
         },
         "affected": {
-          "log_mae": 3.9021077880746713,
-          "log_rmse": 4.773464112097769,
-          "smape": 0.7963052949146026
+          "log_mae": 3.9021151358302633,
+          "log_rmse": 4.7734734508608305,
+          "smape": 0.7963051824219941
         },
         "severity": {
           "accuracy": 1.0,
@@ -2214,8 +2214,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 42519.43586869673,
-          "mean_width_damage_rate": 0.1861396987647326
+          "mean_width_affected": 42519.47063376687,
+          "mean_width_damage_rate": 0.1861396894726733
         }
       },
       "population_only": {
@@ -2306,13 +2306,13 @@
       "n": 2,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.18433507411828032,
-          "rmse": 0.2605949086246703
+          "mae": 0.18433506679866696,
+          "rmse": 0.2605955827274117
         },
         "affected": {
-          "log_mae": 4.635073525749073,
-          "log_rmse": 5.664166810790335,
-          "smape": 0.7989562246612721
+          "log_mae": 4.635079176307009,
+          "log_rmse": 5.664176221292931,
+          "smape": 0.7989557945857781
         },
         "severity": {
           "accuracy": 1.0,
@@ -2347,8 +2347,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 17584.755981445312,
-          "mean_width_damage_rate": 0.5047112923930399
+          "mean_width_affected": 17584.790130615234,
+          "mean_width_damage_rate": 0.5047112921602093
         }
       },
       "population_only": {
@@ -2439,13 +2439,13 @@
       "n": 8,
       "tabpfn": {
         "damage_rate": {
-          "mae": 8.240845454565715e-05,
-          "rmse": 8.916432340620256e-05
+          "mae": 8.241318573709577e-05,
+          "rmse": 8.913559821974458e-05
         },
         "affected": {
-          "log_mae": 4.906781900684232,
-          "log_rmse": 5.700915658725048,
-          "smape": 0.8433476224697376
+          "log_mae": 4.906766870606909,
+          "log_rmse": 5.700912090197479,
+          "smape": 0.8433414993415975
         },
         "severity": {
           "accuracy": 1.0,
@@ -2480,8 +2480,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 20329.335441589355,
-          "mean_width_damage_rate": 0.003448865740210749
+          "mean_width_affected": 20329.333236694336,
+          "mean_width_damage_rate": 0.0034488650708226487
         }
       },
       "population_only": {
@@ -2572,13 +2572,13 @@
       "n": 28,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.11407748912303693,
-          "rmse": 0.16816156681432218
+          "mae": 0.1140773854619491,
+          "rmse": 0.16816142232045958
         },
         "affected": {
-          "log_mae": 2.080385311845094,
-          "log_rmse": 2.5250571355763762,
-          "smape": 0.6371512568655221
+          "log_mae": 2.080385462573252,
+          "log_rmse": 2.525059993060016,
+          "smape": 0.637150587611904
         },
         "severity": {
           "accuracy": 0.8214285714285714,
@@ -2613,8 +2613,8 @@
         "calibration": {
           "affected_80_coverage": 0.7857142857142857,
           "damage_rate_80_coverage": 0.8928571428571429,
-          "mean_width_affected": 62985.82106563023,
-          "mean_width_damage_rate": 0.3905732550358932
+          "mean_width_affected": 62985.79893384661,
+          "mean_width_damage_rate": 0.39057334516629844
         }
       },
       "population_only": {
@@ -2705,13 +2705,13 @@
       "n": 2,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.000186236145964358,
-          "rmse": 0.00018662410392778576
+          "mae": 0.0001863966099335812,
+          "rmse": 0.00018679473632866135
         },
         "affected": {
-          "log_mae": 3.516318880224705,
-          "log_rmse": 3.673936867530215,
-          "smape": 0.9110779663594775
+          "log_mae": 3.5162837656459396,
+          "log_rmse": 3.6738969168670783,
+          "smape": 0.9110764472541633
         },
         "severity": {
           "accuracy": 1.0,
@@ -2746,8 +2746,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 5588.353057861328,
-          "mean_width_damage_rate": 0.003136664628982544
+          "mean_width_affected": 5588.357421875,
+          "mean_width_damage_rate": 0.003136660438030958
         }
       },
       "population_only": {
@@ -2838,13 +2838,13 @@
       "n": 33,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.09697061180300186,
-          "rmse": 0.24519383370372655
+          "mae": 0.09697070908409855,
+          "rmse": 0.24519374799115998
         },
         "affected": {
-          "log_mae": 1.726429163504869,
-          "log_rmse": 2.65034012448865,
-          "smape": 0.4629779910809416
+          "log_mae": 1.7264322102126342,
+          "log_rmse": 2.650342519458889,
+          "smape": 0.4629788225865554
         },
         "severity": {
           "accuracy": 0.9090909090909091,
@@ -2879,8 +2879,8 @@
         "calibration": {
           "affected_80_coverage": 0.9090909090909091,
           "damage_rate_80_coverage": 0.9393939393939394,
-          "mean_width_affected": 112830.43257372307,
-          "mean_width_damage_rate": 0.1956818353307123
+          "mean_width_affected": 112830.47447805693,
+          "mean_width_damage_rate": 0.19568184629491897
         }
       },
       "population_only": {
@@ -2971,13 +2971,13 @@
       "n": 39,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.08535213981062735,
-          "rmse": 0.1446170743458311
+          "mae": 0.08535227723182537,
+          "rmse": 0.14461722670920707
         },
         "affected": {
-          "log_mae": 0.9913524053679194,
-          "log_rmse": 1.2865291426089123,
-          "smape": 0.40201044121971086
+          "log_mae": 0.9913514678524294,
+          "log_rmse": 1.28652966603039,
+          "smape": 0.40200981648039846
         },
         "severity": {
           "accuracy": 0.9487179487179487,
@@ -3012,8 +3012,8 @@
         "calibration": {
           "affected_80_coverage": 0.6410256410256411,
           "damage_rate_80_coverage": 0.9230769230769231,
-          "mean_width_affected": 127552.8326995067,
-          "mean_width_damage_rate": 0.2781440518850174
+          "mean_width_affected": 127552.82458183092,
+          "mean_width_damage_rate": 0.2781440707980297
         }
       },
       "population_only": {
@@ -3104,13 +3104,13 @@
       "n": 9,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.04081945331967694,
-          "rmse": 0.1222767035131087
+          "mae": 0.04081941847754125,
+          "rmse": 0.12227660416605372
         },
         "affected": {
-          "log_mae": 5.759755041267393,
-          "log_rmse": 6.555659831432287,
-          "smape": 0.8659338966321526
+          "log_mae": 5.759764302475601,
+          "log_rmse": 6.555670695423028,
+          "smape": 0.865934102039993
         },
         "severity": {
           "accuracy": 1.0,
@@ -3145,8 +3145,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 13635.174621582031,
-          "mean_width_damage_rate": 0.11492219782020482
+          "mean_width_affected": 13635.16669040256,
+          "mean_width_damage_rate": 0.11492219890674783
         }
       },
       "population_only": {
@@ -3237,13 +3237,13 @@
       "n": 26,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.07562592061624701,
-          "rmse": 0.15363930671552964
+          "mae": 0.07562594255997548,
+          "rmse": 0.15363937457716229
         },
         "affected": {
-          "log_mae": 1.4999142515723185,
-          "log_rmse": 1.9510649342309019,
-          "smape": 0.5304712877870458
+          "log_mae": 1.4999143976800544,
+          "log_rmse": 1.9510658085349493,
+          "smape": 0.5304712133220267
         },
         "severity": {
           "accuracy": 0.9615384615384616,
@@ -3278,8 +3278,8 @@
         "calibration": {
           "affected_80_coverage": 0.8461538461538461,
           "damage_rate_80_coverage": 0.8846153846153846,
-          "mean_width_affected": 121462.27220916748,
-          "mean_width_damage_rate": 0.22212105215742037
+          "mean_width_affected": 121462.34055445745,
+          "mean_width_damage_rate": 0.2221210689480918
         }
       },
       "population_only": {
@@ -3370,13 +3370,13 @@
       "n": 45,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.14341710169349334,
-          "rmse": 0.21305653147359255
+          "mae": 0.14341705212481945,
+          "rmse": 0.21305653340643232
         },
         "affected": {
-          "log_mae": 1.735888267114859,
-          "log_rmse": 2.570611964161518,
-          "smape": 0.522455380323787
+          "log_mae": 1.7358887023335658,
+          "log_rmse": 2.5706117483517037,
+          "smape": 0.5224555780163079
         },
         "severity": {
           "accuracy": 0.8222222222222222,
@@ -3411,8 +3411,8 @@
         "calibration": {
           "affected_80_coverage": 0.7777777777777778,
           "damage_rate_80_coverage": 0.7111111111111111,
-          "mean_width_affected": 218293.40496300592,
-          "mean_width_damage_rate": 0.32176121217586723
+          "mean_width_affected": 218293.41053619384,
+          "mean_width_damage_rate": 0.3217612283019763
         }
       },
       "population_only": {
@@ -3503,13 +3503,13 @@
       "n": 1,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.00013829820090904832,
-          "rmse": 0.00013829820090904832
+          "mae": 0.00013828888768330216,
+          "rmse": 0.00013828888768330216
         },
         "affected": {
-          "log_mae": 2.372070698302789,
-          "log_rmse": 2.372070698302789,
-          "smape": 0.8294359562153538
+          "log_mae": 2.372069063156488,
+          "log_rmse": 2.372069063156488,
+          "smape": 0.8294357010876731
         },
         "severity": {
           "accuracy": 1.0,
@@ -3544,8 +3544,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 51015.44616699219,
-          "mean_width_damage_rate": 0.002906962181441486
+          "mean_width_affected": 51015.50817871094,
+          "mean_width_damage_rate": 0.002906961366534233
         }
       },
       "population_only": {
@@ -3636,13 +3636,13 @@
       "n": 5,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.19837907929337117,
-          "rmse": 0.2997698765466377
+          "mae": 0.19837851793577893,
+          "rmse": 0.29976959652111296
         },
         "affected": {
-          "log_mae": 6.631412321276626,
-          "log_rmse": 7.476004815641017,
-          "smape": 0.8678601326902603
+          "log_mae": 6.631412362816728,
+          "log_rmse": 7.476003676957723,
+          "smape": 0.867861064709967
         },
         "severity": {
           "accuracy": 0.8,
@@ -3677,8 +3677,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 0.8,
-          "mean_width_affected": 28618.526641845703,
-          "mean_width_damage_rate": 0.48751828507520256
+          "mean_width_affected": 28618.47918701172,
+          "mean_width_damage_rate": 0.48751822519116106
         }
       },
       "population_only": {
@@ -3769,13 +3769,13 @@
       "n": 22,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.07208020411461423,
-          "rmse": 0.12246877497186284
+          "mae": 0.07208029205977536,
+          "rmse": 0.12246856920666317
         },
         "affected": {
-          "log_mae": 4.596139204591794,
-          "log_rmse": 5.757541289575388,
-          "smape": 0.7722344257413712
+          "log_mae": 4.596146068498495,
+          "log_rmse": 5.7575466846644305,
+          "smape": 0.7722345967329858
         },
         "severity": {
           "accuracy": 1.0,
@@ -3810,8 +3810,8 @@
         "calibration": {
           "affected_80_coverage": 0.7727272727272727,
           "damage_rate_80_coverage": 0.9090909090909091,
-          "mean_width_affected": 45403.4698084051,
-          "mean_width_damage_rate": 0.31154668786753476
+          "mean_width_affected": 45403.49289148504,
+          "mean_width_damage_rate": 0.31154701256838796
         }
       },
       "population_only": {
@@ -3902,13 +3902,13 @@
       "n": 24,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.15747077318947314,
-          "rmse": 0.21992889653521086
+          "mae": 0.15747075149923717,
+          "rmse": 0.2199287887530667
         },
         "affected": {
-          "log_mae": 2.152984193799245,
-          "log_rmse": 3.0735058620868965,
-          "smape": 0.5817902561671456
+          "log_mae": 2.152976889714015,
+          "log_rmse": 3.0735000484599424,
+          "smape": 0.5817886362449998
         },
         "severity": {
           "accuracy": 0.8333333333333334,
@@ -3943,8 +3943,8 @@
         "calibration": {
           "affected_80_coverage": 0.875,
           "damage_rate_80_coverage": 0.9166666666666666,
-          "mean_width_affected": 71370.99498621623,
-          "mean_width_damage_rate": 0.49319048124501325
+          "mean_width_affected": 71370.93788019817,
+          "mean_width_damage_rate": 0.4931906192020203
         }
       },
       "population_only": {
@@ -4035,13 +4035,13 @@
       "n": 2,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.0001272069857805036,
-          "rmse": 0.00012753188109063885
+          "mae": 0.00012784569844370708,
+          "rmse": 0.00012819234420942166
         },
         "affected": {
-          "log_mae": 2.569236490974981,
-          "log_rmse": 3.0364771876231362,
-          "smape": 0.7063974349580662
+          "log_mae": 2.569255483102036,
+          "log_rmse": 3.036487287815266,
+          "smape": 0.7064036190802083
         },
         "severity": {
           "accuracy": 1.0,
@@ -4076,8 +4076,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 51666.688232421875,
-          "mean_width_damage_rate": 0.0032191252103075385
+          "mean_width_affected": 51666.787200927734,
+          "mean_width_damage_rate": 0.0032191193313337862
         }
       },
       "population_only": {
@@ -4168,13 +4168,13 @@
       "n": 29,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.1291070270566671,
-          "rmse": 0.2234202649002725
+          "mae": 0.1291070151903329,
+          "rmse": 0.22342040170249303
         },
         "affected": {
-          "log_mae": 4.077757591283366,
-          "log_rmse": 5.1078476003663,
-          "smape": 0.7938438555043639
+          "log_mae": 4.0777561440925165,
+          "log_rmse": 5.107845987868698,
+          "smape": 0.7938436686264873
         },
         "severity": {
           "accuracy": 0.896551724137931,
@@ -4209,8 +4209,8 @@
         "calibration": {
           "affected_80_coverage": 0.896551724137931,
           "damage_rate_80_coverage": 0.9655172413793104,
-          "mean_width_affected": 45837.97002016265,
-          "mean_width_damage_rate": 0.3599483849007058
+          "mean_width_affected": 45837.968061775995,
+          "mean_width_damage_rate": 0.3599483426700443
         }
       },
       "population_only": {
@@ -4301,13 +4301,13 @@
       "n": 24,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.048181434240208675,
-          "rmse": 0.0964249942583212
+          "mae": 0.048181166582587566,
+          "rmse": 0.09642487026055777
         },
         "affected": {
-          "log_mae": 2.6524986827081958,
-          "log_rmse": 3.8605493067413534,
-          "smape": 0.6228735135301212
+          "log_mae": 2.6524988958407634,
+          "log_rmse": 3.8605520776279345,
+          "smape": 0.6228726905491949
         },
         "severity": {
           "accuracy": 1.0,
@@ -4342,8 +4342,8 @@
         "calibration": {
           "affected_80_coverage": 0.7916666666666666,
           "damage_rate_80_coverage": 0.7916666666666666,
-          "mean_width_affected": 68698.13850529988,
-          "mean_width_damage_rate": 0.16300833309651352
+          "mean_width_affected": 68698.16288375854,
+          "mean_width_damage_rate": 0.1630082957126433
         }
       },
       "population_only": {
@@ -4434,13 +4434,13 @@
       "n": 9,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.11737986445989357,
-          "rmse": 0.19922043083946786
+          "mae": 0.11738008405637876,
+          "rmse": 0.1992207641044771
         },
         "affected": {
-          "log_mae": 1.9024899483600741,
-          "log_rmse": 2.5269070819864954,
-          "smape": 0.5990697438888193
+          "log_mae": 1.9025045112248793,
+          "log_rmse": 2.5269149147621017,
+          "smape": 0.5990743389084342
         },
         "severity": {
           "accuracy": 0.8888888888888888,
@@ -4475,8 +4475,8 @@
         "calibration": {
           "affected_80_coverage": 0.6666666666666666,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 25276.300323486328,
-          "mean_width_damage_rate": 0.3880520254865082
+          "mean_width_affected": 25276.334818522137,
+          "mean_width_damage_rate": 0.3880521373357624
         }
       },
       "population_only": {
@@ -4567,13 +4567,13 @@
       "n": 9,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.10998347791716483,
-          "rmse": 0.20266762405084143
+          "mae": 0.10998340310010955,
+          "rmse": 0.20266733936856726
         },
         "affected": {
-          "log_mae": 2.758818059140386,
-          "log_rmse": 3.257526298994106,
-          "smape": 0.748504363133948
+          "log_mae": 2.758812881013593,
+          "log_rmse": 3.2575205369046714,
+          "smape": 0.7485035551204053
         },
         "severity": {
           "accuracy": 0.6666666666666666,
@@ -4608,8 +4608,8 @@
         "calibration": {
           "affected_80_coverage": 0.8888888888888888,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 18950.629163953992,
-          "mean_width_damage_rate": 0.3366089686880716
+          "mean_width_affected": 18950.652387830945,
+          "mean_width_damage_rate": 0.3366089711715985
         }
       },
       "population_only": {
@@ -4700,13 +4700,13 @@
       "n": 29,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.1942970007319766,
-          "rmse": 0.32034156090480215
+          "mae": 0.19429720292381364,
+          "rmse": 0.32034168293194915
         },
         "affected": {
-          "log_mae": 3.3209226250014594,
-          "log_rmse": 4.6483727233771015,
-          "smape": 0.6542466028338609
+          "log_mae": 3.320910785226355,
+          "log_rmse": 4.648355461633656,
+          "smape": 0.6542459251399031
         },
         "severity": {
           "accuracy": 0.7931034482758621,
@@ -4741,8 +4741,8 @@
         "calibration": {
           "affected_80_coverage": 0.7586206896551724,
           "damage_rate_80_coverage": 0.7931034482758621,
-          "mean_width_affected": 174865.7317199707,
-          "mean_width_damage_rate": 0.3446621281969971
+          "mean_width_affected": 174865.6952051623,
+          "mean_width_damage_rate": 0.34466213246422084
         }
       },
       "population_only": {
@@ -4833,13 +4833,13 @@
       "n": 8,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.08557684073639393,
-          "rmse": 0.1746912698856063
+          "mae": 0.08557696083153132,
+          "rmse": 0.17469126385360434
         },
         "affected": {
-          "log_mae": 5.572237607287878,
-          "log_rmse": 6.332744695015772,
-          "smape": 0.8411883410645142
+          "log_mae": 5.572228898851806,
+          "log_rmse": 6.332732362535124,
+          "smape": 0.841189557965383
         },
         "severity": {
           "accuracy": 0.75,
@@ -4874,8 +4874,8 @@
         "calibration": {
           "affected_80_coverage": 0.875,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 9405.066993713379,
-          "mean_width_damage_rate": 0.2542699240439106
+          "mean_width_affected": 9405.062511444092,
+          "mean_width_damage_rate": 0.25426992343273014
         }
       },
       "population_only": {
@@ -4966,13 +4966,13 @@
       "n": 2,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.10771056818260111,
-          "rmse": 0.15220584246583255
+          "mae": 0.10771035765276754,
+          "rmse": 0.15220554743585188
         },
         "affected": {
-          "log_mae": 3.7825507423686733,
-          "log_rmse": 3.807968085200009,
-          "smape": 0.9516043765758153
+          "log_mae": 3.7825492588157457,
+          "log_rmse": 3.8079668041380654,
+          "smape": 0.9516042756508307
         },
         "severity": {
           "accuracy": 0.5,
@@ -5007,8 +5007,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 29212.81610107422,
-          "mean_width_damage_rate": 0.5053246772149578
+          "mean_width_affected": 29212.879364013672,
+          "mean_width_damage_rate": 0.5053246832685545
         }
       },
       "population_only": {
@@ -5099,13 +5099,13 @@
       "n": 3,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.13307800095935818,
-          "rmse": 0.23028533755497788
+          "mae": 0.13307754912724098,
+          "rmse": 0.2302849244499581
         },
         "affected": {
-          "log_mae": 1.5599542302868332,
-          "log_rmse": 1.5851365325506417,
-          "smape": 0.645359350321818
+          "log_mae": 1.55987268326824,
+          "log_rmse": 1.58506181133099,
+          "smape": 0.645334178121415
         },
         "severity": {
           "accuracy": 1.0,
@@ -5140,8 +5140,8 @@
         "calibration": {
           "affected_80_coverage": 0.3333333333333333,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 15961.243367513021,
-          "mean_width_damage_rate": 0.33616031710213673
+          "mean_width_affected": 15961.22412109375,
+          "mean_width_damage_rate": 0.3361603171409418
         }
       },
       "population_only": {
@@ -5232,13 +5232,13 @@
       "n": 29,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.06907419593884802,
-          "rmse": 0.11986441077274503
+          "mae": 0.06907436562559531,
+          "rmse": 0.1198644319599277
         },
         "affected": {
-          "log_mae": 1.3035300997853136,
-          "log_rmse": 1.875963427963379,
-          "smape": 0.44861711870751003
+          "log_mae": 1.3035366074414632,
+          "log_rmse": 1.8759706570321215,
+          "smape": 0.44861895917045286
         },
         "severity": {
           "accuracy": 0.9655172413793104,
@@ -5273,8 +5273,8 @@
         "calibration": {
           "affected_80_coverage": 0.7931034482758621,
           "damage_rate_80_coverage": 0.8620689655172413,
-          "mean_width_affected": 125086.49931730072,
-          "mean_width_damage_rate": 0.20783766353069322
+          "mean_width_affected": 125086.445341176,
+          "mean_width_damage_rate": 0.2078377354151473
         }
       },
       "population_only": {
@@ -5365,13 +5365,13 @@
       "n": 5,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.025720323954992907,
-          "rmse": 0.04163673714841281
+          "mae": 0.02572056816523427,
+          "rmse": 0.04163683681579489
         },
         "affected": {
-          "log_mae": 2.403361842444373,
-          "log_rmse": 3.1517445288041133,
-          "smape": 0.5960913375518896
+          "log_mae": 2.403360449085006,
+          "log_rmse": 3.1517425156351866,
+          "smape": 0.5960912428345753
         },
         "severity": {
           "accuracy": 1.0,
@@ -5406,8 +5406,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 143744.46541748047,
-          "mean_width_damage_rate": 0.12111984628718346
+          "mean_width_affected": 143744.36682128906,
+          "mean_width_damage_rate": 0.12111994063016027
         }
       },
       "population_only": {
@@ -5498,13 +5498,13 @@
       "n": 12,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.2295955126782064,
-          "rmse": 0.3645695333970066
+          "mae": 0.22959561155604505,
+          "rmse": 0.36456981197638694
         },
         "affected": {
-          "log_mae": 2.8129858159349,
-          "log_rmse": 3.585593128510152,
-          "smape": 0.647572110294092
+          "log_mae": 2.8129864898190533,
+          "log_rmse": 3.585593816908237,
+          "smape": 0.6475721664285754
         },
         "severity": {
           "accuracy": 0.5833333333333334,
@@ -5539,8 +5539,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 0.8333333333333334,
-          "mean_width_affected": 58602.30959828695,
-          "mean_width_damage_rate": 0.40587706374935806
+          "mean_width_affected": 58602.29316457113,
+          "mean_width_damage_rate": 0.40587707989228267
         }
       },
       "population_only": {
@@ -5631,13 +5631,13 @@
       "n": 9,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.20107943319267102,
-          "rmse": 0.33084158502492084
+          "mae": 0.20107951676189487,
+          "rmse": 0.3308419245158784
         },
         "affected": {
-          "log_mae": 3.8873959812547523,
-          "log_rmse": 4.786475952814231,
-          "smape": 0.8306500763775405
+          "log_mae": 3.887386579547738,
+          "log_rmse": 4.786473768154564,
+          "smape": 0.8306474802631421
         },
         "severity": {
           "accuracy": 0.6666666666666666,
@@ -5672,8 +5672,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 25087.532114664715,
-          "mean_width_damage_rate": 0.6273829952891296
+          "mean_width_affected": 25087.518883599176,
+          "mean_width_damage_rate": 0.6273829786676086
         }
       },
       "population_only": {
@@ -5764,13 +5764,13 @@
       "n": 19,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.24569232589171303,
-          "rmse": 0.35947979056529256
+          "mae": 0.24569238155700118,
+          "rmse": 0.35947990656737117
         },
         "affected": {
-          "log_mae": 2.73581862371092,
-          "log_rmse": 4.24182593958106,
-          "smape": 0.6017453090689112
+          "log_mae": 2.7358167662516277,
+          "log_rmse": 4.241826542610831,
+          "smape": 0.6017446650520338
         },
         "severity": {
           "accuracy": 0.631578947368421,
@@ -5805,8 +5805,8 @@
         "calibration": {
           "affected_80_coverage": 0.631578947368421,
           "damage_rate_80_coverage": 0.8947368421052632,
-          "mean_width_affected": 73273.10252059133,
-          "mean_width_damage_rate": 0.512919134625822
+          "mean_width_affected": 73273.14292907715,
+          "mean_width_damage_rate": 0.5129190530125541
         }
       },
       "population_only": {
@@ -5897,13 +5897,13 @@
       "n": 20,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.11325428784862043,
-          "rmse": 0.19896908292859652
+          "mae": 0.11325434343548142,
+          "rmse": 0.1989692079109468
         },
         "affected": {
-          "log_mae": 1.6775644284502143,
-          "log_rmse": 2.121913872637112,
-          "smape": 0.5593750438047258
+          "log_mae": 1.6775651085850825,
+          "log_rmse": 2.1219093286968307,
+          "smape": 0.5593764751796295
         },
         "severity": {
           "accuracy": 0.95,
@@ -5938,8 +5938,8 @@
         "calibration": {
           "affected_80_coverage": 0.95,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 57320.99698791504,
-          "mean_width_damage_rate": 0.3057859832595568
+          "mean_width_affected": 57321.028352355956,
+          "mean_width_damage_rate": 0.3057859579101205
         }
       },
       "population_only": {
@@ -6030,13 +6030,13 @@
       "n": 33,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.06334645755147264,
-          "rmse": 0.09977285524055472
+          "mae": 0.0633465469774014,
+          "rmse": 0.09977287480106978
         },
         "affected": {
-          "log_mae": 1.4394269872421863,
-          "log_rmse": 2.3535324520008736,
-          "smape": 0.44857541527804695
+          "log_mae": 1.439430143287038,
+          "log_rmse": 2.3535354722978883,
+          "smape": 0.44857623186965867
         },
         "severity": {
           "accuracy": 1.0,
@@ -6071,8 +6071,8 @@
         "calibration": {
           "affected_80_coverage": 0.8787878787878788,
           "damage_rate_80_coverage": 0.8181818181818182,
-          "mean_width_affected": 140627.628528017,
-          "mean_width_damage_rate": 0.22003367115658792
+          "mean_width_affected": 140627.57178058047,
+          "mean_width_damage_rate": 0.22003364051113639
         }
       },
       "population_only": {
@@ -6163,13 +6163,13 @@
       "n": 10,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.011198294671504993,
-          "rmse": 0.025598919819422306
+          "mae": 0.011198738562399524,
+          "rmse": 0.0255990684846267
         },
         "affected": {
-          "log_mae": 6.123334911553593,
-          "log_rmse": 7.115246386433795,
-          "smape": 0.8761227484640857
+          "log_mae": 6.123328665822842,
+          "log_rmse": 7.115240123038173,
+          "smape": 0.8761224532499343
         },
         "severity": {
           "accuracy": 1.0,
@@ -6204,8 +6204,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 57219.03230895996,
-          "mean_width_damage_rate": 0.15263737908098846
+          "mean_width_affected": 57219.05701599121,
+          "mean_width_damage_rate": 0.15263747960561885
         }
       },
       "population_only": {
@@ -6296,13 +6296,13 @@
       "n": 3,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.09233674010342607,
-          "rmse": 0.11340585399636174
+          "mae": 0.09233688468640515,
+          "rmse": 0.11340589056732768
         },
         "affected": {
-          "log_mae": 6.045874758438281,
-          "log_rmse": 6.828602828827698,
-          "smape": 0.9680609611025129
+          "log_mae": 6.045884990354668,
+          "log_rmse": 6.828619310601459,
+          "smape": 0.968060876929064
         },
         "severity": {
           "accuracy": 1.0,
@@ -6337,8 +6337,8 @@
         "calibration": {
           "affected_80_coverage": 0.6666666666666666,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 53598.16899617513,
-          "mean_width_damage_rate": 0.4721263615647331
+          "mean_width_affected": 53598.17330932617,
+          "mean_width_damage_rate": 0.47212628461420536
         }
       },
       "population_only": {
@@ -6429,13 +6429,13 @@
       "n": 2,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.00024222941283369437,
-          "rmse": 0.00024232446015877513
+          "mae": 0.0002420668679405935,
+          "rmse": 0.00024216659963838827
         },
         "affected": {
-          "log_mae": 5.96064558760281,
-          "log_rmse": 5.9653106165517364,
-          "smape": 0.9949420999804554
+          "log_mae": 5.960645875453631,
+          "log_rmse": 5.965311032595798,
+          "smape": 0.9949420974960475
         },
         "severity": {
           "accuracy": 1.0,
@@ -6470,8 +6470,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 25062.494506835938,
-          "mean_width_damage_rate": 0.0030695353634655476
+          "mean_width_affected": 25062.446350097656,
+          "mean_width_damage_rate": 0.003069535188842565
         }
       },
       "population_only": {
@@ -6562,13 +6562,13 @@
       "n": 15,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.1426082753836612,
-          "rmse": 0.22538988410253433
+          "mae": 0.1426080598639759,
+          "rmse": 0.22538983735758342
         },
         "affected": {
-          "log_mae": 2.555287322970914,
-          "log_rmse": 3.587974822571901,
-          "smape": 0.6557530309141645
+          "log_mae": 2.5552862127942024,
+          "log_rmse": 3.5879722562252447,
+          "smape": 0.6557533794509735
         },
         "severity": {
           "accuracy": 0.8,
@@ -6603,8 +6603,8 @@
         "calibration": {
           "affected_80_coverage": 0.4,
           "damage_rate_80_coverage": 0.8666666666666667,
-          "mean_width_affected": 61790.655609385176,
-          "mean_width_damage_rate": 0.44940964966857183
+          "mean_width_affected": 61790.730086008705,
+          "mean_width_damage_rate": 0.44940961129808177
         }
       },
       "population_only": {
@@ -6695,13 +6695,13 @@
       "n": 24,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.0771954688418511,
-          "rmse": 0.1119234050014383
+          "mae": 0.0771956481344828,
+          "rmse": 0.11192369374664063
         },
         "affected": {
-          "log_mae": 1.2249774131358608,
-          "log_rmse": 1.791307857267801,
-          "smape": 0.42451452152047026
+          "log_mae": 1.2249766747873205,
+          "log_rmse": 1.7913095555533505,
+          "smape": 0.42451385634655975
         },
         "severity": {
           "accuracy": 0.9583333333333334,
@@ -6736,8 +6736,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 0.9166666666666666,
-          "mean_width_affected": 152951.13622665405,
-          "mean_width_damage_rate": 0.2828638107457664
+          "mean_width_affected": 152951.17348861694,
+          "mean_width_damage_rate": 0.28286396618932486
         }
       },
       "population_only": {
@@ -6828,13 +6828,13 @@
       "n": 10,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.19035960946107983,
-          "rmse": 0.3249996663498794
+          "mae": 0.19035968481235208,
+          "rmse": 0.3249995345779893
         },
         "affected": {
-          "log_mae": 2.046772805387705,
-          "log_rmse": 3.1085689842448536,
-          "smape": 0.5295194279592874
+          "log_mae": 2.0467715416152052,
+          "log_rmse": 3.1085691407125453,
+          "smape": 0.5295185671176664
         },
         "severity": {
           "accuracy": 0.8,
@@ -6869,8 +6869,8 @@
         "calibration": {
           "affected_80_coverage": 0.9,
           "damage_rate_80_coverage": 0.8,
-          "mean_width_affected": 33439.38010559082,
-          "mean_width_damage_rate": 0.47852998836897315
+          "mean_width_affected": 33439.36112670899,
+          "mean_width_damage_rate": 0.47853000279283153
         }
       },
       "population_only": {
@@ -6961,13 +6961,13 @@
       "n": 31,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.12823028829987537,
-          "rmse": 0.2160958456908477
+          "mae": 0.12823025344428307,
+          "rmse": 0.2160956060658999
         },
         "affected": {
-          "log_mae": 2.9277350674221103,
-          "log_rmse": 4.243042171680638,
-          "smape": 0.6334101442594426
+          "log_mae": 2.9277371068422156,
+          "log_rmse": 4.2430502949008915,
+          "smape": 0.6334090483562885
         },
         "severity": {
           "accuracy": 0.8064516129032258,
@@ -7002,8 +7002,8 @@
         "calibration": {
           "affected_80_coverage": 0.7741935483870968,
           "damage_rate_80_coverage": 0.8064516129032258,
-          "mean_width_affected": 98239.54069322156,
-          "mean_width_damage_rate": 0.3118803828969718
+          "mean_width_affected": 98239.52244961646,
+          "mean_width_damage_rate": 0.31188042993251713
         }
       },
       "population_only": {
@@ -7094,13 +7094,13 @@
       "n": 3,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.0278947479249599,
-          "rmse": 0.04805184092605222
+          "mae": 0.027894831802199278,
+          "rmse": 0.048051806969681185
         },
         "affected": {
-          "log_mae": 3.67331694498086,
-          "log_rmse": 4.3816145069186,
-          "smape": 0.7593456917083227
+          "log_mae": 3.6733206848130577,
+          "log_rmse": 4.381616848402097,
+          "smape": 0.7593463705258484
         },
         "severity": {
           "accuracy": 1.0,
@@ -7135,8 +7135,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 42463.79592895508,
-          "mean_width_damage_rate": 0.05510413367301226
+          "mean_width_affected": 42463.79894002279,
+          "mean_width_damage_rate": 0.05510408388605962
         }
       },
       "population_only": {
@@ -7227,13 +7227,13 @@
       "n": 32,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.10011259380644151,
-          "rmse": 0.16835072026104772
+          "mae": 0.10011256719030644,
+          "rmse": 0.16835064917410003
         },
         "affected": {
-          "log_mae": 2.73749795178428,
-          "log_rmse": 3.9438633550111675,
-          "smape": 0.6230209386545167
+          "log_mae": 2.7374969739814037,
+          "log_rmse": 3.943860667442745,
+          "smape": 0.6230210956295125
         },
         "severity": {
           "accuracy": 0.90625,
@@ -7268,8 +7268,8 @@
         "calibration": {
           "affected_80_coverage": 0.90625,
           "damage_rate_80_coverage": 0.9375,
-          "mean_width_affected": 91843.20461845398,
-          "mean_width_damage_rate": 0.3334364406946406
+          "mean_width_affected": 91843.19986820221,
+          "mean_width_damage_rate": 0.33343649004018516
         }
       },
       "population_only": {
@@ -7360,13 +7360,13 @@
       "n": 7,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.06849887293350683,
-          "rmse": 0.126140432412346
+          "mae": 0.06849855353351948,
+          "rmse": 0.12614048701418704
         },
         "affected": {
-          "log_mae": 4.755946886016581,
-          "log_rmse": 5.676981275860827,
-          "smape": 0.8160847490367719
+          "log_mae": 4.755955269069936,
+          "log_rmse": 5.6769921054916335,
+          "smape": 0.8160841103043965
         },
         "severity": {
           "accuracy": 1.0,
@@ -7401,8 +7401,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 0.8571428571428571,
-          "mean_width_affected": 70275.43355015347,
-          "mean_width_damage_rate": 0.23237406291134124
+          "mean_width_affected": 70275.41604178293,
+          "mean_width_damage_rate": 0.2323741282535983
         }
       },
       "population_only": {
@@ -7493,13 +7493,13 @@
       "n": 19,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.11483524509468974,
-          "rmse": 0.19879100947230086
+          "mae": 0.11483530561763695,
+          "rmse": 0.19879112159339674
         },
         "affected": {
-          "log_mae": 2.008314228121331,
-          "log_rmse": 2.8905209273283115,
-          "smape": 0.5269008358448151
+          "log_mae": 2.008313755023862,
+          "log_rmse": 2.890518526279853,
+          "smape": 0.5269010925473779
         },
         "severity": {
           "accuracy": 0.8947368421052632,
@@ -7534,8 +7534,8 @@
         "calibration": {
           "affected_80_coverage": 0.8421052631578947,
           "damage_rate_80_coverage": 0.7894736842105263,
-          "mean_width_affected": 118336.79374694824,
-          "mean_width_damage_rate": 0.300779480726066
+          "mean_width_affected": 118336.74179960552,
+          "mean_width_damage_rate": 0.30077945970390974
         }
       },
       "population_only": {
@@ -7626,13 +7626,13 @@
       "n": 22,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.09943842861287809,
-          "rmse": 0.17693068662904995
+          "mae": 0.0994382328305838,
+          "rmse": 0.17693052420268957
         },
         "affected": {
-          "log_mae": 2.879427558376589,
-          "log_rmse": 4.311660609976916,
-          "smape": 0.573996374057884
+          "log_mae": 2.879428048979386,
+          "log_rmse": 4.311657415385419,
+          "smape": 0.5739974340332595
         },
         "severity": {
           "accuracy": 0.9090909090909091,
@@ -7667,8 +7667,8 @@
         "calibration": {
           "affected_80_coverage": 0.9090909090909091,
           "damage_rate_80_coverage": 0.8181818181818182,
-          "mean_width_affected": 51286.48648487438,
-          "mean_width_damage_rate": 0.3517761050607078
+          "mean_width_affected": 51286.52457705411,
+          "mean_width_damage_rate": 0.35177623871078884
         }
       },
       "population_only": {
@@ -7759,13 +7759,13 @@
       "n": 39,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.13914798179178747,
-          "rmse": 0.22211009747358137
+          "mae": 0.1391479668708506,
+          "rmse": 0.2221101553880774
         },
         "affected": {
-          "log_mae": 2.3501042294515537,
-          "log_rmse": 3.3995378238234624,
-          "smape": 0.5974949124862731
+          "log_mae": 2.350104108317199,
+          "log_rmse": 3.3995381854809033,
+          "smape": 0.5974947290562062
         },
         "severity": {
           "accuracy": 0.8717948717948718,
@@ -7800,8 +7800,8 @@
         "calibration": {
           "affected_80_coverage": 0.7692307692307693,
           "damage_rate_80_coverage": 0.8717948717948718,
-          "mean_width_affected": 89648.20071254633,
-          "mean_width_damage_rate": 0.4242046508424653
+          "mean_width_affected": 89648.20288966253,
+          "mean_width_damage_rate": 0.4242046185819886
         }
       },
       "population_only": {
@@ -7892,13 +7892,13 @@
       "n": 5,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.1820267630217131,
-          "rmse": 0.28801094581772685
+          "mae": 0.1820264189504087,
+          "rmse": 0.28801029608700235
         },
         "affected": {
-          "log_mae": 3.834798139601344,
-          "log_rmse": 4.314878571113625,
-          "smape": 0.8135520461780577
+          "log_mae": 3.8348000238402817,
+          "log_rmse": 4.314882268618434,
+          "smape": 0.8135516005817754
         },
         "severity": {
           "accuracy": 1.0,
@@ -7933,8 +7933,8 @@
         "calibration": {
           "affected_80_coverage": 0.8,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 13820.05355834961,
-          "mean_width_damage_rate": 0.404638859606348
+          "mean_width_affected": 13820.066967773437,
+          "mean_width_damage_rate": 0.40463886088691653
         }
       },
       "population_only": {
@@ -8025,13 +8025,13 @@
       "n": 15,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.043760415736118254,
-          "rmse": 0.0638351864648444
+          "mae": 0.043760350618480395,
+          "rmse": 0.06383513257900517
         },
         "affected": {
-          "log_mae": 1.3760039397401773,
-          "log_rmse": 1.9242367467903385,
-          "smape": 0.46926281589216595
+          "log_mae": 1.3760026893026365,
+          "log_rmse": 1.9242358758541733,
+          "smape": 0.46926234067502093
         },
         "severity": {
           "accuracy": 1.0,
@@ -8066,8 +8066,8 @@
         "calibration": {
           "affected_80_coverage": 0.8,
           "damage_rate_80_coverage": 0.9333333333333333,
-          "mean_width_affected": 250075.98109944662,
-          "mean_width_damage_rate": 0.20229596651624887
+          "mean_width_affected": 250075.8269144694,
+          "mean_width_damage_rate": 0.20229595269386966
         }
       },
       "population_only": {
@@ -8158,13 +8158,13 @@
       "n": 3,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.00027339555284318823,
-          "rmse": 0.00027390550958735865
+          "mae": 0.00027370961227764684,
+          "rmse": 0.0002742043358215627
         },
         "affected": {
-          "log_mae": 4.002825451919124,
-          "log_rmse": 5.141720269267003,
-          "smape": 0.7976921241022416
+          "log_mae": 4.002818994781417,
+          "log_rmse": 5.141716242411414,
+          "smape": 0.7976908295070135
         },
         "severity": {
           "accuracy": 1.0,
@@ -8199,8 +8199,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 27215.78615315755,
-          "mean_width_damage_rate": 0.00333788994854937
+          "mean_width_affected": 27215.7397664388,
+          "mean_width_damage_rate": 0.00333788696055611
         }
       },
       "population_only": {
@@ -8291,13 +8291,13 @@
       "n": 17,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.11861262359636945,
-          "rmse": 0.19543116697587729
+          "mae": 0.11861228499127797,
+          "rmse": 0.19543074174054864
         },
         "affected": {
-          "log_mae": 4.605021637210296,
-          "log_rmse": 5.262650169640754,
-          "smape": 0.8591811820106767
+          "log_mae": 4.605021785752198,
+          "log_rmse": 5.2626498117425395,
+          "smape": 0.8591809843594227
         },
         "severity": {
           "accuracy": 0.8823529411764706,
@@ -8332,8 +8332,8 @@
         "calibration": {
           "affected_80_coverage": 0.8823529411764706,
           "damage_rate_80_coverage": 0.8823529411764706,
-          "mean_width_affected": 63818.41134643555,
-          "mean_width_damage_rate": 0.43279456663602855
+          "mean_width_affected": 63818.43756642061,
+          "mean_width_damage_rate": 0.43279441844617184
         }
       },
       "population_only": {
@@ -8424,13 +8424,13 @@
       "n": 5,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.11455031262885314,
-          "rmse": 0.2559210208221806
+          "mae": 0.1145506277156528,
+          "rmse": 0.25592158064559767
         },
         "affected": {
-          "log_mae": 1.777552833371875,
-          "log_rmse": 2.0655427879014177,
-          "smape": 0.61754361060464
+          "log_mae": 1.7775516306224688,
+          "log_rmse": 2.065542154198883,
+          "smape": 0.6175432117475016
         },
         "severity": {
           "accuracy": 0.8,
@@ -8465,8 +8465,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 17985.298583984375,
-          "mean_width_damage_rate": 0.20381982515100389
+          "mean_width_affected": 17985.45772705078,
+          "mean_width_damage_rate": 0.2038198220077902
         }
       },
       "population_only": {
@@ -8557,13 +8557,13 @@
       "n": 5,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.12618209670877317,
-          "rmse": 0.179616784601738
+          "mae": 0.126182116340762,
+          "rmse": 0.1796167886946492
         },
         "affected": {
-          "log_mae": 2.0445476312650537,
-          "log_rmse": 2.397935395218387,
-          "smape": 0.6575361219765843
+          "log_mae": 2.0445506570601006,
+          "log_rmse": 2.3979350472591023,
+          "smape": 0.6575377924901261
         },
         "severity": {
           "accuracy": 0.4,
@@ -8598,8 +8598,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 23994.763568115235,
-          "mean_width_damage_rate": 0.6053016962483525
+          "mean_width_affected": 23994.77362060547,
+          "mean_width_damage_rate": 0.605301700020209
         }
       },
       "population_only": {
@@ -8690,13 +8690,13 @@
       "n": 14,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.00036120418475807777,
-          "rmse": 0.00036184193407263706
+          "mae": 0.00036117868148721755,
+          "rmse": 0.000361840353285743
         },
         "affected": {
-          "log_mae": 4.501752601954488,
-          "log_rmse": 5.212843638374469,
-          "smape": 0.8720932842307957
+          "log_mae": 4.501764072255836,
+          "log_rmse": 5.212849982785091,
+          "smape": 0.8720960758381526
         },
         "severity": {
           "accuracy": 1.0,
@@ -8731,8 +8731,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 10563.634334019252,
-          "mean_width_damage_rate": 0.0029420730341891094
+          "mean_width_affected": 10563.624677385602,
+          "mean_width_damage_rate": 0.002942077990155667
         }
       },
       "population_only": {
@@ -8823,13 +8823,13 @@
       "n": 16,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.0936220613590398,
-          "rmse": 0.13213413358011233
+          "mae": 0.0936221459893408,
+          "rmse": 0.1321341572740115
         },
         "affected": {
-          "log_mae": 1.4862789748194274,
-          "log_rmse": 2.5636815148825622,
-          "smape": 0.3983607026829896
+          "log_mae": 1.4862668632237115,
+          "log_rmse": 2.5636654780970787,
+          "smape": 0.39835838659591605
         },
         "severity": {
           "accuracy": 0.9375,
@@ -8864,8 +8864,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 0.75,
-          "mean_width_affected": 305819.24349594116,
-          "mean_width_damage_rate": 0.2630450086435303
+          "mean_width_affected": 305819.2289505005,
+          "mean_width_damage_rate": 0.2630449631687952
         }
       },
       "population_only": {
@@ -8956,13 +8956,13 @@
       "n": 30,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.06474834934186732,
-          "rmse": 0.10060791516869354
+          "mae": 0.06474841846588998,
+          "rmse": 0.1006079534141296
         },
         "affected": {
-          "log_mae": 1.826384717981387,
-          "log_rmse": 2.898392863735589,
-          "smape": 0.4743617229573823
+          "log_mae": 1.8263830235880296,
+          "log_rmse": 2.898387662606109,
+          "smape": 0.47436174375697093
         },
         "severity": {
           "accuracy": 0.9,
@@ -8997,8 +8997,8 @@
         "calibration": {
           "affected_80_coverage": 0.8333333333333334,
           "damage_rate_80_coverage": 0.9666666666666667,
-          "mean_width_affected": 230553.76808878582,
-          "mean_width_damage_rate": 0.3216034710756503
+          "mean_width_affected": 230553.6917175293,
+          "mean_width_damage_rate": 0.3216034285762968
         }
       },
       "population_only": {
@@ -9089,13 +9089,13 @@
       "n": 7,
       "tabpfn": {
         "damage_rate": {
-          "mae": 8.112635259749368e-05,
-          "rmse": 8.37465839403575e-05
+          "mae": 8.112306906176465e-05,
+          "rmse": 8.371039506921975e-05
         },
         "affected": {
-          "log_mae": 3.640652550239736,
-          "log_rmse": 4.1230373172505885,
-          "smape": 0.8238645195085663
+          "log_mae": 3.6406624358827058,
+          "log_rmse": 4.123049839514527,
+          "smape": 0.8238647543462785
         },
         "severity": {
           "accuracy": 1.0,
@@ -9130,8 +9130,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 14116.849282400948,
-          "mean_width_damage_rate": 0.0035306463084582773
+          "mean_width_affected": 14116.850285121373,
+          "mean_width_damage_rate": 0.003530647256411612
         }
       },
       "population_only": {
@@ -9222,13 +9222,13 @@
       "n": 17,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.15700721931082529,
-          "rmse": 0.26613803345412684
+          "mae": 0.1570073306980324,
+          "rmse": 0.2661383651442156
         },
         "affected": {
-          "log_mae": 2.347638147089916,
-          "log_rmse": 3.0400695240211406,
-          "smape": 0.6432237412667505
+          "log_mae": 2.3476319402805608,
+          "log_rmse": 3.040063724749643,
+          "smape": 0.6432231053360936
         },
         "severity": {
           "accuracy": 0.7058823529411765,
@@ -9263,8 +9263,8 @@
         "calibration": {
           "affected_80_coverage": 0.8823529411764706,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 40689.347631117875,
-          "mean_width_damage_rate": 0.42899529255159635
+          "mean_width_affected": 40689.287233240466,
+          "mean_width_damage_rate": 0.4289952776298913
         }
       },
       "population_only": {
@@ -9355,13 +9355,13 @@
       "n": 27,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.0877290308073439,
-          "rmse": 0.1749070993547679
+          "mae": 0.08772885157248195,
+          "rmse": 0.17490676995309562
         },
         "affected": {
-          "log_mae": 2.4420077319247873,
-          "log_rmse": 3.2495810909524545,
-          "smape": 0.6471130524167358
+          "log_mae": 2.4419947391031545,
+          "log_rmse": 3.2495614885554662,
+          "smape": 0.6471127327129371
         },
         "severity": {
           "accuracy": 0.9629629629629629,
@@ -9396,8 +9396,8 @@
         "calibration": {
           "affected_80_coverage": 0.9629629629629629,
           "damage_rate_80_coverage": 0.9259259259259259,
-          "mean_width_affected": 53249.0958082411,
-          "mean_width_damage_rate": 0.23536576217695795
+          "mean_width_affected": 53249.123379177516,
+          "mean_width_damage_rate": 0.23536565046998914
         }
       },
       "population_only": {
@@ -9488,13 +9488,13 @@
       "n": 11,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.07600498841665368,
-          "rmse": 0.2301422190184639
+          "mae": 0.07600464728999544,
+          "rmse": 0.2301412533827182
         },
         "affected": {
-          "log_mae": 2.8342846063166216,
-          "log_rmse": 3.6045155097882065,
-          "smape": 0.684760076621409
+          "log_mae": 2.8343193111752347,
+          "log_rmse": 3.6045323999878933,
+          "smape": 0.6847709600664339
         },
         "severity": {
           "accuracy": 0.9090909090909091,
@@ -9529,8 +9529,8 @@
         "calibration": {
           "affected_80_coverage": 0.9090909090909091,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 22475.347104159267,
-          "mean_width_damage_rate": 0.1856951466338201
+          "mean_width_affected": 22475.35688088157,
+          "mean_width_damage_rate": 0.18569514595649458
         }
       },
       "population_only": {
@@ -9621,13 +9621,13 @@
       "n": 11,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.1318911157052964,
-          "rmse": 0.21917299077779534
+          "mae": 0.13189142940225587,
+          "rmse": 0.21917330180968106
         },
         "affected": {
-          "log_mae": 3.3129423062642687,
-          "log_rmse": 3.6982136084670443,
-          "smape": 0.8582582395219138
+          "log_mae": 3.3129532545499454,
+          "log_rmse": 3.698222360469621,
+          "smape": 0.8582601640967482
         },
         "severity": {
           "accuracy": 0.9090909090909091,
@@ -9662,8 +9662,8 @@
         "calibration": {
           "affected_80_coverage": 0.9090909090909091,
           "damage_rate_80_coverage": 0.9090909090909091,
-          "mean_width_affected": 89585.83165671608,
-          "mean_width_damage_rate": 0.4162411425283856
+          "mean_width_affected": 89585.73299893466,
+          "mean_width_damage_rate": 0.41624135860580613
         }
       },
       "population_only": {
@@ -9754,13 +9754,13 @@
       "n": 17,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.07547570573757677,
-          "rmse": 0.1842522301808229
+          "mae": 0.07547581754507744,
+          "rmse": 0.18425196284068357
         },
         "affected": {
-          "log_mae": 2.8369925239295597,
-          "log_rmse": 4.197110294601377,
-          "smape": 0.6175863283490087
+          "log_mae": 2.8369944096400856,
+          "log_rmse": 4.197112295334727,
+          "smape": 0.6175865008339052
         },
         "severity": {
           "accuracy": 0.9411764705882353,
@@ -9795,8 +9795,8 @@
         "calibration": {
           "affected_80_coverage": 0.9411764705882353,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 37577.10772974351,
-          "mean_width_damage_rate": 0.282149447080241
+          "mean_width_affected": 37577.08941470875,
+          "mean_width_damage_rate": 0.28214940239045333
         }
       },
       "population_only": {
@@ -9887,13 +9887,13 @@
       "n": 5,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.09109032312624157,
-          "rmse": 0.18751464421990066
+          "mae": 0.09109075133380946,
+          "rmse": 0.18751448234203383
         },
         "affected": {
-          "log_mae": 3.1279253034746226,
-          "log_rmse": 3.4835284006867586,
-          "smape": 0.8324052448545123
+          "log_mae": 3.12792978206802,
+          "log_rmse": 3.483535107573081,
+          "smape": 0.8324050957648381
         },
         "severity": {
           "accuracy": 0.8,
@@ -9928,8 +9928,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 49538.42012939453,
-          "mean_width_damage_rate": 0.3495775339193642
+          "mean_width_affected": 49538.36351318359,
+          "mean_width_damage_rate": 0.34957762227859346
         }
       },
       "population_only": {
@@ -10020,13 +10020,13 @@
       "n": 13,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.104903020597905,
-          "rmse": 0.23169774089629608
+          "mae": 0.10490266890847708,
+          "rmse": 0.23169771892083815
         },
         "affected": {
-          "log_mae": 3.5943869475663486,
-          "log_rmse": 4.743334698951133,
-          "smape": 0.7462427332663109
+          "log_mae": 3.5943892513245532,
+          "log_rmse": 4.743335621905512,
+          "smape": 0.7462433166931759
         },
         "severity": {
           "accuracy": 0.8461538461538461,
@@ -10061,8 +10061,8 @@
         "calibration": {
           "affected_80_coverage": 0.8461538461538461,
           "damage_rate_80_coverage": 0.9230769230769231,
-          "mean_width_affected": 81182.88900522086,
-          "mean_width_damage_rate": 0.21722193227973408
+          "mean_width_affected": 81182.93503277119,
+          "mean_width_damage_rate": 0.2172219185427261
         }
       },
       "population_only": {
@@ -10153,13 +10153,13 @@
       "n": 25,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.19011826116959285,
-          "rmse": 0.3026508759015557
+          "mae": 0.19011818975403158,
+          "rmse": 0.3026508738989138
         },
         "affected": {
-          "log_mae": 1.4742777710688761,
-          "log_rmse": 2.3425141779988294,
-          "smape": 0.4476218110827912
+          "log_mae": 1.4742721377505625,
+          "log_rmse": 2.3425179277230317,
+          "smape": 0.4476187851667996
         },
         "severity": {
           "accuracy": 0.68,
@@ -10194,8 +10194,8 @@
         "calibration": {
           "affected_80_coverage": 0.76,
           "damage_rate_80_coverage": 0.84,
-          "mean_width_affected": 56871.154987182614,
-          "mean_width_damage_rate": 0.32812363738659767
+          "mean_width_affected": 56871.08241607666,
+          "mean_width_damage_rate": 0.3281236838595942
         }
       },
       "population_only": {
@@ -10286,13 +10286,13 @@
       "n": 12,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.21160195086486056,
-          "rmse": 0.3789933389745656
+          "mae": 0.21160202961376248,
+          "rmse": 0.3789932149199667
         },
         "affected": {
-          "log_mae": 3.321097386017414,
-          "log_rmse": 4.515960024827615,
-          "smape": 0.7032897301719377
+          "log_mae": 3.3210880005859202,
+          "log_rmse": 4.515956882776496,
+          "smape": 0.7032865421909227
         },
         "severity": {
           "accuracy": 0.75,
@@ -10327,8 +10327,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 15409.960105895996,
-          "mean_width_damage_rate": 0.337328680412611
+          "mean_width_affected": 15409.945154825846,
+          "mean_width_damage_rate": 0.33732866590920213
         }
       },
       "population_only": {
@@ -10419,13 +10419,13 @@
       "n": 8,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.012774116437204067,
-          "rmse": 0.027734765384894174
+          "mae": 0.012774333979241784,
+          "rmse": 0.02773498551699542
         },
         "affected": {
-          "log_mae": 2.7663076711979473,
-          "log_rmse": 3.7752003249971566,
-          "smape": 0.6765779544735355
+          "log_mae": 2.766316258140357,
+          "log_rmse": 3.7752056908659326,
+          "smape": 0.676579372762643
         },
         "severity": {
           "accuracy": 1.0,
@@ -10460,8 +10460,8 @@
         "calibration": {
           "affected_80_coverage": 0.875,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 31371.10468673706,
-          "mean_width_damage_rate": 0.1592388624412706
+          "mean_width_affected": 31371.0803565979,
+          "mean_width_damage_rate": 0.15923892713908572
         }
       },
       "population_only": {
@@ -10552,13 +10552,13 @@
       "n": 17,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.1355338995771469,
-          "rmse": 0.22825199200216337
+          "mae": 0.13553376233889036,
+          "rmse": 0.2282520072185795
         },
         "affected": {
-          "log_mae": 2.5969983803806227,
-          "log_rmse": 3.6593372509352995,
-          "smape": 0.6286323882184701
+          "log_mae": 2.596981126335283,
+          "log_rmse": 3.659327979488491,
+          "smape": 0.628628289579016
         },
         "severity": {
           "accuracy": 0.8235294117647058,
@@ -10593,8 +10593,8 @@
         "calibration": {
           "affected_80_coverage": 0.9411764705882353,
           "damage_rate_80_coverage": 0.8235294117647058,
-          "mean_width_affected": 111876.66603716683,
-          "mean_width_damage_rate": 0.3666671068811625
+          "mean_width_affected": 111876.70344094669,
+          "mean_width_damage_rate": 0.366667228158536
         }
       },
       "population_only": {
@@ -10685,13 +10685,13 @@
       "n": 18,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.09612636882951613,
-          "rmse": 0.18573811473876098
+          "mae": 0.09612641205274655,
+          "rmse": 0.1857381120783253
         },
         "affected": {
-          "log_mae": 3.1735532728723097,
-          "log_rmse": 4.329546690017978,
-          "smape": 0.6845204294235212
+          "log_mae": 3.1735533286313324,
+          "log_rmse": 4.329545564821723,
+          "smape": 0.6845208062381529
         },
         "severity": {
           "accuracy": 0.8888888888888888,
@@ -10726,8 +10726,8 @@
         "calibration": {
           "affected_80_coverage": 0.8888888888888888,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 105862.92965359158,
-          "mean_width_damage_rate": 0.3852650226391334
+          "mean_width_affected": 105862.95964898003,
+          "mean_width_damage_rate": 0.38526501529850066
         }
       },
       "population_only": {
@@ -10818,13 +10818,13 @@
       "n": 35,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.11211820562477888,
-          "rmse": 0.19663486567696872
+          "mae": 0.11211833004032792,
+          "rmse": 0.19663486825603527
         },
         "affected": {
-          "log_mae": 1.2744106557701051,
-          "log_rmse": 1.938082971223046,
-          "smape": 0.4320286631864668
+          "log_mae": 1.2744107793583943,
+          "log_rmse": 1.938084637594625,
+          "smape": 0.43202855723460215
         },
         "severity": {
           "accuracy": 0.9142857142857143,
@@ -10859,8 +10859,8 @@
         "calibration": {
           "affected_80_coverage": 0.7714285714285715,
           "damage_rate_80_coverage": 0.8857142857142857,
-          "mean_width_affected": 145500.71507434844,
-          "mean_width_damage_rate": 0.3019645323211859
+          "mean_width_affected": 145500.7731388637,
+          "mean_width_damage_rate": 0.3019646178165983
         }
       },
       "population_only": {
@@ -10951,13 +10951,13 @@
       "n": 9,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.056927823403193085,
-          "rmse": 0.0946059527380042
+          "mae": 0.056927936127179085,
+          "rmse": 0.09460616466864026
         },
         "affected": {
-          "log_mae": 2.946222272475186,
-          "log_rmse": 3.6651676629164545,
-          "smape": 0.6750963357888021
+          "log_mae": 2.946209223233206,
+          "log_rmse": 3.6651495954449396,
+          "smape": 0.6750950960878427
         },
         "severity": {
           "accuracy": 0.8888888888888888,
@@ -10992,8 +10992,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 0.8888888888888888,
-          "mean_width_affected": 100221.1600104438,
-          "mean_width_damage_rate": 0.21168663806747645
+          "mean_width_affected": 100221.1414557563,
+          "mean_width_damage_rate": 0.2116867206318097
         }
       },
       "population_only": {
@@ -11084,13 +11084,13 @@
       "n": 14,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.1821302415169992,
-          "rmse": 0.277911999340977
+          "mae": 0.18212987021760618,
+          "rmse": 0.2779114455736637
         },
         "affected": {
-          "log_mae": 3.1188573025042876,
-          "log_rmse": 4.623864074180828,
-          "smape": 0.6178293245001634
+          "log_mae": 3.118857050015962,
+          "log_rmse": 4.623866234050945,
+          "smape": 0.6178288175965326
         },
         "severity": {
           "accuracy": 0.7142857142857143,
@@ -11125,8 +11125,8 @@
         "calibration": {
           "affected_80_coverage": 0.8571428571428571,
           "damage_rate_80_coverage": 0.8571428571428571,
-          "mean_width_affected": 165736.2670222691,
-          "mean_width_damage_rate": 0.4938138677721976
+          "mean_width_affected": 165736.14703696113,
+          "mean_width_damage_rate": 0.49381417450993986
         }
       },
       "population_only": {
@@ -11217,13 +11217,13 @@
       "n": 11,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.09634005148507953,
-          "rmse": 0.1565328370438192
+          "mae": 0.09634023335227025,
+          "rmse": 0.15653309584044447
         },
         "affected": {
-          "log_mae": 2.9409712317875405,
-          "log_rmse": 4.093715422300618,
-          "smape": 0.6212117030731927
+          "log_mae": 2.9409751232451176,
+          "log_rmse": 4.0937226097864725,
+          "smape": 0.6212115660552309
         },
         "severity": {
           "accuracy": 1.0,
@@ -11258,8 +11258,8 @@
         "calibration": {
           "affected_80_coverage": 1.0,
           "damage_rate_80_coverage": 1.0,
-          "mean_width_affected": 84006.61408857866,
-          "mean_width_damage_rate": 0.3456807653948834
+          "mean_width_affected": 84006.67032068426,
+          "mean_width_damage_rate": 0.3456808650781485
         }
       },
       "population_only": {
@@ -11350,13 +11350,13 @@
       "n": 20,
       "tabpfn": {
         "damage_rate": {
-          "mae": 0.08301067252152133,
-          "rmse": 0.182790372213221
+          "mae": 0.083010897317325,
+          "rmse": 0.18279040323706588
         },
         "affected": {
-          "log_mae": 2.6045390868995186,
-          "log_rmse": 3.6505889922818633,
-          "smape": 0.625422707749522
+          "log_mae": 2.6045383367453643,
+          "log_rmse": 3.6505870744305855,
+          "smape": 0.6254225522398422
         },
         "severity": {
           "accuracy": 0.95,
@@ -11391,8 +11391,8 @@
         "calibration": {
           "affected_80_coverage": 0.95,
           "damage_rate_80_coverage": 0.95,
-          "mean_width_affected": 84856.58216400146,
-          "mean_width_damage_rate": 0.23782602967112326
+          "mean_width_affected": 84856.53286209106,
+          "mean_width_damage_rate": 0.23782613052753732
         }
       },
       "population_only": {
@@ -11480,12 +11480,23 @@
     }
   ],
   "latency_ms_deployed": {
-    "p50": 288.81687149987556,
-    "p95": 299.72708960012824,
+    "p50": 586.9533814998249,
+    "p95": 634.6498788000645,
     "n": 30,
     "batch_size": 1,
+    "context_size": 128,
+    "n_estimators": 1,
     "tabpfn_active": true
   },
-  "generated_at": "2026-06-16T12:27:41.148450+00:00",
-  "git_commit": "a93bcb5"
+  "latency_ms_capability": {
+    "p50": 24512.803303000055,
+    "p95": 36356.97029205003,
+    "n": 30,
+    "batch_size": 1,
+    "context_size": 1261,
+    "n_estimators": 8,
+    "tabpfn_active": true
+  },
+  "generated_at": "2026-08-06T07:36:35.213341+00:00",
+  "git_commit": "7b086ff"
 }

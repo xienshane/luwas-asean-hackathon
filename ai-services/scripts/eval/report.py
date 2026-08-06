@@ -131,7 +131,8 @@ def to_markdown(results: dict, path: str | Path) -> None:
     dataset       = stamped.get("dataset", {})
     overall       = stamped.get("overall", {})
     per_storm     = stamped.get("per_storm", [])
-    latency       = stamped.get("latency_ms_deployed")  # may be None/absent
+    latency       = stamped.get("latency_ms_deployed")    # may be None/absent
+    latency_cap   = stamped.get("latency_ms_capability")  # may be None/absent
 
     tabpfn_o  = overall.get("tabpfn",          {})
     pop_o     = overall.get("population_only",  {})
@@ -177,6 +178,15 @@ def to_markdown(results: dict, path: str | Path) -> None:
     else:
         latency_line = "- **Latency (deployed config):** n/a (run without --latency)"
 
+    if latency_cap:
+        cap_p50 = _fmt(latency_cap.get("p50"), 1)
+        cap_p95 = _fmt(latency_cap.get("p95"), 1)
+        latency_cap_line = (
+            f"- **Latency (capability config):** p50 = {cap_p50} ms, p95 = {cap_p95} ms"
+        )
+    else:
+        latency_cap_line = None
+
     lines += [
         "| Metric | TabPFN | population_only | heuristic |",
         "| --- | --- | --- | --- |",
@@ -186,8 +196,10 @@ def to_markdown(results: dict, path: str | Path) -> None:
         f"| damage_rate 80 % coverage | **{_fmt(tf_dr_cov)}** | — | — |",
         "",
         latency_line,
-        "",
     ]
+    if latency_cap_line:
+        lines.append(latency_cap_line)
+    lines.append("")
 
     # -----------------------------------------------------------------------
     # Section 2 — Overall metrics table
@@ -315,19 +327,27 @@ def to_markdown(results: dict, path: str | Path) -> None:
     dep_ctx      = config.get("deployed_context",     "n/a")
     dep_nest     = config.get("deployed_n_estimators", "n/a")
 
+    # Name the run for what it is: a capped context at the deployed estimator
+    # count IS the deployed config, and labelling it "capability" would be the
+    # exact mislabelling this report exists to prevent.
+    is_deployed_run = (eval_ctx == dep_ctx and eval_nest == dep_nest)
+    run_label = "deployed" if is_deployed_run else "capability"
+
     lines += [
         "## Evaluation Configuration",
         "",
         f"- **Folds:** {folds}  |  **Rows:** {rows}  |  **Storms:** {storms}",
         f"- **Year range:** {year_range[0]}–{year_range[1] if len(year_range) > 1 else 'n/a'}",
         f"- **Headline target:** {headline_tgt}  |  **Framing:** {framing}",
-        f"- **Accuracy run (capability):** context = {eval_ctx}, "
+        f"- **This run ({run_label} config):** context = {eval_ctx}, "
         f"n_estimators = {eval_nest}.",
         f"- **Deployed config (production latency):** context = {dep_ctx}, "
         f"n_estimators = {dep_nest}.",
-        "  Accuracy figures above were obtained at the *stronger* accuracy config; "
-        "the latency figure reflects the *deployed* config. They are intentionally "
-        "different (see MODEL_CARD §5.3).",
+        "  The two configs are intentionally different: the deployed one trades "
+        "accuracy for CPU inference under the ~2 s interactive budget on free-tier "
+        "hardware. Accuracy at *both* configs, with the delta, is published in "
+        "MODEL_CARD §1 (\"Accuracy & Error Rates\"); the run above reports whichever "
+        "config its own header names.",
         "",
     ]
 
@@ -342,7 +362,8 @@ def to_markdown(results: dict, path: str | Path) -> None:
         "- **Prediction intervals** (80 % coverage columns) are decision-support "
         "tools, not guarantees — coordinators should treat them as plausible "
         "ranges rather than precise bounds.  "
-        "See MODEL_CARD §5.3 and §4.3 for calibration assumptions and limitations.",
+        "See MODEL_CARD §1 (\"Interval Calibration\") and §2 (\"Known Limitations "
+        "& Mitigations\") for calibration assumptions and limitations.",
         "- **Baselines:** `population_only` regresses on population density only; "
         "`heuristic` applies fixed damage fractions per wind-speed bucket.  "
         "Both are deterministic and produce no prediction intervals.",
