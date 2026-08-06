@@ -1,0 +1,112 @@
+# LUWAS country pack — Da Nang, Vietnam
+#
+# STATUS: STUB. Nothing in this repo has been run against Vietnamese data.
+# Values are filled only where a real source is known. Every `null` carries a
+# `needs:` note saying exactly what would fill it — a stub with honest holes is
+# a usable plan; a stub with invented values is a liability.
+#
+# Surfaces and their PH counterparts: docs/COUNTRY_PACKS.md
+
+pack:
+  id: vn-danang
+  country: VN
+  region: Da Nang
+  status: stub
+  based_on: ph-cebu          # the shipping pilot pack this was derived from
+
+# --- 1. Admin boundaries + population --------------------------------------
+admin:
+  unit: ward                 # phường (urban) / xã (rural) — the barangay analogue
+  boundary_source: null
+  boundary_needs: >
+    A ward-level polygon layer for Da Nang (OSM extract or an official GSO /
+    provincial GIS release). Loaded through data-pipeline/ingest_static.py into
+    public.barangays — no schema change; the code column is a free string.
+  population_source: null
+  population_needs: >
+    Ward-level population counts from the General Statistics Office (GSO).
+    Name-matched to the boundary layer, same path as ingest_population().
+  code_scheme: null
+  code_needs: >
+    The VN administrative code equivalent of PSGC, to key units stably across
+    releases.
+
+# --- 2. Storm scale ---------------------------------------------------------
+storm_scale:
+  # LUWAS needs ONE ordinal 0-5. PH uses PAGASA categories
+  # (data-pipeline/build_training_table.py CATEGORY_ORDER).
+  authority: Viet Nam national storm / natural-disaster risk-level framework
+  ordinal_map: null
+  ordinal_needs: >
+    The VN level -> 0..5 ordinal lookup, plus the matching sustained-wind
+    thresholds for the live path. Both must change together:
+    build_training_table.py CATEGORY_ORDER and web/lib/live/conditions.ts.
+  live_feed: open-meteo      # source-agnostic; already used for the PH pilot
+  sample_points: null
+  sample_points_needs: >
+    2-4 lat/lng points spanning the Da Nang operational area, for the
+    worst-case wind read (PH analogue: CEBU_SAMPLE_POINTS in conditions.ts).
+
+# --- 3. Hazard rasters ------------------------------------------------------
+hazard:
+  authority: VNDMA (Viet Nam Disaster and Dyke Management Authority)
+  layers: null
+  layers_needs: >
+    Per-hazard polygon/raster layers (flood by return period, landslide, storm
+    surge) with the per-polygon intensity attribute named, in the shape of
+    NOAH_LAYERS in data-pipeline/ingest_static.py. Raw geometry stays local;
+    only per-ward exposure is persisted.
+
+# --- 4. Impact history (the TabPFN context) --------------------------------
+impact_history:
+  # TabPFN v2 is in-context: this CSV IS the context. Swapping countries swaps
+  # a CSV — there is no training job. See docs/COUNTRY_PACKS.md surface 4.
+  table_path: null
+  table_needs: >
+    A CSV with the canonical FEATURE_COLUMNS (ai-services/app/services/impact_model.py)
+    plus targets `affected` and `damage_rate`, one row per (storm, ward-or-province).
+    Candidate sources: VN national disaster damage reporting, provincial
+    post-storm assessments. NOT sourced.
+  retraining_required: false
+  accuracy_status: not_measured
+  accuracy_needs: >
+    Run ai-services/scripts/evaluate_impact.py (LOTO, country-agnostic) against
+    the VN table. Do NOT reuse the Philippine accuracy figures.
+
+# --- 5. Language / lexicon --------------------------------------------------
+language:
+  primary: vi
+  parser_model: aisingapore/Gemma-SEA-LION-v4-27B-IT   # post-trained on Vietnamese
+  status: ships                                        # not future work
+  acceptance_test: ai-services/tests/test_parse_presets.py::test_vietnamese_preset_extracts_and_translates
+  lexicon: null
+  lexicon_needs: >
+    Optional. Local terms for flooded / cut off / evacuation centre, to raise
+    extraction confidence. Parsing works without it.
+
+# --- 6. Intake channel + gazetteer -----------------------------------------
+intake:
+  channels:
+    - id: sms
+      status: adapter_needed
+      needs: >
+        A local SMS aggregator webhook adapter. The inbound payload is
+        normalised in web/lib/sms/normalize.ts, so the parse-and-store path
+        downstream is already channel-agnostic.
+    - id: zalo
+      status: noted_not_built
+      needs: >
+        Zalo is the messaging channel with real reach in Vietnam. Same adapter
+        shape as SMS; no work has been done on it.
+  gazetteer: null
+  gazetteer_needs: >
+    Falls out of surface 1 — findBarangayByName (web/lib/sms/barangay.ts)
+    resolves against whatever admin table is loaded. Until the ward table is
+    loaded, Vietnamese place names do not resolve and reports land flagged for
+    coordinator review (never silently guessed). This is the demo's Vietnamese
+    preset behaviour.
+
+# --- Deterministic core: country-independent -------------------------------
+# Sphere supply standards (15 L water/person/day, 2,100 kcal/person/day) and the
+# OR-Tools routing over the pgRouting distance matrix carry over unchanged. They
+# are not country pack surfaces.

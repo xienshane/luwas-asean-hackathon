@@ -93,11 +93,15 @@ def fit_predict_tabpfn(
     n_estimators: int,
     device: str,
     seed: int = 0,
+    context_cap: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Fit a TabPFNRegressor and return (mean, lo, hi) predictions over X_test.
 
-    No row cap — the full per-fold context is used for a fair capability read.
-    (Contrast with the deployed 128-row cap in Settings.tabpfn_context_size.)
+    ``context_cap=None`` (default) uses the full per-fold context — a fair
+    capability read. Passing a cap replicates the deployed subsample exactly:
+    the same seeded ``default_rng(0).choice`` call as
+    ``ImpactPredictor.warmup`` (`app/services/impact_model.py`), so a capped run
+    measures the config the service actually serves rather than a new one.
 
     ignore_pretraining_limits=True is required: with ~1.26k context rows the
     table exceeds TabPFN's default 1k CPU guard.
@@ -109,6 +113,12 @@ def fit_predict_tabpfn(
     hi   : ndarray, shape (n_test,)   — 90th-percentile quantile (upper 80% bound)
     """
     from tabpfn import TabPFNRegressor
+
+    if context_cap is not None and len(X_train) > context_cap:
+        # Same call shape and seed as the deployed subsample; a different draw
+        # would be a different experiment.
+        idx = np.random.default_rng(0).choice(len(X_train), context_cap, replace=False)
+        X_train, y_train = X_train[idx], y_train[idx]
 
     m = TabPFNRegressor(
         device=device,

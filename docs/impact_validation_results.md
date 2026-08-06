@@ -1,6 +1,6 @@
 # LUWAS Impact-Model Validation Report
 
-*Generated:* 2026-06-16T12:27:41.148450+00:00  |  *Commit:* `a93bcb5`
+*Generated:* 2026-08-06T07:36:35.237764+00:00  |  *Commit:* `7b086ff`
 
 ## Headline Numbers (Slide 11)
 
@@ -13,7 +13,8 @@ Key figures for the executive summary / slide deck.
 | affected 80 % coverage | **0.8588** | — | — |
 | damage_rate 80 % coverage | **0.9040** | — | — |
 
-- **Latency (deployed config):** p50 = 288.8 ms, p95 = 299.7 ms
+- **Latency (deployed config):** p50 = 587.0 ms, p95 = 634.6 ms
+- **Latency (capability config):** p50 = 24512.8 ms, p95 = 36357.0 ms
 
 ## Overall Metrics
 
@@ -138,14 +139,14 @@ The headline macro-F1 averages over all four classes, so it is dragged down by m
 - **Folds:** 85  |  **Rows:** 1261  |  **Storms:** 85
 - **Year range:** 2010–2020
 - **Headline target:** damage_rate  |  **Framing:** regressor
-- **Accuracy run (capability):** context = full, n_estimators = 8.
+- **This run (capability config):** context = full, n_estimators = 8.
 - **Deployed config (production latency):** context = 128, n_estimators = 1.
-  Accuracy figures above were obtained at the *stronger* accuracy config; the latency figure reflects the *deployed* config. They are intentionally different (see MODEL_CARD §5.3).
+  The two configs are intentionally different: the deployed one trades accuracy for CPU inference under the ~2 s interactive budget on free-tier hardware. Accuracy at *both* configs, with the delta, is published in MODEL_CARD §1 ("Accuracy & Error Rates"); the run above reports whichever config its own header names.
 
 ## How to Read This Report
 
 - **Granularity:** metrics are computed at *province level* (barangay predictions aggregated to province before scoring).
-- **Prediction intervals** (80 % coverage columns) are decision-support tools, not guarantees — coordinators should treat them as plausible ranges rather than precise bounds.  See MODEL_CARD §5.3 and §4.3 for calibration assumptions and limitations.
+- **Prediction intervals** (80 % coverage columns) are decision-support tools, not guarantees — coordinators should treat them as plausible ranges rather than precise bounds.  See MODEL_CARD §1 ("Interval Calibration") and §2 ("Known Limitations & Mitigations") for calibration assumptions and limitations.
 - **Baselines:** `population_only` regresses on population density only; `heuristic` applies fixed damage fractions per wind-speed bucket.  Both are deterministic and produce no prediction intervals.
 - **TabPFN** is the primary model; a negative delta (Δ < 0) means TabPFN is better than the baseline on that metric.
 - **Severity macro-F1 is held down by class imbalance:** the minority `moderate` and `high` classes have very low support and are nearly *unpredicted* (per-class F1 ≈ 0), so the model effectively distinguishes `low` vs `severe`. See the per-class breakdown above — read macro-F1 with that limitation in mind rather than as uniform 4-class skill.

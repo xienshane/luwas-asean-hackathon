@@ -5,9 +5,9 @@ for the hackathon window but on the credible path** — as a plan, not silence. 
 reviewer issue maps to a roadmap entry with a foundation, a near-term slice, the full build,
 and rough sequencing.
 
-It is deliberately honest about three things: what is **already in the codebase**, what is
-**committed near-term** (the feedback sprint, not yet merged), and what is **genuinely
-deferred** because it is data-, compute-, or field-gated. A judge who can tell the three
+It is deliberately honest about three things: what is **already in the codebase**, what was
+**committed near-term** (the feedback sprint, merged as PRs #29–#33), and what is
+**genuinely deferred** because it is data-, compute-, or field-gated. A judge who can tell the three
 apart trusts all three.
 
 > Companion docs: validation numbers live in `docs/MODEL_CARD.md`, the vulnerability/fairness
@@ -22,7 +22,7 @@ apart trusts all three.
 
 - **Built** — in the repository today (file/migration cited).
 - **Near-term** — committed for the post-hackathon feedback sprint (dev-plan tasks 4.3–4.7,
-  5.1); surfaces latent capability, no new data dependency. Not yet merged.
+  5.1); surfaces latent capability, no new data dependency. **Merged** (PRs #29–#33).
 - **Roadmap** — the full version below; data-, compute-, or field-gated.
 
 **Horizons** (rough sequencing — calendar is indicative, gates are real)
@@ -47,7 +47,7 @@ so the deferral is honest, not evasive.
 | **3 — Historical-only data** | Model trained on 2010–2020 impact (`training_table.csv`); `max_wind_kmh` ingestion hook stubbed in `build_training_table.py` | One free live rainfall/wind signal via the hook or as a map overlay (4.7, stretch) | **R2** — multi-sensor real-time fusion + retraining cadence | H1→H3 |
 | **4 — NLP misinterpretation** | SEA-LION parser with per-field confidence, low-confidence review flag, Gemini fallback, rate limiter (`parser.py`) | Few-shot disaster lexicon + ~20-item gold-set eval + confirm low-confidence gating (4.6) | **R3** — fine-tune on a curated disaster-comms corpus | H1→H3 |
 | **9 — No field validation** | End-to-end pipeline runs on real Cebu City data; demo reframed as a simulated exercise | Tabletop simulated exercise scripted for the demo | **R4** — staged pilot with named Cebu partners | H1→H2 |
-| **10 — ASEAN expansion** | Modular by design: 3 liftable FastAPI routers, parameterized SQL, SEA-LION multilingual across ASEAN, Cebu-scoped data | Document the per-country pack model (this doc) | **R5** — per-country dataset/hazard/routing/language/policy packs | H2→H3 |
+| **10 — ASEAN expansion** | Modular by design: 3 liftable FastAPI routers, parameterized SQL, SEA-LION multilingual across ASEAN, Cebu-scoped data | Per-country pack model documented: `docs/COUNTRY_PACKS.md` + `packs/vn-danang.pack.yaml` | **R5** — per-country dataset/hazard/routing/language/policy packs | H2→H3 |
 
 **Dependency spine:** the pilot (**R4**) is also the *data engine* — partner incident logs
 become the barangay-level labels that **R1** needs, and a live activation is where **R2**'s
@@ -132,7 +132,7 @@ language, misspellings ("baha", "lubog", "naa mi sa atop"). Misreads misprioriti
 
 **Foundation already built.** The parser already emits per-field confidence scores, routes
 low-confidence extractions to coordinator review instead of auto-committing, falls back to
-Gemini on API error, and respects the 10-calls/min free tier (`parser.py`, `models/parse.py`).
+Gemini on API error, and respects the 10-calls/min free tier (`ai-services/app/services/parser.py`, `ai-services/app/models/parse.py`).
 Human review *at points of uncertainty* is already the design.
 
 **Near-term (H1).** Harden prompting **without** fine-tuning (SEA-LION's free tier is

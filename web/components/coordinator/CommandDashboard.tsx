@@ -34,7 +34,12 @@ import DemoConsole from './DemoConsole';
 import { capacityAlert } from '@/lib/coordinator/capacityAlert';
 import { createSerialRunner } from '@/lib/coordinator/serialRunner';
 
-export default function CommandDashboard() {
+interface CommandDashboardProps {
+  /** Resolved on the server at request time so it cannot drift from /api/preflight. */
+  demoConsole?: boolean;
+}
+
+export default function CommandDashboard({ demoConsole = false }: CommandDashboardProps) {
   const [currentView, setCurrentView] = useState('map');
   // Team to focus when arriving on the Teams & Dispatch tab (e.g. after clicking its route).
   const [focusTeamId, setFocusTeamId] = useState<string | null>(null);
@@ -126,7 +131,7 @@ export default function CommandDashboard() {
   const addActivityLog = (event: string, type: 'info' | 'warn' | 'success' | 'alert' = 'info') => {
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     setActivityLogs(prev => [
-      { id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, time: timeStr, event, type },
+      { id: `log-${crypto.randomUUID()}`, time: timeStr, event, type },
       ...prev
     ]);
   };
@@ -143,7 +148,14 @@ export default function CommandDashboard() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(barangayId ? { barangayId } : {}),
         });
-        if (!res.ok) throw new Error(`pipeline responded ${res.status}`);
+        // The route returns 500 with a named cause when a stage fails. Narrate that
+        // cause — a route-save failure is not an AI outage, and saying so on stage
+        // answers the wrong question.
+        if (!res.ok) {
+          const detail = await res.json().catch(() => null);
+          addActivityLog(`PIPELINE: failed — ${detail?.error ?? `server responded ${res.status}`}.`, 'alert');
+          return;
+        }
         const out = await res.json();
         addActivityLog(
           `PIPELINE: ${out.predictions ?? 0} predictions, ${out.routes ?? 0} routes generated.`,
@@ -153,17 +165,16 @@ export default function CommandDashboard() {
         const capacity = capacityAlert(out.dropped, (id) =>
           barangaysRef.current.find((b) => b.id === id)?.name ?? id);
         if (capacity) addActivityLog(capacity, 'alert');
-        await fetchCoordinatorMapData().then((map) => {
-          setBarangays(map.barangays);
-          setScores(map.scores);
-        }).catch((err) => {
-          console.error('Failed to refresh map after pipeline', err);
-        });
+        await refreshMap();
       } catch (err) {
+        // Only a genuine throw reaches here now — fetch rejected, i.e. no response.
         console.error('Pipeline run failed', err);
         addActivityLog('PIPELINE: failed to run (AI service unreachable).', 'alert');
       }
     }),
+    // Deliberately empty: the serial runner must be created once, and refreshMap only
+    // closes over stable setters, so the mount-time copy behaves like every later one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
   /* eslint-enable react-hooks/refs */
@@ -381,6 +392,12 @@ export default function CommandDashboard() {
         }
       }
 
+      // Make the panel and rail agree with what was just written. The stored score
+      // only moves when silent_area_score() next runs, so this does not repaint the
+      // pin — deliberately no rescore RPC here; that is a pipeline concern and it
+      // would slow the override the coordinator is watching.
+      await refreshMap();
+
       // Re-run pipeline to propagate parameters downstream
       addActivityLog(`PIPELINE: Recalculating routes with overridden values…`, 'info');
       await runPipeline(barangayId);
@@ -480,9 +497,22 @@ export default function CommandDashboard() {
         body: JSON.stringify({ mode: 'reroute' }),
       });
       const out = await res.json().catch(() => ({}));
+      // The graph edit landed regardless, so still repaint the roads — but a 500
+      // means nothing was redrawn, and announcing a redraw that did not happen is
+      // the exact failure W2's A5 was built to surface.
       try { setEdges(await fetchRoadStatus()); } catch { /* best-effort */ }
+      if (!res.ok) {
+        addActivityLog(
+          `RE-ROUTE: failed — ${out.error ?? `server responded ${res.status}`}. Graph updated, routes not redrawn.`,
+          'alert',
+        );
+        return;
+      }
       setRerouteNotice(`Re-routed: ${reasonLabel}`);
       addActivityLog(`RE-ROUTE: ${reasonLabel} — ${out.routes ?? 0} route(s) redrawn on real roads.`, 'warn');
+      // The fast path returns 200 with a note when it legitimately did nothing
+      // ("no stored manifests"). Without this the only reason is on the floor.
+      if (out.note) addActivityLog(`RE-ROUTE: ${out.note}.`, 'warn');
       const capLine = capacityAlert(out.dropped, (id) => barangaysRef.current.find(b => b.id === id)?.name ?? id);
       if (capLine) addActivityLog(capLine, 'alert');
       await refreshMap();
@@ -667,6 +697,10 @@ export default function CommandDashboard() {
 
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
+  // Bumped on every reset. Keying ManifestsView on it forces a remount, so its
+  // in-memory approve/reject history goes with the localStorage key below —
+  // clearing storage alone would leave a mounted view still showing the old run.
+  const [resetEpoch, setResetEpoch] = useState(0);
   const handleReset = () => setShowResetConfirm(true);
 
   const confirmReset = async () => {
@@ -683,9 +717,24 @@ export default function CommandDashboard() {
       setManifests({});
       setSelectedReport(null);
       setSelectedBarangay(null);
-      const [map, e] = await Promise.all([fetchCoordinatorMapData(), fetchRoadStatus()]);
+      // Ghosts of the previous run. Each one survives a truncate because it lives
+      // outside the tables /api/reset clears.
+      setDispatchPreview(null);      // the effect that clears it needs a matching
+                                     // active route, and routes are now empty
+      setRerouteNotice(null);
+      reroutedReportsRef.current.clear();
+      try {
+        localStorage.removeItem('manifest-history');
+      } catch {
+        /* private mode / storage disabled — nothing to clear */
+      }
+      setResetEpoch((n) => n + 1);
+      // Teams carry client-only dispatch status (/api/dispatch never writes to
+      // `teams`), so the rail keeps reading "dispatched" until we refetch.
+      const [map, t, e] = await Promise.all([fetchCoordinatorMapData(), fetchTeams(), fetchRoadStatus()]);
       setBarangays(map.barangays);
       setScores(map.scores);
+      setTeams(t);
       setEdges(e);
       addActivityLog('OPERATIONS: Cleared all reports and generated plans. Accounts and base data kept.', 'alert');
     } catch (err) {
@@ -743,6 +792,9 @@ export default function CommandDashboard() {
         `ANTICIPATORY PLAN: ${out.predictions ?? 0} predictions, ${out.manifests ?? 0} manifests (${out.source ?? 'model'}).`,
         'success',
       );
+      // The whole beat is watching the map change. Predictions feed impact_frac →
+      // score server-side; without this the pins hold pre-run values until a reload.
+      await refreshMap();
     } catch (err) {
       addActivityLog(`ANTICIPATORY PLAN: failed — ${err instanceof Error ? err.message : 'AI service unreachable'}.`, 'alert');
     } finally {
@@ -792,7 +844,7 @@ export default function CommandDashboard() {
   return (
     <div className="flex h-screen w-screen bg-bg text-fg font-sans overflow-hidden">
       <ConnectivityBanner tier={connectivity} />
-      {process.env.NEXT_PUBLIC_DEMO_CONSOLE === 'true' && <DemoConsole onLog={addActivityLog} />}
+      {demoConsole && <DemoConsole onLog={addActivityLog} />}
       {/* E2E hook (Phase 5.2): deterministic "map data + scores loaded" signal,
           so tests never depend on the MapLibre canvas. Renders nothing. */}
       <div
@@ -917,6 +969,7 @@ export default function CommandDashboard() {
         {/* VIEW: Supply Manifests */}
         {currentView === 'manifests' && (
           <ManifestsView
+            key={resetEpoch}
             barangays={barangays}
             manifests={manifests}
             predictions={predictions}

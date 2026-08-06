@@ -1,10 +1,14 @@
-# Phase 5.2 — Coordinator Flow User Test
+# User Testing — Coordinator Dispatch Flow
 
-**Goal:** 3–5 testers complete the dispatch golden path unaided; capture friction for Slide 11.
+**Status:** protocol written and runnable; **results not yet recorded** — the tables below
+are unfilled. Do not cite this as completed user testing until they are.
+
+**Goal:** 3–5 testers complete the dispatch golden path unaided; capture friction.
 
 ## Setup (facilitator)
 - Run the prod app: `npm --prefix web run build && npm --prefix web run start`.
-- Sign in URL: http://localhost:3000/login — coordinator@luwas.test / luwasdemo123.
+- Sign in at http://localhost:3000/login with the seeded coordinator account
+  (credentials are in `supabase/seed/00_demo.sql` — local demo data, not a live account).
 - Reset state from the dashboard (Reset → confirm) before each tester.
 
 ## Task given to each tester (read aloud, no hints)

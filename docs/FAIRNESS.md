@@ -58,7 +58,23 @@ We monitor predictive performance across the following segments:
 2. **High vs. Low Water Access Deficits:** Auditing if the model systematically underestimates affected counts in remote areas with poor WASH infrastructure.
 3. **Rural vs. Urban Centroids:** Guarding against urban bias, where dense urban centers with high-quality training inputs dominate the loss function, leaving sparse rural barangays with larger prediction errors.
 
-### 3.2 Mitigation Loop
+### 3.2 What Counts as a Finding (Materiality Threshold)
+
+Signed error is reported for **every** bucket, but a bucket is only *flagged* when its
+mean signed error reaches **0.25 × that bucket's own MAE** in the under-predicting
+direction (`MATERIALITY_BIAS_RATIO`, `ai-services/scripts/eval/segmented.py`). The
+threshold is relative rather than absolute because buckets differ in size and error
+scale, and an absolute cut in damage points could not be justified across them.
+
+The threshold governs the flag, never the report — raw signed error stays in every table,
+so calibrating the monitor cannot hide a finding.
+
+**Current result** ([`impact_segmented_error.md`](impact_segmented_error.md)): no bucket
+in either segmentation exceeds the threshold. The largest directional bias is −0.014
+against a bucket MAE of 0.118 (ratio −0.12) — residual under-prediction well inside noise
+for this sample size.
+
+### 3.3 Mitigation Loop
 If segmented error monitoring detects a systematic underprediction in a highly vulnerable group:
 - **Prioritization Calibration:** We adjust the weight weights ($w_i$) in the prioritization engine to over-compensate and ensure these groups are surfaced.
 - **Model Recalibration:** TabPFN's in-context training examples are re-balanced to include historically underrepresented storm profiles from marginalized regions.

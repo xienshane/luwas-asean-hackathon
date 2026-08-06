@@ -250,6 +250,7 @@ def _collect_fold(
     n_estimators: int,
     seed: int,
     device: str = "cpu",
+    context_cap: int | None = None,
 ) -> dict:
     """Run all three methods on one LOTO fold; return raw arrays.
 
@@ -266,11 +267,11 @@ def _collect_fold(
     # --- TabPFN: two separate fits (affected, damage_rate) ---
     aff_mean, aff_lo, aff_hi = fit_predict_tabpfn(
         X_train, train_df["affected"].to_numpy(dtype=float), X_test,
-        n_estimators=n_estimators, device=device, seed=seed,
+        n_estimators=n_estimators, device=device, seed=seed, context_cap=context_cap,
     )
     dr_mean, dr_lo, dr_hi = fit_predict_tabpfn(
         X_train, train_df["damage_rate"].to_numpy(dtype=float), X_test,
-        n_estimators=n_estimators, device=device, seed=seed,
+        n_estimators=n_estimators, device=device, seed=seed, context_cap=context_cap,
     )
 
     tabpfn = {
@@ -374,6 +375,7 @@ def run_loto(
     limit_storms: int | None = None,
     seed: int = 0,
     device: str = "cpu",
+    context_cap: int | None = None,
 ) -> dict:
     """Leave-One-Typhoon-Out evaluation: TabPFN vs population_only vs heuristic.
 
@@ -390,6 +392,10 @@ def run_loto(
         Random seed passed to TabPFN for reproducibility.
     device : str
         Compute device passed to TabPFN (default: "cpu").
+    context_cap : int | None
+        Cap the per-fold in-context rows to a seeded subsample. None (default)
+        uses the full context — the capability read. 128 replicates the
+        deployed config (Settings.tabpfn_context_size).
 
     Returns
     -------
@@ -403,7 +409,10 @@ def run_loto(
     for i, (storm, train_df, test_df) in enumerate(iter_loto_folds(df)):
         if limit_storms is not None and i >= limit_storms:
             break
-        fold_raw = _collect_fold(storm, train_df, test_df, n_estimators=n_estimators, seed=seed, device=device)
+        fold_raw = _collect_fold(
+            storm, train_df, test_df,
+            n_estimators=n_estimators, seed=seed, device=device, context_cap=context_cap,
+        )
         fold_results.append(fold_raw)
 
     pooled = _concat_pooled(fold_results)
@@ -426,7 +435,13 @@ def run_loto(
 # Public: measure_latency
 # ---------------------------------------------------------------------------
 
-def measure_latency(n: int = 30, batch_size: int = 1) -> dict:
+def measure_latency(
+    n: int = 30,
+    batch_size: int = 1,
+    *,
+    context_size: int | None = None,
+    n_estimators: int | None = None,
+) -> dict:
     """Measure inference latency at the DEPLOYED predictor config.
 
     Instantiates ImpactPredictor with the production Settings (model_framing=
@@ -439,6 +454,10 @@ def measure_latency(n: int = 30, batch_size: int = 1) -> dict:
         Number of timed predict() calls. Default 30.
     batch_size : int
         Rows per predict() call. Default 1 (single-barangay, production path).
+    context_size, n_estimators : int | None
+        Override the production Settings to time a *different* config — used to
+        report the capability config's latency next to the deployed one, so both
+        halves of the accuracy/latency trade are visible. None keeps production.
 
     Returns
     -------
@@ -447,6 +466,8 @@ def measure_latency(n: int = 30, batch_size: int = 1) -> dict:
         p95          : float — 95th-percentile latency in milliseconds
         n            : int   — number of timed calls (echoed)
         batch_size   : int   — rows per call (echoed)
+        context_size : int   — in-context rows used (echoed)
+        n_estimators : int   — TabPFN estimators used (echoed)
         tabpfn_active: bool  — True when TabPFN weights loaded successfully
     """
     import time
@@ -455,7 +476,12 @@ def measure_latency(n: int = 30, batch_size: int = 1) -> dict:
     from app.services.impact_model import ImpactPredictor, FEATURE_COLUMNS
     from app.models.impact import BarangayFeatures
 
-    settings = Settings()
+    overrides = {}
+    if context_size is not None:
+        overrides["tabpfn_context_size"] = context_size
+    if n_estimators is not None:
+        overrides["tabpfn_n_estimators"] = n_estimators
+    settings = Settings(**overrides)
     p = ImpactPredictor(settings)
     p.warmup()  # loads + fits TabPFN in-context; primes forward path
 
@@ -488,6 +514,8 @@ def measure_latency(n: int = 30, batch_size: int = 1) -> dict:
         "p95": float(np.percentile(times_arr, 95)),
         "n": n,
         "batch_size": batch_size,
+        "context_size": settings.tabpfn_context_size,
+        "n_estimators": settings.tabpfn_n_estimators,
         "tabpfn_active": p.tabpfn_active,
     }
 
@@ -510,6 +538,12 @@ def main() -> None:
     parser.add_argument(
         "--n-estimators", type=int, default=8,
         help="TabPFN n_estimators for the accuracy run (default: 8).",
+    )
+    parser.add_argument(
+        "--context-cap", type=int, default=None,
+        help="Cap the per-fold in-context rows to a seeded subsample "
+             "(default: None = full context, the capability run). "
+             "Pass 128 with --n-estimators 1 for the deployed config.",
     )
     parser.add_argument(
         "--limit-storms", type=int, default=None,
@@ -563,7 +597,7 @@ def main() -> None:
         "folds": folds,
         "framing": "regressor",
         "eval_n_estimators": args.n_estimators,
-        "eval_context": "full",
+        "eval_context": "full" if args.context_cap is None else args.context_cap,
         "deployed_context": 128,
         "deployed_n_estimators": 1,
         "seed": args.seed,
@@ -576,20 +610,29 @@ def main() -> None:
     }
 
     # Run LOTO evaluation
-    print(f"Running LOTO evaluation: {folds} fold(s), n_estimators={args.n_estimators}, seed={args.seed} ...")
+    ctx_label = "full" if args.context_cap is None else args.context_cap
+    print(f"Running LOTO evaluation: {folds} fold(s), n_estimators={args.n_estimators}, "
+          f"context={ctx_label}, seed={args.seed} ...")
     loto_result = run_loto(
         df,
         n_estimators=args.n_estimators,
         limit_storms=args.limit_storms,
         seed=args.seed,
         device=args.device,
+        context_cap=args.context_cap,
     )
 
-    # Optionally measure latency
+    # Optionally measure latency — both halves of the trade, so the report never
+    # shows one config's accuracy next to another config's speed unlabelled.
     latency_ms_deployed = None
+    latency_ms_capability = None
     if not args.skip_latency:
         print("Measuring deployed-config latency (30 calls) ...")
         latency_ms_deployed = measure_latency()
+        print("Measuring capability-config latency (30 calls) ...")
+        latency_ms_capability = measure_latency(
+            context_size=len(df), n_estimators=args.n_estimators,
+        )
 
     # Assemble final results dict
     results = {
@@ -598,6 +641,7 @@ def main() -> None:
         "overall": loto_result["overall"],
         "per_storm": loto_result["per_storm"],
         "latency_ms_deployed": latency_ms_deployed,
+        "latency_ms_capability": latency_ms_capability,
     }
 
     # Write reports
@@ -650,8 +694,11 @@ def main() -> None:
     print(f"affected 80% coverage (TabPFN): {_f(_g(tabpfn_o, 'calibration', 'affected_80_coverage'))}")
     print(f"damage_rate 80% coverage (TabPFN): {_f(_g(tabpfn_o, 'calibration', 'damage_rate_80_coverage'))}")
     if latency_ms_deployed is not None:
-        print(f"latency p50: {_f(latency_ms_deployed.get('p50'), 1)} ms  "
+        print(f"latency (deployed) p50: {_f(latency_ms_deployed.get('p50'), 1)} ms  "
               f"|  p95: {_f(latency_ms_deployed.get('p95'), 1)} ms")
+    if latency_ms_capability is not None:
+        print(f"latency (capability) p50: {_f(latency_ms_capability.get('p50'), 1)} ms  "
+              f"|  p95: {_f(latency_ms_capability.get('p95'), 1)} ms")
     else:
         print("latency: n/a (--skip-latency)")
     print("=" * 60)

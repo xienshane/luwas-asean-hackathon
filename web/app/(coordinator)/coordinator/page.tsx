@@ -27,5 +27,9 @@ export default async function CoordinzatorPage() {
     redirect('/volunteer');
   }
 
-  return <CommandDashboard />;
+  // Read the demo-console flag here, on the server, at request time — the same
+  // source and the same moment as /api/preflight. Reading it inside the client
+  // component would inline it at build time, letting preflight report a green
+  // console that was compiled out of the bundle.
+  return <CommandDashboard demoConsole={process.env.NEXT_PUBLIC_DEMO_CONSOLE === 'true'} />;
 }

@@ -2,18 +2,16 @@
 
 Run against the heuristic path (DISABLE_TABPFN=true) so no torch is needed here.
 """
-import os
-
-os.environ["DISABLE_TABPFN"] = "true"  # must be set before app/Settings construction
-
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 
+from .env import disable_tabpfn  # noqa: F401  (autouse fixture, imported for its side effect)
+
 
 @pytest.fixture()
-def client():
+def client(disable_tabpfn):  # noqa: F811  — explicit dependency pins the ordering
     with TestClient(app) as c:  # `with` runs the lifespan (predictor warm-up)
         yield c
 
