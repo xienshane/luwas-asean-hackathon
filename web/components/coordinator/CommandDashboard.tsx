@@ -34,7 +34,12 @@ import DemoConsole from './DemoConsole';
 import { capacityAlert } from '@/lib/coordinator/capacityAlert';
 import { createSerialRunner } from '@/lib/coordinator/serialRunner';
 
-export default function CommandDashboard() {
+interface CommandDashboardProps {
+  /** Resolved on the server at request time so it cannot drift from /api/preflight. */
+  demoConsole?: boolean;
+}
+
+export default function CommandDashboard({ demoConsole = false }: CommandDashboardProps) {
   const [currentView, setCurrentView] = useState('map');
   // Team to focus when arriving on the Teams & Dispatch tab (e.g. after clicking its route).
   const [focusTeamId, setFocusTeamId] = useState<string | null>(null);
@@ -792,7 +797,7 @@ export default function CommandDashboard() {
   return (
     <div className="flex h-screen w-screen bg-bg text-fg font-sans overflow-hidden">
       <ConnectivityBanner tier={connectivity} />
-      {process.env.NEXT_PUBLIC_DEMO_CONSOLE === 'true' && <DemoConsole onLog={addActivityLog} />}
+      {demoConsole && <DemoConsole onLog={addActivityLog} />}
       {/* E2E hook (Phase 5.2): deterministic "map data + scores loaded" signal,
           so tests never depend on the MapLibre canvas. Renders nothing. */}
       <div
