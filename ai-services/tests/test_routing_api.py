@@ -3,10 +3,6 @@
 DISABLE_TABPFN=true so the app lifespan doesn't load torch. Skipped (via importorskip)
 where the ortools wheel isn't installed.
 """
-import os
-
-os.environ["DISABLE_TABPFN"] = "true"  # must be set before app/Settings construction
-
 import pytest
 
 pytest.importorskip("ortools")
@@ -15,9 +11,11 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 
+from .env import disable_tabpfn  # noqa: F401  (autouse fixture, imported for its side effect)
+
 
 @pytest.fixture()
-def client():
+def client(disable_tabpfn):  # noqa: F811  — explicit dependency pins the ordering
     with TestClient(app) as c:
         yield c
 

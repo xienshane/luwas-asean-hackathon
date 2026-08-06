@@ -3,10 +3,6 @@
 The app's real parser (built from .env keys) is replaced with a fake-backed one so these
 run offline and deterministically. DISABLE_TABPFN avoids loading torch in the lifespan.
 """
-import os
-
-os.environ["DISABLE_TABPFN"] = "true"  # must be set before app/Settings construction
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -14,6 +10,8 @@ from app.core.config import Settings
 from app.core.rate_limiter import RateLimiter
 from app.main import app
 from app.services.parser import Parser
+
+from .env import disable_tabpfn  # noqa: F401  (autouse fixture, imported for its side effect)
 
 REPLY_HIGH = (
     '{"location":"Barangay Apas, Cebu City","population_estimate":500,'
@@ -61,7 +59,7 @@ def install_parser_with_fallback(primary_error: Exception, fallback_reply: str) 
 
 
 @pytest.fixture()
-def client():
+def client(disable_tabpfn):  # noqa: F811  — explicit dependency pins the ordering
     with TestClient(app) as c:  # lifespan builds the real parser; we override it below
         yield c
 
