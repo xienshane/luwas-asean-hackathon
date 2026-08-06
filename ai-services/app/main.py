@@ -40,5 +40,6 @@ def health():
         "parse_providers": {
             "sea_lion": parser.primary is not None,
             "gemini": parser.fallback is not None,
+            "sea_lion_model": parser.primary.model if parser.primary else None,
         },
     }
