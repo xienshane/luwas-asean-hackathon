@@ -672,6 +672,10 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
 
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
+  // Bumped on every reset. Keying ManifestsView on it forces a remount, so its
+  // in-memory approve/reject history goes with the localStorage key below —
+  // clearing storage alone would leave a mounted view still showing the old run.
+  const [resetEpoch, setResetEpoch] = useState(0);
   const handleReset = () => setShowResetConfirm(true);
 
   const confirmReset = async () => {
@@ -688,9 +692,24 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
       setManifests({});
       setSelectedReport(null);
       setSelectedBarangay(null);
-      const [map, e] = await Promise.all([fetchCoordinatorMapData(), fetchRoadStatus()]);
+      // Ghosts of the previous run. Each one survives a truncate because it lives
+      // outside the tables /api/reset clears.
+      setDispatchPreview(null);      // the effect that clears it needs a matching
+                                     // active route, and routes are now empty
+      setRerouteNotice(null);
+      reroutedReportsRef.current.clear();
+      try {
+        localStorage.removeItem('manifest-history');
+      } catch {
+        /* private mode / storage disabled — nothing to clear */
+      }
+      setResetEpoch((n) => n + 1);
+      // Teams carry client-only dispatch status (/api/dispatch never writes to
+      // `teams`), so the rail keeps reading "dispatched" until we refetch.
+      const [map, t, e] = await Promise.all([fetchCoordinatorMapData(), fetchTeams(), fetchRoadStatus()]);
       setBarangays(map.barangays);
       setScores(map.scores);
+      setTeams(t);
       setEdges(e);
       addActivityLog('OPERATIONS: Cleared all reports and generated plans. Accounts and base data kept.', 'alert');
     } catch (err) {
@@ -922,6 +941,7 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
         {/* VIEW: Supply Manifests */}
         {currentView === 'manifests' && (
           <ManifestsView
+            key={resetEpoch}
             barangays={barangays}
             manifests={manifests}
             predictions={predictions}
