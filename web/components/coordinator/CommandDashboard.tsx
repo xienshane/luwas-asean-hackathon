@@ -131,7 +131,7 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
   const addActivityLog = (event: string, type: 'info' | 'warn' | 'success' | 'alert' = 'info') => {
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     setActivityLogs(prev => [
-      { id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, time: timeStr, event, type },
+      { id: `log-${crypto.randomUUID()}`, time: timeStr, event, type },
       ...prev
     ]);
   };

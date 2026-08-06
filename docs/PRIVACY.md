@@ -149,8 +149,10 @@ LUWAS serves:
   - *Implementation:* `ai-services/scripts/eval/segmented.py`
     (tested in `ai-services/tests/test_segmented_error.py`); wired into the LOTO
     harness, output at `docs/impact_segmented_error.md` / `.json`.
-  - This is the monitoring substrate the **Phase 6.3 fairness framework**
-    (`docs/FAIRNESS.md`, planned) builds on.
+  - This is the monitoring substrate the **fairness framework**
+    (`docs/FAIRNESS.md`) builds on. A bucket is *flagged* only above a stated
+    materiality threshold (`docs/FAIRNESS.md` §3.2); raw signed error is
+    reported for every bucket regardless.
 - **Assistive AI.** Every prediction and manifest is overridable by a human
   coordinator; confirmation is required at the ethically-loaded gates. See
   `docs/ETHICS.md`.

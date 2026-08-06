@@ -80,7 +80,8 @@ Deploy targets and their alternatives: [`docs/DEPLOY.md`](DEPLOY.md).
   configurations, limitations and mitigations; raw results in
   [`docs/impact_validation_results.md`](impact_validation_results.md).
 - **Adaptation to another country:** [`docs/COUNTRY_PACKS.md`](COUNTRY_PACKS.md).
-- **User testing:** [`docs/superpowers/USER_TEST_5.2.md`](superpowers/USER_TEST_5.2.md).
+- **User testing:** [`docs/USER_TESTING.md`](USER_TESTING.md) — protocol for the coordinator
+  dispatch flow. Results are not yet recorded, and the document says so.
 
 ### 6 — Mechanism for extracting data
 

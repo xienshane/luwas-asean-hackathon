@@ -1,6 +1,7 @@
 import { parseFieldReportText } from '@/lib/ai/parse';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { findBarangayByName } from '@/lib/sms/barangay';
+import { webhookTokenMatches } from '@/lib/sms/auth';
 import { handleInboundSms, type SmsReportRow } from '@/lib/sms/handle';
 import { normalizeSemaphorePayload } from '@/lib/sms/normalize';
 
@@ -9,7 +10,7 @@ import { normalizeSemaphorePayload } from '@/lib/sms/normalize';
 // URL carries a shared secret: POST /api/sms?token=$SMS_WEBHOOK_SECRET
 export async function POST(request: Request) {
   const token = new URL(request.url).searchParams.get('token');
-  if (!process.env.SMS_WEBHOOK_SECRET || token !== process.env.SMS_WEBHOOK_SECRET) {
+  if (!webhookTokenMatches(token, process.env.SMS_WEBHOOK_SECRET)) {
     return Response.json({ error: 'unauthorized' }, { status: 401 });
   }
 
