@@ -12,6 +12,8 @@ import {
   LogOut,
   User,
   CloudLightning,
+  FileDown,
+  ClipboardCheck,
 } from 'lucide-react';
 import Image from 'next/image';
 import { StatusDot } from './ui';
@@ -154,6 +156,20 @@ export default function LeftSidebar({
               {!collapsed && <span>{day0Running ? 'Forecasting…' : 'Anticipatory plan'}</span>}
             </button>
           )}
+          {/* New tab on purpose: the dashboard stays live behind the export. */}
+          <a
+            href="/coordinator/sitrep"
+            target="_blank"
+            rel="noreferrer"
+            data-testid="nav-sitrep"
+            title="Export SitRep — situation report for the current operation"
+            className={`w-full flex items-center rounded-control border border-line text-fg hover:bg-raised transition-colors duration-100 cursor-pointer ${
+              collapsed ? 'justify-center py-2.5' : 'gap-2 px-2.5 py-2 text-[13px] font-medium'
+            }`}
+          >
+            <FileDown className="w-[18px] h-[18px] shrink-0" />
+            {!collapsed && <span>Export SitRep</span>}
+          </a>
           <button
             onClick={onReset}
             title="Reset to scratch"
@@ -176,6 +192,21 @@ export default function LeftSidebar({
               </div>
             </div>
           )}
+
+          {/* Pre-stage check, not part of the operating flow — secondary by design. */}
+          <a
+            href="/coordinator/preflight"
+            target="_blank"
+            rel="noreferrer"
+            data-testid="nav-preflight"
+            title="Stage preflight — verify services before going live"
+            className={`w-full flex items-center rounded-control text-muted hover:text-fg hover:bg-raised transition-colors duration-100 cursor-pointer ${
+              collapsed ? 'justify-center py-2.5' : 'gap-2 px-2.5 py-2 text-[13px]'
+            }`}
+          >
+            <ClipboardCheck className="w-[18px] h-[18px] shrink-0" />
+            {!collapsed && <span>Preflight</span>}
+          </a>
 
           <button
             onClick={() => setShowLogoutConfirm(true)}
