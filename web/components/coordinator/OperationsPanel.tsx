@@ -3,11 +3,14 @@
 import React from 'react';
 import { ChevronRight, Check, Flag } from 'lucide-react';
 import type { FieldReport, Route, SupplyManifest, Barangay } from '@/lib/types/coordinator';
+import type { ReportCounts } from '@/lib/supabase/coordinator';
 import { SeverityRail, StatusDot, DetailPanel, SEVERITY_TONE } from './ui';
 import { countSilentOver } from '@/lib/coordinator/silentCount';
 
 interface OperationsPanelProps {
   reports: FieldReport[];
+  /** Province-wide queue depth. Null until the first count resolves. */
+  counts: ReportCounts | null;
   routes: Route[];
   manifests: Record<string, SupplyManifest>;
   barangays: Barangay[];
@@ -37,6 +40,7 @@ const hhmm = (iso: string) =>
 // the entity detail panel (handled in CommandDashboard).
 export default function OperationsPanel({
   reports,
+  counts,
   routes,
   manifests,
   barangays,
@@ -47,7 +51,11 @@ export default function OperationsPanel({
   onViewChange,
 }: OperationsPanelProps) {
   const pending = reports.filter((r) => r.status === 'pending');
-  const critical = pending.filter((r) => r.needsSeverity === 'critical').length;
+  // Counters read the province-wide totals; the list below can only ever show the
+  // newest 100 rows the dashboard holds. Fall back to the loaded window until the
+  // first count resolves — an undercount beats rendering a zero that isn't true.
+  const pendingTotal = counts?.pending ?? pending.length;
+  const criticalTotal = counts?.pendingCritical ?? pending.filter((r) => r.needsSeverity === 'critical').length;
   const dispatchQueue = routes.filter((r) => r.status === 'planned').length;
   const silent24h = countSilentOver(scores, 24);
   const supplyShortages = barangays.filter((b) => {
@@ -63,8 +71,8 @@ export default function OperationsPanel({
 
   const counters: { label: string; count: number; critical?: boolean; view: string }[] = [
     { label: 'Silent >24h', count: silent24h, critical: silent24h > 0, view: 'map' },
-    { label: 'Needs verification', count: pending.length, view: 'reports' },
-    { label: 'Critical incidents', count: critical, critical: true, view: 'reports' },
+    { label: 'Needs verification', count: pendingTotal, view: 'reports' },
+    { label: 'Critical incidents', count: criticalTotal, critical: true, view: 'reports' },
     { label: 'Dispatch queue', count: dispatchQueue, view: 'teams' },
     { label: 'Supply shortages', count: supplyShortages, view: 'manifests' },
   ];
@@ -73,7 +81,7 @@ export default function OperationsPanel({
     <DetailPanel
       className="luwas-rail-swap w-[25%] min-w-[340px] max-w-[360px] shrink-0"
       eyebrow="Operations"
-      title={pending.length > 0 ? `${pending.length} awaiting` : 'All clear'}
+      title={pendingTotal > 0 ? `${pendingTotal.toLocaleString()} awaiting` : 'All clear'}
     >
       <div>
         {/* Action counters */}
@@ -90,7 +98,7 @@ export default function OperationsPanel({
               </span>
               <span className="flex items-center gap-2">
                 <span className={`text-[14px] font-mono tabular-nums ${c.critical && c.count > 0 ? 'text-critical' : 'text-muted'}`}>
-                  {c.count}
+                  {c.count.toLocaleString()}
                 </span>
                 <ChevronRight className="w-3.5 h-3.5 text-muted" />
               </span>
@@ -98,8 +106,17 @@ export default function OperationsPanel({
           ))}
         </div>
 
-        {/* Awaiting verification queue */}
-        <div className="px-4 py-2 text-[13px] text-muted">Awaiting verification</div>
+        {/* Awaiting verification queue. The list is the newest 100 reports the
+            dashboard holds; when the province-wide queue is deeper than that, say
+            so rather than letting the header imply the list is the whole queue. */}
+        <div className="px-4 py-2 flex items-baseline justify-between gap-2">
+          <span className="text-[13px] text-muted">Awaiting verification</span>
+          {pendingTotal > queue.length && (
+            <span className="text-[12px] text-muted tabular-nums">
+              newest {queue.length} of {pendingTotal.toLocaleString()}
+            </span>
+          )}
+        </div>
         {queue.length === 0 ? (
           <div className="px-4 py-8 text-center text-[13px] text-muted">All reports verified.</div>
         ) : (

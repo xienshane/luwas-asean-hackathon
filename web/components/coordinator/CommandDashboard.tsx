@@ -27,6 +27,7 @@ import ReportsView from './ReportsView';
 import TeamsView from './TeamsView';
 import ManifestsView from './ManifestsView';
 import { useLiveReports } from '@/lib/live/useLiveReports';
+import { useReportCounts } from '@/lib/live/useReportCounts';
 import { useLiveVolunteers } from '@/lib/live/useLiveVolunteers';
 import { roadBlockRequest, isLiveImpassableReport } from '@/lib/coordinator/roadStatus';
 import { PAGASA_CATEGORY_LABELS, type LiveConditions } from '@/lib/live/conditions';
@@ -53,6 +54,9 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
   useEffect(() => { barangaysRef.current = barangays; }, [barangays]);
   const [reports, setReports] = useState<FieldReport[]>([]);
   useLiveReports(setReports);
+  // Province-wide queue depth. The report list is capped at 100 rows, so these
+  // counters come from the database instead of from `reports`.
+  const { counts: reportCounts, refresh: refreshReportCounts } = useReportCounts();
   const liveVolunteers = useLiveVolunteers();
   const [teams, setTeams] = useState<Team[]>([]);
   const [edges, setEdges] = useState<RoadEdge[]>([]);
@@ -116,6 +120,10 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
   // A3: Every pipeline action rescores server-side; the map only reflects it after a refetch.
   // Setters are stable, so this is safe to call from anywhere in the component.
   const refreshMap = async () => {
+    // Queue depth changes on the same beats the scores do (a confirm removes a row
+    // from the queue and rescores its barangay), so the counters refresh here rather
+    // than waiting out their poll.
+    void refreshReportCounts();
     try {
       const map = await fetchCoordinatorMapData();
       setBarangays(map.barangays);
@@ -485,6 +493,9 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
     setSelectedReport(null);
     const supabase = createClient();
     await supabase.from('field_reports').update({ status: 'flagged' }).eq('id', reportId);
+    // Flagging leaves the queue without running the pipeline, so refreshMap never
+    // fires — the counter has to be corrected here.
+    void refreshReportCounts();
     addActivityLog(`REPORT FLAGGED: #${reportId} flagged as unreliable.`, 'warn');
   };
 
@@ -932,6 +943,7 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
           ) : (
             <OperationsPanel
               reports={reports}
+              counts={reportCounts}
               routes={routes}
               manifests={manifests}
               barangays={barangays}

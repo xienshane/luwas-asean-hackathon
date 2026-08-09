@@ -40,6 +40,35 @@ export interface CoordinatorMapData {
   scores: BarangayScore[];
 }
 
+// Province-wide report counters.
+//
+// These CANNOT be derived from the dashboard's report state: useLiveReports holds
+// only the newest 100 rows, so a derived count silently saturates at 100 while the
+// real queue runs into the hundreds — the counter would read "100 awaiting" no
+// matter how deep the backlog got. Counting server-side keeps the number true and
+// costs nothing: head:true sends no rows, only the count.
+export interface ReportCounts {
+  pending: number;
+  pendingCritical: number;
+}
+
+export async function fetchReportCounts(): Promise<ReportCounts> {
+  const supabase = createClient();
+  const [pending, critical] = await Promise.all([
+    supabase.from('field_reports').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+    supabase
+      .from('field_reports')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending')
+      .eq('needs_severity', 'critical'),
+  ]);
+
+  if (pending.error) throw pending.error;
+  if (critical.error) throw critical.error;
+
+  return { pending: pending.count ?? 0, pendingCritical: critical.count ?? 0 };
+}
+
 // One row of the public.coordinator_barangay_scores view (Phase 3.1 read model).
 interface ScoreViewRow {
   id: string;
