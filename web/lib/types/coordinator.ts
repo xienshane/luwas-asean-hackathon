@@ -137,6 +137,7 @@ export interface SupplyManifest {
   status: 'pending' | 'approved' | 'modified' | 'rejected';
   waterL: SupplyItem;
   foodPacks: SupplyItem;
+  blankets: SupplyItem;
   hygieneKits: SupplyItem;
   medicalSupplies: SupplyItem;
   shelterMaterials: SupplyItem;

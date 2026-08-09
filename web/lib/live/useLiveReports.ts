@@ -32,7 +32,7 @@ import { dbReportToUi, mergeReport, type CoordinatorFieldReport } from './adapte
  * GeoJSON source (reportPins.ts), which is a few hundred points, not a few hundred
  * DOM nodes. Only the 'act' tier becomes a marker, and that tier is small by design.
  */
-const INITIAL_FETCH_LIMIT = 400;
+const INITIAL_FETCH_LIMIT = 500;
 
 export function useLiveReports(
   setReports: React.Dispatch<React.SetStateAction<FieldReport[]>>,

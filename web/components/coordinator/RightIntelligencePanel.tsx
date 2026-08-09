@@ -136,7 +136,7 @@ export default function RightIntelligencePanel({
   const EMPTY_ITEM = { recommended: 0, inventory: 0, shortfall: 0 };
   const water = manifest?.waterL ?? EMPTY_ITEM;
   const food = manifest?.foodPacks ?? EMPTY_ITEM;
-  const blankets = (manifest as { blankets?: typeof EMPTY_ITEM } | undefined)?.blankets ?? EMPTY_ITEM;
+  const blankets = manifest?.blankets ?? EMPTY_ITEM;
   const hygiene = manifest?.hygieneKits ?? EMPTY_ITEM;
   const medical = manifest?.medicalSupplies ?? EMPTY_ITEM;
   const shelter = manifest?.shelterMaterials ?? EMPTY_ITEM;

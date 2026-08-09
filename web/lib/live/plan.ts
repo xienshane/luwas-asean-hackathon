@@ -68,6 +68,7 @@ export function manifestRowToUi(r: ManifestRow): SupplyManifest {
       ? (r.status as SupplyManifest['status'])
       : (r.overridden ? 'modified' : 'pending'),
     waterL: item(water), foodPacks: item(food),
+    blankets: item(Number(r.blankets ?? 0)),
     hygieneKits: item(hygiene), medicalSupplies: item(0),
     shelterMaterials: item(Number(r.shelter_kits ?? 0)),
     totalWeightKg: r.breakdown?.total_weight_kg ?? null,
