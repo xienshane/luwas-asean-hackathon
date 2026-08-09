@@ -70,6 +70,16 @@ describe('stopFraction', () => {
     }
   });
 
+  // S08 depends on this: every convoy must park clear of the depot but short of the first
+  // crossing (CCLEX starts at f≈0.24 on the pilot route), or there is no bridge left to lose.
+  it('parks every convoy between the depot and the bridge approach', () => {
+    for (const id of ['a', 'route-1', 'team-xyz-99', '', 'long-id-' + 'x'.repeat(40)]) {
+      const f = stopFraction(id);
+      expect(f).toBeGreaterThan(0.1);
+      expect(f).toBeLessThan(0.24);
+    }
+  });
+
   it('produces different fractions for different ids (staggering)', () => {
     expect(stopFraction('route-1')).not.toBe(stopFraction('route-2'));
   });

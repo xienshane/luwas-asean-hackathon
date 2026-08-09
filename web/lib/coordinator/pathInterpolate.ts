@@ -80,7 +80,14 @@ export function pointAtFraction(coords: LngLat[], f: number): PointAtFraction {
 
 // Deterministic per-route stop fraction so concurrent convoys stagger instead of stacking at
 // one point. Hash the routeId → base ± spread.
-export function stopFraction(routeId: string, base = 0.6, spread = 0.08): number {
+//
+// Why base 0.20 and a tight spread: the convoy has to park OUT of the depot but SHORT of the
+// first major crossing, because the S08 beat is "the bridge ahead of you is gone". A convoy
+// already sitting mid-span has nothing to be rerouted around, and one still inside the hub
+// has not departed. On the Cebu pilot route (HQ → Catarman, 14 km) the CCLEX approach starts
+// at f≈0.24, so 0.20 ± 0.03 keeps every convoy on the coastal road with the bridge still in
+// front of it. Widening the spread past ~0.03 puts an outlier on the span.
+export function stopFraction(routeId: string, base = 0.2, spread = 0.03): number {
   let hash = 0;
   for (let i = 0; i < routeId.length; i++) {
     hash = (hash * 31 + routeId.charCodeAt(i)) | 0;

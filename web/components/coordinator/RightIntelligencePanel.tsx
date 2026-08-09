@@ -414,7 +414,7 @@ export default function RightIntelligencePanel({
                     <p className="mt-1 text-[12px] text-muted">
                       <span className="font-mono tabular-nums">{(activeRoute.totalDistanceM / 1000).toFixed(1)}</span> km
                       {' · '}
-                      <span title="A simulated convoy marker (Part A) glides part-way along the route for the demo and parks short of the destination — decorative, not live tracking.">sim convoy holding mid-route</span>
+                      <span title="A simulated convoy marker (Part A) glides out of the depot along the route for the demo and parks early, short of the first major crossing — decorative, not live tracking.">sim convoy holding short of the crossing</span>
                     </p>
                     <button
                       onClick={() => onMarkReached(activeRoute.id)}
