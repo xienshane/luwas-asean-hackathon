@@ -1,7 +1,7 @@
 """Stage acceptance for the two demo presets, against the real SEA-LION path.
 
-The Vietnamese ward will not geocode against the Cebu gazetteer — the report lands for
-review, which is the narrated demo behaviour, not a bug.
+The Vietnamese ward geocodes against the Da Nang country pack (S10), so the report lands
+like any other. This suite covers extraction only — geocoding is asserted on the web side.
 """
 import sys
 
@@ -21,7 +21,7 @@ BISAYA_PRESET = (
     "LUWAS: grabe ang baha sa Guadalupe, mga 80 ka pamilya ang apektado"
 )
 VIETNAMESE_PRESET = (
-    "LUWAS: Ngập lụt nặng ở phường Hòa Thuận Đông, Đà Nẵng. "
+    "LUWAS: Ngập lụt nặng ở phường An Hải, Đà Nẵng. "
     "Khoảng 80 hộ dân bị cô lập, cần nước sạch."
 )
 

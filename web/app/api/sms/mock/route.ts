@@ -1,9 +1,10 @@
 import { parseFieldReportText } from '@/lib/ai/parse';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { findBarangayByName } from '@/lib/sms/barangay';
+import { findBarangayByName, type DirectoryClient } from '@/lib/sms/barangay';
 import { webhookTokenMatches } from '@/lib/sms/auth';
 import { handleInboundSms, type SmsReportRow } from '@/lib/sms/handle';
 import { normalizeSemaphorePayload, type SemaphoreInboundPayload } from '@/lib/sms/normalize';
+import { DEFAULT_REGION, isRegionId, type RegionId } from '@/lib/regions';
 
 // Demo helper: wraps raw text in a Semaphore-shaped payload and runs the SAME
 // pipeline as the real webhook. Simulates an inbound SMS without a shortcode:
@@ -36,10 +37,18 @@ export async function POST(request: Request) {
     return Response.json({ error: 'missing message body' }, { status: 400 });
   }
 
+  // Which country pack to geocode against. A real shortcode implies its own region;
+  // this simulator has to be told.
+  const region: RegionId =
+    typeof body.region === 'string' && isRegionId(body.region) ? body.region : DEFAULT_REGION;
+
   const admin = createAdminClient();
   const result = await handleInboundSms(inbound, {
     parse: (text) => parseFieldReportText(text),
-    findBarangay: (name) => findBarangayByName(admin, name),
+    // Cast: the real client satisfies DirectoryClient structurally, but checking it
+    // against the builder chain trips TS2589 (excessively deep instantiation).
+    findBarangay: (name) =>
+      findBarangayByName(admin as unknown as DirectoryClient, name, region),
     insertReport: async (row: SmsReportRow) => {
       const { data, error } = await admin
         .from('field_reports')

@@ -1,5 +1,6 @@
 import { createClient } from './client';
 import type { Barangay, BoundaryGeometry, Team, RoadEdge, LocationHub, Volunteer } from '@/lib/types/coordinator';
+import { DEFAULT_REGION, type RegionId } from '@/lib/regions';
 
 // Phase 4.4 composite-priority weights (Σ = 1.0). The score is an additive blend, so the
 // tooltip can reconcile it as Σ weightᵢ × componentᵢ.
@@ -140,7 +141,9 @@ const PAGE_SIZE = 1000;
 // Fetch the live Silent Area scores joined to barangay identity + boundary for the
 // coordinator map. RLS (via the security_invoker view) returns rows only to a signed-in
 // coordinator; a volunteer/anon gets an empty set rather than an error.
-export async function fetchCoordinatorMapData(): Promise<CoordinatorMapData> {
+export async function fetchCoordinatorMapData(
+  region: RegionId = DEFAULT_REGION,
+): Promise<CoordinatorMapData> {
   const supabase = createClient();
   // Kicked off before the paging loop so it overlaps it rather than adding a
   // round trip to the critical path.
@@ -150,6 +153,7 @@ export async function fetchCoordinatorMapData(): Promise<CoordinatorMapData> {
     const { data, error } = await supabase
       .from('coordinator_barangay_scores')
       .select(COLUMNS)
+      .eq('region', region)
       .order('id', { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
 
