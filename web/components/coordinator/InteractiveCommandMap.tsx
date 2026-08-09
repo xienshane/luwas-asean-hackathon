@@ -2268,7 +2268,7 @@ export default function InteractiveCommandMap({
                 <div className="text-[11px] text-muted mb-1.5">Barangay state</div>
                 <div className="space-y-1">
                   {[
-                    { color: COLOR.reached, label: 'Reached' },
+                    { color: COLOR.stable, label: 'Stable' },
                     { color: COLOR.warning, label: 'Escalating' },
                     { color: COLOR.critical, label: 'Critical' },
                   ].map(({ color, label }) => (
@@ -2277,7 +2277,7 @@ export default function InteractiveCommandMap({
                       <span className="text-fg">{label}</span>
                     </div>
                   ))}
-                  {/* Served is orthogonal to the priority scale — a delivered-to community. */}
+                  {/* Reached is orthogonal to the priority scale — a delivered-to community. */}
                   <div className="flex items-center gap-2">
                     <span className="inline-flex items-center justify-center w-2 h-2 shrink-0">
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={SERVED_COLOR} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>

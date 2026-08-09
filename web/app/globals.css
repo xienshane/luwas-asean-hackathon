@@ -24,7 +24,7 @@
   --color-critical: #EF5B50;  /* critical / urgent */
   --color-warning: #E0A63D;   /* pending / escalating */
   --color-active: #43AD63;    /* active / confirmed / healthy */
-  --color-reached: #C7CBD2;   /* reached / contacted (neutral light) */
+  --color-stable: #C7CBD2;    /* lowest priority tier (neutral light) */
 
   /* Radius — square-cornered instrument chrome */
   --radius-control: 3px;      /* inputs, buttons, small controls */

@@ -5,7 +5,6 @@ import { ChevronRight, Check, Flag } from 'lucide-react';
 import type { FieldReport, Route, SupplyManifest, Barangay } from '@/lib/types/coordinator';
 import type { ReportCounts } from '@/lib/supabase/coordinator';
 import { SeverityRail, StatusDot, DetailPanel, SEVERITY_TONE } from './ui';
-import { countSilentOver } from '@/lib/coordinator/silentCount';
 
 interface OperationsPanelProps {
   reports: FieldReport[];
@@ -14,7 +13,6 @@ interface OperationsPanelProps {
   routes: Route[];
   manifests: Record<string, SupplyManifest>;
   barangays: Barangay[];
-  scores: { barangayId: string; hoursSinceContact: number | null }[];
   onSelectReport: (r: FieldReport) => void;
   onConfirmReport: (id: string) => void;
   onFlagReport: (id: string) => void;
@@ -44,7 +42,6 @@ export default function OperationsPanel({
   routes,
   manifests,
   barangays,
-  scores,
   onSelectReport,
   onConfirmReport,
   onFlagReport,
@@ -57,7 +54,6 @@ export default function OperationsPanel({
   const pendingTotal = counts?.pending ?? pending.length;
   const criticalTotal = counts?.pendingCritical ?? pending.filter((r) => r.needsSeverity === 'critical').length;
   const dispatchQueue = routes.filter((r) => r.status === 'planned').length;
-  const silent24h = countSilentOver(scores, 24);
   const supplyShortages = barangays.filter((b) => {
     const m = manifests[b.id];
     return m && SHORT_KEYS.some((k) => (m[k]?.shortfall ?? 0) > 0);
@@ -70,7 +66,6 @@ export default function OperationsPanel({
   );
 
   const counters: { label: string; count: number; critical?: boolean; view: string }[] = [
-    { label: 'Silent >24h', count: silent24h, critical: silent24h > 0, view: 'map' },
     { label: 'Needs verification', count: pendingTotal, view: 'reports' },
     { label: 'Critical incidents', count: criticalTotal, critical: true, view: 'reports' },
     { label: 'Dispatch queue', count: dispatchQueue, view: 'teams' },

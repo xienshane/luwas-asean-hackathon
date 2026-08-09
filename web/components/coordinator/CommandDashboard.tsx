@@ -947,7 +947,6 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
               routes={routes}
               manifests={manifests}
               barangays={barangays}
-              scores={scores}
               onSelectReport={handleSelectReport}
               onConfirmReport={handleConfirmReport}
               onFlagReport={handleFlagReport}
