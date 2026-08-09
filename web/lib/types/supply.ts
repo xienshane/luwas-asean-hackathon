@@ -2,7 +2,7 @@
 // MIRRORS ai-services/app/models/supply.py (the canonical source). Any change to one
 // must update the other in the SAME commit (see CLAUDE.md > Rules).
 
-export type SupplyCategory = "water" | "food" | "shelter" | "nfi";
+export type SupplyCategory = "water" | "food" | "shelter" | "nfi" | "health";
 
 /** Inputs to the Sphere supply engine. */
 export interface SupplyManifestRequest {

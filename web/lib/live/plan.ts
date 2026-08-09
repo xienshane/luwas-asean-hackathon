@@ -59,7 +59,12 @@ const MANIFEST_STATUSES: SupplyManifest['status'][] = ['pending', 'approved', 'm
 export function manifestRowToUi(r: ManifestRow): SupplyManifest {
   const item = (recommended: number) => ({ recommended, inventory: 0, shortfall: recommended });
   const water = Number(r.water_l ?? 0), food = Number(r.food_packs ?? 0);
-  const hygiene = (r.breakdown?.lines ?? []).find((l) => l.item?.toLowerCase().includes('hygiene'))?.quantity ?? 0;
+  // Hygiene and medical have no dedicated column — they are read back off the stored
+  // manifest breakdown, which holds every Sphere line verbatim.
+  const lineQty = (needle: string) =>
+    (r.breakdown?.lines ?? []).find((l) => l.item?.toLowerCase().includes(needle))?.quantity ?? 0;
+  const hygiene = lineQty('hygiene');
+  const medical = lineQty('medical');
   return {
     barangayId: r.barangay_id, days: r.days,
     // Persisted review status wins; rows written before the column existed fall back to
@@ -69,7 +74,7 @@ export function manifestRowToUi(r: ManifestRow): SupplyManifest {
       : (r.overridden ? 'modified' : 'pending'),
     waterL: item(water), foodPacks: item(food),
     blankets: item(Number(r.blankets ?? 0)),
-    hygieneKits: item(hygiene), medicalSupplies: item(0),
+    hygieneKits: item(hygiene), medicalSupplies: item(medical),
     shelterMaterials: item(Number(r.shelter_kits ?? 0)),
     totalWeightKg: r.breakdown?.total_weight_kg ?? null,
     overridden: r.overridden,

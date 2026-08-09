@@ -29,6 +29,7 @@ def get_line(m: SupplyManifest, item: str):
 # tarpaulins   = ceil(200 * 2 * 1.0)            = 400
 # blankets     = ceil(1000 * 1 * 1.0)           = 1000
 # hygiene kits = ceil(200 * 1 * 1.0)            = 200
+# medical kits = ceil(1000 / 1000 * 1.0)        = 1   (WHO IEHK, not days-scaled)
 
 def test_water_quantity_known_input():
     m = sphere_supply(1000, 3, 1.0)
@@ -53,18 +54,34 @@ def test_nfi_quantities_known_input():
     assert get_line(m, "Hygiene kits").quantity == 200
 
 
-def test_total_weight_known_input():
-    # 45000*1.0 + 3000*0.6 + 400*5 + 1000*1.5 + 200*3
-    # = 45000 + 1800 + 2000 + 1500 + 600 = 50900 kg
+def test_medical_kits_known_input():
     m = sphere_supply(1000, 3, 1.0)
-    assert m.total_weight_kg == 50900.0
+    medical = get_line(m, "Medical kits")
+    assert medical.category == "health"
+    assert medical.unit == "kits"
+    assert medical.quantity == 1
+
+
+def test_medical_kits_scale_with_population_not_days():
+    """A WHO IEHK basic unit is a standing provision for the response, so extending the
+    ration horizon must not multiply it — only a larger population does."""
+    three_day = get_line(sphere_supply(12_000, 3, 1.0), "Medical kits").quantity
+    ten_day = get_line(sphere_supply(12_000, 10, 1.0), "Medical kits").quantity
+    assert three_day == ten_day == 12
+
+
+def test_total_weight_known_input():
+    # 45000*1.0 + 3000*0.6 + 400*5 + 1000*1.5 + 200*3 + 1*45
+    # = 45000 + 1800 + 2000 + 1500 + 600 + 45 = 50945 kg
+    m = sphere_supply(1000, 3, 1.0)
+    assert m.total_weight_kg == 50945.0
     assert m.total_weight_kg == round(sum(line.weight_kg for line in m.lines), 2)
 
 
 def test_all_sphere_categories_present():
     m = sphere_supply(1000, 3, 1.0)
     cats = lines_by_category(m)
-    assert {"water", "food", "shelter", "nfi"} <= set(cats)
+    assert {"water", "food", "shelter", "nfi", "health"} <= set(cats)
 
 
 # --- access modifier scaling ------------------------------------------------
@@ -110,6 +127,7 @@ def test_standards_block_records_constants_used():
     m = sphere_supply(1000, 3, 1.0)
     assert m.standards["water_l_per_person_day"] == 15.0
     assert m.standards["kcal_per_person_day"] == 2100.0
+    assert m.standards["persons_per_medical_kit"] == 1000.0
 
 
 def test_id_is_echoed():
