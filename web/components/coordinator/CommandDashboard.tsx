@@ -29,7 +29,7 @@ import ManifestsView from './ManifestsView';
 import { useLiveReports } from '@/lib/live/useLiveReports';
 import { useReportCounts } from '@/lib/live/useReportCounts';
 import { useLiveVolunteers } from '@/lib/live/useLiveVolunteers';
-import { roadBlockRequest, isLiveImpassableReport } from '@/lib/coordinator/roadStatus';
+import { roadBlockRequest, rerouteTriggerFor } from '@/lib/coordinator/roadStatus';
 import { PAGASA_CATEGORY_LABELS, type LiveConditions } from '@/lib/live/conditions';
 import DemoConsole from './DemoConsole';
 import { capacityAlert } from '@/lib/coordinator/capacityAlert';
@@ -98,7 +98,18 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
   const [rerouteNotice, setRerouteNotice] = useState<string | null>(null);
   const mountedAtRef = useRef<number>(0);
   const reroutedReportsRef = useRef<Set<string>>(new Set());
-  
+  // Last status we saw per report, so the re-route effect can see a pending -> confirmed
+  // TRANSITION instead of the standing fact "this report is confirmed".
+  const reportStatusRef = useRef<Map<string, FieldReport['status']>>(new Map());
+  // Reports THIS client flipped to confirmed optimistically. markReportsConfirmed paints
+  // the new status before its UPDATE resolves, so for these ids "confirmed" is a local
+  // promise, not a fact in the database — and re-routing off a promise reads the road
+  // graph before the closure has committed to it, which silently produces a route
+  // straight through the road that was just closed. The confirm handler re-routes these
+  // itself, after the write lands; the effect only handles rows that arrived confirmed
+  // from the server (realtime, another coordinator).
+  const optimisticConfirmsRef = useRef<Set<string>>(new Set());
+
   useEffect(() => { if (!mountedAtRef.current) mountedAtRef.current = Date.now(); }, []);
 
   useEffect(() => {
@@ -452,6 +463,7 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
     const ids = targets.map(r => r.id);
     const barangayIds = new Set(targets.map(r => r.barangayId).filter(Boolean) as string[]);
 
+    ids.forEach(id => optimisticConfirmsRef.current.add(id));
     setReports(prev => prev.map(r => (ids.includes(r.id) ? { ...r, status: 'confirmed' } : r)));
     setBarangays(prev => prev.map(b =>
       barangayIds.has(b.id) ? { ...b, lastConfirmedContact: stamp } : b));
@@ -461,6 +473,7 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
     const supabase = createClient();
     const { error } = await supabase.from('field_reports').update({ status: 'confirmed' }).in('id', ids);
     if (error) {
+      ids.forEach(id => optimisticConfirmsRef.current.delete(id));
       setReports(prev => prev.map(r => {
         const original = targets.find(t => t.id === r.id);
         return original ? original : r;
@@ -479,16 +492,31 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
     return true;
   };
 
+  // Confirming a road-closure report is what closes the road (field_report_block_edge
+  // fires on the status change), so the re-route has to run AFTER that write resolves —
+  // not off the optimistic state flip, which would read the graph before the closure is
+  // in it. It runs before the pipeline because redrawing the convoy is the visible
+  // consequence of the tap; the pipeline's rescore can follow.
+  const rerouteForClosures = async (targets: FieldReport[]) => {
+    const closures = targets.filter(r => r.roadImpassable);
+    if (closures.length === 0) return;
+    closures.forEach(r => reroutedReportsRef.current.add(r.id));
+    await runReroute(`road closure confirmed — ${closures[0].barangayName || 'field report'}`);
+  };
+
   const handleConfirmReport = async (reportId: string) => {
     const report = reports.find(r => r.id === reportId);
     if (!report) return;
     if (await markReportsConfirmed([reportId])) {
+      await rerouteForClosures([report]);
       await runPipeline(report.barangayId ?? undefined);
     }
   };
 
   const handleConfirmReports = async (reportIds: string[]) => {
+    const targets = reports.filter(r => reportIds.includes(r.id));
     if (await markReportsConfirmed(reportIds)) {
+      await rerouteForClosures(targets);
       await runPipeline(undefined); // one whole-region run covers every confirmed barangay
     }
   };
@@ -525,7 +553,15 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
         return;
       }
       setRerouteNotice(`Re-routed: ${reasonLabel}`);
-      addActivityLog(`RE-ROUTE: ${reasonLabel} — ${out.routes ?? 0} route(s) redrawn on real roads.`, 'warn');
+      // Dispatched convoys and planned routes are redrawn by different code paths and are
+      // counted separately — collapsing them would overstate what moved.
+      const dispatched = typeof out.reroutedActive === 'number' && out.reroutedActive > 0
+        ? `, ${out.reroutedActive} dispatched convoy route(s)`
+        : '';
+      addActivityLog(
+        `RE-ROUTE: ${reasonLabel} — ${out.routes ?? 0} route(s)${dispatched} redrawn on real roads.`,
+        'warn',
+      );
       // The fast path returns 200 with a note when it legitimately did nothing
       // ("no stored manifests"). Without this the only reason is on the floor.
       if (out.note) addActivityLog(`RE-ROUTE: ${out.note}.`, 'warn');
@@ -584,13 +620,26 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
   };
 
   useEffect(() => {
-    const fresh = reports.filter(
-      (r) => isLiveImpassableReport(r, mountedAtRef.current) && !reroutedReportsRef.current.has(r.id),
-    );
-    if (fresh.length === 0) return;
-    fresh.forEach((r) => reroutedReportsRef.current.add(r.id));
-    const where = fresh[0].barangayName || 'a field report';
-    void runReroute(`road reported impassable by volunteer (${where})`);
+    const seen = reportStatusRef.current;
+    const fired = reports
+      .map((r) => ({ report: r, trigger: rerouteTriggerFor(r, seen.get(r.id), mountedAtRef.current) }))
+      .filter((x) => x.trigger !== null
+        && !reroutedReportsRef.current.has(x.report.id)
+        // Confirmed here but not yet in the database — the confirm handler owns it.
+        && !optimisticConfirmsRef.current.has(x.report.id));
+
+    // Record every status BEFORE the early return, so the first pass after mount seeds the
+    // map (prevStatus undefined => no confirmed-transition fires) and the next real change
+    // is measured against it.
+    reports.forEach((r) => seen.set(r.id, r.status));
+
+    if (fired.length === 0) return;
+    fired.forEach((x) => reroutedReportsRef.current.add(x.report.id));
+    const first = fired[0];
+    const where = first.report.barangayName || 'a field report';
+    void runReroute(first.trigger === 'confirmed'
+      ? `road closure confirmed — ${where}`
+      : `road reported impassable by volunteer (${where})`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reports]);
 
@@ -742,6 +791,8 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
                                      // active route, and routes are now empty
       setRerouteNotice(null);
       reroutedReportsRef.current.clear();
+      reportStatusRef.current.clear();
+      optimisticConfirmsRef.current.clear();
       try {
         localStorage.removeItem('manifest-history');
       } catch {

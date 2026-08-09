@@ -29,6 +29,19 @@ describe('reportPinTier', () => {
     }
   });
 
+  it('makes a pending road closure loud whatever severity it carries', () => {
+    // A closure with no parsed severity is the S08 case: the message is about a road,
+    // not a casualty count, so severity is genuinely unknown — and it still must not
+    // render as a 3px dot among hundreds.
+    for (const needsSeverity of ['unknown', 'low', 'medium', 'high'] as const) {
+      expect(reportPinTier(report({ needsSeverity, roadImpassable: true }))).toBe('act');
+    }
+  });
+
+  it('quiets a confirmed closure — the dead road now carries that information', () => {
+    expect(reportPinTier(report({ status: 'confirmed', roadImpassable: true }))).toBe('done');
+  });
+
   it('quiets every confirmed report regardless of severity', () => {
     // Confirmed work is evidence, not a task — a confirmed critical must not
     // shout over a pending one that still needs a decision.

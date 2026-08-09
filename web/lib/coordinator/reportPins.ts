@@ -24,15 +24,26 @@ export type ReportPinTier = 'act' | 'elevated' | 'routine' | 'done';
 export interface PinnableReport {
   status: 'pending' | 'confirmed' | 'flagged';
   needsSeverity: 'critical' | 'high' | 'medium' | 'low' | 'unknown';
+  /** The report claims a road is cut. Not a severity — a change to the road network. */
+  roadImpassable?: boolean;
 }
 
-export function reportPinTier({ status, needsSeverity }: PinnableReport): ReportPinTier {
+export function reportPinTier({ status, needsSeverity, roadImpassable }: PinnableReport): ReportPinTier {
   // Flagged means a coordinator judged it unreliable — that is an open decision
   // regardless of the severity the parser assigned, so it stays loud.
   if (status === 'flagged') return 'act';
   // Confirmed is finished work. It stays on the map as evidence of contact, which
-  // is what makes the gaps legible, but it never competes for attention.
+  // is what makes the gaps legible, but it never competes for attention. A confirmed
+  // closure is quiet here for a second reason: the dead road itself is now drawn on
+  // the map as a ghost, so the pin is no longer where that information lives.
   if (status === 'confirmed') return 'done';
+  // A pending road closure is loud whatever severity the parser assigned it. Severity
+  // ranks how badly a place needs help; this ranks nothing — it says a route the
+  // coordinator is currently using may not exist, and every convoy on it is affected,
+  // not just the barangay that sent the message. It is also the one report type whose
+  // confirmation edits the routing graph, so leaving it as a 3px dot hides the single
+  // decision on the map with consequences beyond its own pin.
+  if (roadImpassable) return 'act';
   if (needsSeverity === 'critical') return 'act';
   if (needsSeverity === 'high') return 'elevated';
   return 'routine';

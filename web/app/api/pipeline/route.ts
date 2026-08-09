@@ -38,6 +38,24 @@ export async function POST(request: Request) {
   // manifests are already persisted and contact recency has not moved, so this skips the
   // rescore and both AI stages — and therefore still works with TabPFN and SEA-LION down.
   if (mode === 'reroute') {
+    // Dispatched (status 'active') routes are invisible to planAndSaveRoutes, which only
+    // regenerates 'planned' ones — so a convoy already rolling would keep drawing its line
+    // straight through the road that was just closed. Rebuild those first, and do it before
+    // the no-manifests early return: a graph change invalidates a rolling route whether or
+    // not there is anything left to plan. The block already landed, so a failure here is
+    // reported, never swallowed.
+    let reroutedActive = 0;
+    let activeNote: string | undefined;
+    {
+      const { data: n, error } = await admin.rpc('reroute_active_dispatch_routes');
+      if (error) {
+        console.error('reroute_active_dispatch_routes failed', error);
+        activeNote = `active dispatch routes not redrawn — ${error.message}`;
+      } else if (typeof n === 'number') {
+        reroutedActive = n;
+      }
+    }
+
     const { data: targetRows, error: tErr } = await admin.rpc('pipeline_targets', {
       p_barangay_id: null, p_limit: MAX_TARGETS,
     });
@@ -55,20 +73,25 @@ export async function POST(request: Request) {
     }
     const routable = targets.filter((t) => demandByBrgy.has(t.barangay_id));
     if (routable.length === 0) {
+      const base = 'no stored manifests to re-plan; run the full pipeline first';
       return Response.json({
-        mode, rescored: false, predictions: 0, manifests: 0, routes: 0,
-        note: 'nothing to reroute — no stored manifests; run the full pipeline first',
+        mode, rescored: false, predictions: 0, manifests: 0, routes: 0, reroutedActive,
+        note: [reroutedActive > 0 ? `${reroutedActive} active route(s) redrawn` : base, activeNote]
+          .filter(Boolean).join('; '),
       });
     }
 
     const plan = await planAndSaveRoutes(admin, routable, demandByBrgy);
     const skipped = targets.length - routable.length;
-    if (skipped > 0) {
-      const skippedNote = `${skipped} target(s) skipped: no stored manifest`;
-      plan.note = plan.note ? `${plan.note}; ${skippedNote}` : skippedNote;
+    const extraNotes = [
+      skipped > 0 ? `${skipped} target(s) skipped: no stored manifest` : null,
+      activeNote,
+    ].filter(Boolean) as string[];
+    if (extraNotes.length > 0) {
+      plan.note = [plan.note, ...extraNotes].filter(Boolean).join('; ');
     }
     return respond({
-      mode, rescored: false, predictions: 0, manifests: routable.length, plan,
+      mode, rescored: false, predictions: 0, manifests: routable.length, plan, reroutedActive,
     });
   }
 
@@ -234,6 +257,8 @@ export async function POST(request: Request) {
 function respond(o: {
   mode: string; rescored: boolean; predictions: number; manifests: number;
   plan: PlanRoutesResult;
+  /** Dispatched routes rebuilt against the current graph (reroute mode only). */
+  reroutedActive?: number;
 }) {
   const payload = {
     mode: o.mode,
@@ -241,6 +266,7 @@ function respond(o: {
     predictions: o.predictions,
     manifests: o.manifests,
     routes: o.plan.routes,
+    ...(o.reroutedActive !== undefined ? { reroutedActive: o.reroutedActive } : {}),
     ...(o.plan.dropped ? { dropped: o.plan.dropped } : {}),
     ...(o.plan.solverStatus ? { solver_status: o.plan.solverStatus } : {}),
     ...(o.plan.note ? { note: o.plan.note } : {}),

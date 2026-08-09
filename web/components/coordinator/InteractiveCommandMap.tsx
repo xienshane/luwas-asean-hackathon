@@ -1576,6 +1576,9 @@ export default function InteractiveCommandMap({
         </div>
         <div class="text-fg mb-1 line-clamp-2">"${report.rawText}"</div>
         ${hasTranslation(report) ? `<div class="text-[12px] text-muted mb-1 line-clamp-1">${report.translatedText}</div>` : ''}
+        ${report.roadImpassable ? `<div class="text-[12px] mb-1" style="color:${COLOR.warning}">Road reported cut${
+          report.status === 'confirmed' ? ' · closed on the map' : ' · confirm to close it on the map'
+        }</div>` : ''}
         <div class="text-[12px] text-muted capitalize">Source · ${report.source}</div>
       </div>`;
 
@@ -1613,20 +1616,26 @@ export default function InteractiveCommandMap({
 
       const el = document.createElement('div');
       el.className = 'cursor-pointer';
-      const size = isSelected ? 20 : 16;
+      const flagged = report.status === 'flagged';
+      // An unconfirmed road closure is the loudest thing in the queue: it is the one
+      // report whose confirmation edits the road network, and it speaks for every
+      // convoy on that road rather than for one barangay. It gets the selected size
+      // even unselected, so it is findable on a map holding hundreds of pins.
+      const closure = !flagged && report.roadImpassable;
+      const size = isSelected || closure ? 20 : 16;
       el.style.width = `${size}px`;
       el.style.height = `${size}px`;
 
-      const flagged = report.status === 'flagged';
       const fill = flagged ? COLOR.critical : COLOR.warning;
-      // Shape, not hue alone: a flagged report is a diamond and a critical pending
-      // one a ringed disc, so the two stay apart for a red/green-deficient viewer.
+      // Shape and glyph, not hue alone: a flagged report is a diamond, a critical
+      // pending one a ringed disc with "!", and a road closure the same disc with "✕"
+      // — all three stay apart for a red/green-deficient viewer.
       const shape = flagged
         ? `transform: rotate(45deg); border-radius: 2px;`
         : `border-radius: 50%;`;
       const glyph = flagged
         ? ''
-        : `<span style="color:${COLOR.bg};font-size:11px;font-weight:700;font-family:sans-serif;line-height:1;">!</span>`;
+        : `<span style="color:${COLOR.bg};font-size:${closure ? 13 : 11}px;font-weight:700;font-family:sans-serif;line-height:1;">${closure ? '&#10005;' : '!'}</span>`;
 
       el.innerHTML = `
         <div style="
@@ -2513,6 +2522,13 @@ export default function InteractiveCommandMap({
                     opacity ramp — a legend of five identical dots would describe a
                     map that no longer exists. */}
                 <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="w-3 h-3 rounded-full shrink-0 flex items-center justify-center font-bold leading-none"
+                      style={{ background: COLOR.warning, color: COLOR.bg, fontSize: 8, boxShadow: `0 0 0 1.5px ${COLOR.bg}` }}
+                    >✕</span>
+                    <span className="text-fg">Road cut · unverified</span>
+                  </div>
                   <div className="flex items-center gap-2">
                     <span
                       className="w-2.5 h-2.5 rounded-full shrink-0"
