@@ -5,6 +5,7 @@ import { ChevronRight, Check, Flag } from 'lucide-react';
 import type { FieldReport, Route, SupplyManifest, Barangay } from '@/lib/types/coordinator';
 import type { ReportCounts } from '@/lib/supabase/coordinator';
 import { SeverityRail, StatusDot, DetailPanel, SEVERITY_TONE } from './ui';
+import { hasTranslation } from '@/lib/reports/translation';
 
 interface OperationsPanelProps {
   reports: FieldReport[];
@@ -126,7 +127,22 @@ export default function OperationsPanel({
                 <span className="text-[14px] font-medium text-fg truncate">{r.barangayName}</span>
                 <span className="text-[12px] text-muted font-mono tabular-nums shrink-0">{hhmm(r.createdAt)}</span>
               </div>
-              <p className="text-[13px] text-muted leading-snug line-clamp-2 mb-2">{r.translatedText ?? r.rawText}</p>
+              {/* The report as it was actually sent, then the machine English under
+                  it. Original-first is a claim the product makes: most of this queue
+                  arrives in Bisaya or Tagalog, and rendering only the translation
+                  hides the one thing that makes the queue readable at all. Both lines
+                  stay at AA contrast — the English is the actionable one for a
+                  coordinator who does not speak the original, so it is separated by
+                  size and a label rather than by being dimmed below legibility. */}
+              <div className="mb-2">
+                <p className="text-[13px] text-fg/85 leading-snug line-clamp-2">{r.rawText}</p>
+                {hasTranslation(r) && (
+                  <p className="mt-0.5 text-[12px] text-muted leading-snug line-clamp-1">
+                    <span className="uppercase text-[10px] tracking-wider opacity-70 mr-1.5">English</span>
+                    {r.translatedText}
+                  </p>
+                )}
+              </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[12px] text-muted truncate">
                   {SOURCE_LABEL[r.source]} · {r.reporterName}

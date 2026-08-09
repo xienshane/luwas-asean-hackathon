@@ -15,6 +15,7 @@ import { routeLineCoords } from '@/lib/coordinator/routeGeometry';
 import { pointAtFraction, stopFraction } from '@/lib/coordinator/pathInterpolate';
 import { nextGhostState, emptyGhostState, ghostDivergentSegments } from '@/lib/coordinator/ghostRoutes';
 import { applyGraphiteBasemap } from '@/lib/coordinator/basemapTheme';
+import { hasTranslation } from '@/lib/reports/translation';
 import { COLOR, MAP, silentAreaState, STATE_COLOR, STATE_LABEL, SERVED_COLOR, SERVED_LABEL, SilentWatchChip } from './ui';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -2193,12 +2194,11 @@ export default function InteractiveCommandMap({
               </div>
 
               {(() => {
-                const hasTranslation =
-                  !!selectedReport.translatedText && selectedReport.translatedText !== selectedReport.rawText;
-                const showingOriginal = reportOriginalId === selectedReport.id || !hasTranslation;
+                const translated = hasTranslation(selectedReport);
+                const showingOriginal = reportOriginalId === selectedReport.id || !translated;
                 return (
                   <div className="space-y-1.5">
-                    {hasTranslation && (
+                    {translated && (
                       <div className="flex items-center justify-between">
                         <span className="text-[11px] text-muted">
                           {showingOriginal ? 'Original' : 'Translated · machine'}

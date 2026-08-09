@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { Search, X, Check, Flag } from 'lucide-react';
 import type { FieldReport } from '@/lib/types/coordinator';
 import { DetailPanel, SeverityRail, StatusDot, Toolbar, SEVERITY_TONE } from './ui';
+import { hasTranslation } from '@/lib/reports/translation';
 
 interface ReportsViewProps {
   reports: FieldReport[];
@@ -253,12 +254,11 @@ export default function ReportsView({ reports, onConfirmReport, onConfirmReports
         >
           <div className="p-4 space-y-4 text-[13px]">
             {(() => {
-              const hasTranslation =
-                !!selected.translatedText && selected.translatedText !== selected.rawText;
-              const showingOriginal = originalForId === selected.id || !hasTranslation;
+              const translated = hasTranslation(selected);
+              const showingOriginal = originalForId === selected.id || !translated;
               return (
                 <div className="space-y-1.5">
-                  {hasTranslation && (
+                  {translated && (
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] text-muted">
                         {showingOriginal ? 'Original' : 'Translated · machine'}
