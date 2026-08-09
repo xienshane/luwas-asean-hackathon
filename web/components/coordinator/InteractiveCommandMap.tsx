@@ -15,7 +15,7 @@ import { routeLineCoords } from '@/lib/coordinator/routeGeometry';
 import { pointAtFraction, stopFraction } from '@/lib/coordinator/pathInterpolate';
 import { nextGhostState, emptyGhostState, ghostDivergentSegments } from '@/lib/coordinator/ghostRoutes';
 import { applyGraphiteBasemap } from '@/lib/coordinator/basemapTheme';
-import { COLOR, MAP, silentAreaState, STATE_COLOR, STATE_LABEL, SERVED_COLOR, SERVED_LABEL } from './ui';
+import { COLOR, MAP, silentAreaState, STATE_COLOR, STATE_LABEL, SERVED_COLOR, SERVED_LABEL, SilentWatchChip } from './ui';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 // MapLibre erases GeoJSON feature properties to an untyped scalar bag; alias it once.
@@ -60,6 +60,8 @@ interface InteractiveCommandMapProps {
     structuralVulnFrac?: number; impactFrac?: number; nearbyNorm?: number;
     weights?: { pop: number; hazard: number; vuln: number; impact: number; silence: number; nearby: number };
   }[];
+  /** Earliest report of the operation — the Silent Watch clock origin for areas never contacted. */
+  operationStartedAt: string | null;
   onUpdateRoadStatus: (edgeId: string, status: 'open' | 'slow' | 'blocked' | 'damaged', notes?: string) => void;
   /** Phase 4.5: coordinator click-to-block — snaps the clicked point to the nearest road edge. */
   onBlockRoadAt?: (lat: number, lng: number) => void;
@@ -106,6 +108,7 @@ export default function InteractiveCommandMap({
   onSelectReport,
   onSelectRoute,
   scores,
+  operationStartedAt,
   onUpdateRoadStatus,
   onBlockRoadAt,
   onConfirmReport,
@@ -211,6 +214,18 @@ export default function InteractiveCommandMap({
     }
     return ids;
   }, [routes]);
+
+  // Reports sitting in the queue for the selected barangay. Lets the Silent Watch
+  // chip distinguish "nothing has arrived" from "something arrived but nobody has
+  // verified it" — only a confirmed report stops the silence clock, so both states
+  // read as Silent and the difference is exactly what a coordinator needs to see.
+  const unverifiedForSelected = useMemo(
+    () =>
+      selectedBarangay
+        ? reports.filter((r) => r.barangayId === selectedBarangay.id && r.status === 'pending').length
+        : 0,
+    [reports, selectedBarangay],
+  );
 
   // Route-line click is bound once at map load too, so read the current routes + callback via refs.
   const routesRef = useRef(routes);
@@ -2061,9 +2076,29 @@ export default function InteractiveCommandMap({
           </button>
         </div>
 
-        {/* Road edge popup (Adjusted left position to sit right beside the top-left fullscreen icon) */}
+        {/* Top-left context stack — everything that answers "what is selected".
+            One column beside the fullscreen button, because a barangay, a report
+            and a road edge can all be selected at once (selecting a barangay also
+            selects its pending report), and three siblings hardcoded to the same
+            top-3 left-12 used to render on top of each other. */}
+        <div className="absolute top-3 left-12 z-10 w-[300px] flex flex-col gap-2">
+          {selectedBarangay && (
+            <SilentWatchChip
+              name={selectedBarangay.name}
+              cityMunicipality={selectedBarangay.cityMunicipality}
+              served={servedBarangayIds.has(selectedBarangay.id)}
+              hoursSinceContact={
+                scores.find((s) => s.barangayId === selectedBarangay.id)?.hoursSinceContact ?? null
+              }
+              lastConfirmedContact={selectedBarangay.lastConfirmedContact}
+              operationStartedAt={operationStartedAt}
+              unverifiedReports={unverifiedForSelected}
+            />
+          )}
+
+        {/* Road edge popup */}
         {selectedEdge && (
-          <div className="absolute top-3 left-12 w-[290px] bg-surface border border-line p-3.5 rounded-card text-[13px] flex flex-col gap-2.5 z-10">
+          <div className="w-full bg-surface border border-line p-3.5 rounded-card text-[13px] flex flex-col gap-2.5">
             <div className="flex items-center justify-between border-b border-line pb-2">
               <span className="font-medium text-fg truncate max-w-[200px]">
                 {selectedEdge.name}
@@ -2128,9 +2163,9 @@ export default function InteractiveCommandMap({
           </div>
         )}
 
-        {/* Report popup (Adjusted left position to sit right beside the top-left fullscreen icon) */}
+        {/* Report popup */}
         {selectedReport && (
-          <div className="absolute top-3 left-12 w-[300px] bg-surface border border-line p-3.5 rounded-card text-[13px] flex flex-col gap-2.5 z-10">
+          <div className="w-full bg-surface border border-line p-3.5 rounded-card text-[13px] flex flex-col gap-2.5">
             <div className="flex items-center justify-between border-b border-line pb-2">
               <div className="flex items-center gap-1.5">
                 <FileText className="w-3.5 h-3.5 text-muted" />
@@ -2259,6 +2294,7 @@ export default function InteractiveCommandMap({
             )}
           </div>
         )}
+        </div>
 
         {/* Updated Legend Panel (Hub colors explicit to display the 3 distinct types) */}
         <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-1.5 select-none">

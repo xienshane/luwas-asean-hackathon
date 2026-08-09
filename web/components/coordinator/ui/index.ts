@@ -12,5 +12,6 @@ export { default as CoverageBar } from './CoverageBar';
 export { default as Chip } from './Chip';
 export type { ChipTone } from './Chip';
 export { default as Section } from './Section';
+export { default as SilentWatchChip } from './SilentWatchChip';
 export * from './Table';
 export * from './tokens';

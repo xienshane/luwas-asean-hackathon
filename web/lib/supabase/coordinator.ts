@@ -38,6 +38,36 @@ const DEFAULT_WEIGHTS: ScoreWeights = {
 export interface CoordinatorMapData {
   barangays: Barangay[];
   scores: BarangayScore[];
+  /**
+   * When this operation began — the earliest report anyone filed. Null if there
+   * are none. Used as the clock origin for barangays that have NEVER been
+   * contacted, which have no "since last contact" of their own to count from.
+   */
+  operationStartedAt: string | null;
+}
+
+// The response window LUWAS is scoped to. Bounding the lookup is what stops a
+// leftover row from an earlier run turning "silent for 14 hours" into "silent for
+// three months" — an unbounded min(created_at) would happily reach back forever.
+const OPERATION_WINDOW_HOURS = 72;
+
+async function fetchOperationStartedAt(
+  supabase: ReturnType<typeof createClient>,
+): Promise<string | null> {
+  const since = new Date(Date.now() - OPERATION_WINDOW_HOURS * 3_600_000).toISOString();
+  const { data, error } = await supabase
+    .from('field_reports')
+    .select('created_at')
+    .gte('created_at', since)
+    .order('created_at', { ascending: true })
+    .limit(1);
+
+  // A missing origin degrades one clock to "no timer"; it must not fail the map.
+  if (error) {
+    console.error('Failed to read the operation start time', error);
+    return null;
+  }
+  return (data?.[0] as { created_at: string } | undefined)?.created_at ?? null;
 }
 
 // Province-wide report counters.
@@ -112,6 +142,9 @@ const PAGE_SIZE = 1000;
 // coordinator; a volunteer/anon gets an empty set rather than an error.
 export async function fetchCoordinatorMapData(): Promise<CoordinatorMapData> {
   const supabase = createClient();
+  // Kicked off before the paging loop so it overlaps it rather than adding a
+  // round trip to the critical path.
+  const operationStartedAtPromise = fetchOperationStartedAt(supabase);
   const rows: ScoreViewRow[] = [];
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await supabase
@@ -154,7 +187,7 @@ export async function fetchCoordinatorMapData(): Promise<CoordinatorMapData> {
     weights: { ...DEFAULT_WEIGHTS, ...(r.inputs?.weights ?? {}) },
   }));
 
-  return { barangays, scores };
+  return { barangays, scores, operationStartedAt: await operationStartedAtPromise };
 }
 
 // ── Teams ──────────────────────────────────────────────────────────────────

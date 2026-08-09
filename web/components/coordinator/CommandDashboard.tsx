@@ -89,6 +89,9 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
   const [selectedReport, setSelectedReport] = useState<FieldReport | null>(null);
 
   const [scores, setScores] = useState<{ barangayId: string; score: number; hoursSinceContact: number | null; timeFactor: number; popDensityNorm: number; hazardNorm: number }[]>([]);
+  // Clock origin for the Silent Watch chip when a barangay has never been contacted
+  // and so has no "since last contact" of its own.
+  const [operationStartedAt, setOperationStartedAt] = useState<string | null>(null);
 
   const [activityLogs, setActivityLogs] = useState<{ id: string; time: string; event: string; type: 'info' | 'warn' | 'success' | 'alert' }[]>([]);
 
@@ -105,6 +108,7 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
         if (cancelled) return;
         setBarangays(map.barangays);
         setScores(map.scores);
+      setOperationStartedAt(map.operationStartedAt);
         setTeams(t);
         setEdges(e);
         setFacilities(f);
@@ -128,6 +132,7 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
       const map = await fetchCoordinatorMapData();
       setBarangays(map.barangays);
       setScores(map.scores);
+      setOperationStartedAt(map.operationStartedAt);
     } catch (err) {
       console.error('Failed to refresh coordinator map data', err);
       addActivityLog('MAP: scores could not be refreshed — showing the last known values.', 'warn');
@@ -745,6 +750,7 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
       const [map, t, e] = await Promise.all([fetchCoordinatorMapData(), fetchTeams(), fetchRoadStatus()]);
       setBarangays(map.barangays);
       setScores(map.scores);
+      setOperationStartedAt(map.operationStartedAt);
       setTeams(t);
       setEdges(e);
       addActivityLog('OPERATIONS: Cleared all reports and generated plans. Accounts and base data kept.', 'alert');
@@ -907,6 +913,7 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
                 onSelectReport={handleSelectReport}
                 onSelectRoute={handleSelectRoute}
                 scores={scores}
+                operationStartedAt={operationStartedAt}
                 onUpdateRoadStatus={handleUpdateRoadStatus}
                 onBlockRoadAt={handleBlockRoadAt}
                 onConfirmReport={handleConfirmReport}
