@@ -56,8 +56,25 @@ export interface ManifestRow {
   status?: string | null;
 }
 const MANIFEST_STATUSES: SupplyManifest['status'][] = ['pending', 'approved', 'modified', 'rejected'];
-export function manifestRowToUi(r: ManifestRow): SupplyManifest {
-  const item = (recommended: number) => ({ recommended, inventory: 0, shortfall: recommended });
+
+/** Item keys of `public.coordinator_depot_stock` — what the depot has on hand. */
+export type DepotStockKey =
+  | 'water_l' | 'food_packs' | 'shelter_kits' | 'blankets' | 'hygiene_kits' | 'medical_kits';
+export type DepotStock = Partial<Record<DepotStockKey, number>>;
+export interface DepotStockRow { item_key: string; quantity: number | null }
+
+export function depotStockFromRows(rows: DepotStockRow[]): DepotStock {
+  return Object.fromEntries(rows.map((r) => [r.item_key, Number(r.quantity ?? 0)])) as DepotStock;
+}
+
+/** Manifest row -> UI. `stock` is the depot pool the coordinator dispatches from; the
+ *  same pool backs every barangay, so a line's coverage answers "can we fill this now?"
+ *  An absent pool means no stock is known, which reads as 0 on hand. */
+export function manifestRowToUi(r: ManifestRow, stock: DepotStock = {}): SupplyManifest {
+  const item = (recommended: number, key: DepotStockKey) => {
+    const inventory = Number(stock[key] ?? 0);
+    return { recommended, inventory, shortfall: Math.max(0, recommended - inventory) };
+  };
   const water = Number(r.water_l ?? 0), food = Number(r.food_packs ?? 0);
   // Hygiene and medical have no dedicated column — they are read back off the stored
   // manifest breakdown, which holds every Sphere line verbatim.
@@ -72,10 +89,11 @@ export function manifestRowToUi(r: ManifestRow): SupplyManifest {
     status: MANIFEST_STATUSES.includes(r.status as SupplyManifest['status'])
       ? (r.status as SupplyManifest['status'])
       : (r.overridden ? 'modified' : 'pending'),
-    waterL: item(water), foodPacks: item(food),
-    blankets: item(Number(r.blankets ?? 0)),
-    hygieneKits: item(hygiene), medicalSupplies: item(medical),
-    shelterMaterials: item(Number(r.shelter_kits ?? 0)),
+    waterL: item(water, 'water_l'), foodPacks: item(food, 'food_packs'),
+    blankets: item(Number(r.blankets ?? 0), 'blankets'),
+    hygieneKits: item(hygiene, 'hygiene_kits'),
+    medicalSupplies: item(medical, 'medical_kits'),
+    shelterMaterials: item(Number(r.shelter_kits ?? 0), 'shelter_kits'),
     totalWeightKg: r.breakdown?.total_weight_kg ?? null,
     overridden: r.overridden,
   };

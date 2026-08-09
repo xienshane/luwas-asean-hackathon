@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { routeRowToUi, predictionRowToUi, manifestRowToUi } from './plan';
+import { routeRowToUi, predictionRowToUi, manifestRowToUi, depotStockFromRows } from './plan';
 
 it('converts a route row (GeoJSON) to a UI Route with a lat/lng path', () => {
   const r = routeRowToUi({ id: 'r1', team_id: 't1', team_name: 'Truck 1', status: 'planned',
@@ -77,4 +77,38 @@ it('reports a null total weight when the breakdown has none', () => {
   const m = manifestRowToUi({ barangay_id: 'b1', days: 3, water_l: 45000, food_packs: 500,
     shelter_kits: 100, blankets: 200, overridden: false, breakdown: { lines: [] } });
   expect(m.totalWeightKg).toBeNull();
+});
+
+it('reads blankets, hygiene and medical off the row and the stored breakdown', () => {
+  const m = manifestRowToUi({ barangay_id: 'b1', days: 3, water_l: 45000, food_packs: 3000,
+    shelter_kits: 400, blankets: 1000, overridden: false,
+    breakdown: { lines: [{ item: 'Hygiene kits', quantity: 200 },
+                         { item: 'Medical kits', quantity: 1 }] } });
+  expect(m.blankets.recommended).toBe(1000);
+  expect(m.hygieneKits.recommended).toBe(200);
+  expect(m.medicalSupplies.recommended).toBe(1);
+});
+
+it('covers manifest lines from the depot stock pool', () => {
+  const stock = depotStockFromRows([
+    { item_key: 'water_l', quantity: 30000 },
+    { item_key: 'blankets', quantity: 1500 },
+  ]);
+  const m = manifestRowToUi({ barangay_id: 'b1', days: 3, water_l: 45000, food_packs: 3000,
+    shelter_kits: 400, blankets: 1000, breakdown: { lines: [] }, overridden: false }, stock);
+  // Partly stocked: the shortfall is what the depot cannot cover.
+  expect(m.waterL.inventory).toBe(30000);
+  expect(m.waterL.shortfall).toBe(15000);
+  // Fully stocked lines carry no shortfall, even with surplus on hand.
+  expect(m.blankets.shortfall).toBe(0);
+  // An item absent from the pool is 0 on hand, not covered.
+  expect(m.foodPacks.inventory).toBe(0);
+  expect(m.foodPacks.shortfall).toBe(3000);
+});
+
+it('treats a missing depot stock pool as nothing on hand', () => {
+  const m = manifestRowToUi({ barangay_id: 'b1', days: 3, water_l: 45000, food_packs: 500,
+    shelter_kits: 100, blankets: 200, breakdown: { lines: [] }, overridden: false });
+  expect(m.waterL.inventory).toBe(0);
+  expect(m.waterL.shortfall).toBe(45000);
 });

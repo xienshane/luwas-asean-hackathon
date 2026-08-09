@@ -669,6 +669,9 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
         const detail = await res.json().catch(() => null);
         throw new Error(detail?.error ?? `dispatch ${res.status}`);
       }
+      // The route is written by the time this resolves, so pull it in now rather than waiting
+      // on the Realtime event — the provisional line is only dropped once the real one lands.
+      await live.refresh();
       addActivityLog(`ROUTING: real-road route generated for ${tName} → ${brgy?.name}.`, 'info');
     } catch (err) {
       // A6: Nothing was written — the optimistic dispatch must not survive as a phantom convoy.
