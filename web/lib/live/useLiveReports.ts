@@ -6,7 +6,7 @@ import type { FieldReport } from '@/lib/types/coordinator';
 import { dbReportToUi, mergeReport, type CoordinatorFieldReport } from './adapters';
 
 // Feeds live field_reports into the dashboard's report state:
-// initial fetch (last 100) + a realtime channel for INSERT/UPDATE.
+// initial fetch (last INITIAL_FETCH_LIMIT) + a realtime channel for INSERT/UPDATE.
 // setReports is a useState setter — stable identity, safe in the dep array.
 //
 // Rows are read from the coordinator_field_reports view (barangay name + pin
@@ -14,6 +14,26 @@ import { dbReportToUi, mergeReport, type CoordinatorFieldReport } from './adapte
 // table, so we subscribe to field_reports and refetch the enriched row from the
 // view by id — this is what removes the old client-side directory and its
 // 1,000-row "Unknown barangay" cap.
+
+/**
+ * How many reports the map holds at once.
+ *
+ * At 100 the window was smaller than a single province's active queue, so the map
+ * showed a thin scatter regardless of how many reports existed — and the counters,
+ * which read province-wide totals from the database, disagreed with what was drawn.
+ * A coordinator told "300 awaiting" and shown 100 dots reasonably concludes the map
+ * is the truth and the number is decoration.
+ *
+ * The map's job here is to make ABSENCE legible: a barangay with no pin is the
+ * signal. That reading only holds if the pins present are all of them, so the
+ * window has to clear the queue rather than sample it.
+ *
+ * Cost is bounded — the quiet tiers render as MapLibre circle features from one
+ * GeoJSON source (reportPins.ts), which is a few hundred points, not a few hundred
+ * DOM nodes. Only the 'act' tier becomes a marker, and that tier is small by design.
+ */
+const INITIAL_FETCH_LIMIT = 400;
+
 export function useLiveReports(
   setReports: React.Dispatch<React.SetStateAction<FieldReport[]>>,
 ) {
@@ -40,7 +60,7 @@ export function useLiveReports(
         .from('coordinator_field_reports')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(100);
+        .limit(INITIAL_FETCH_LIMIT);
       if (cancelled || !rows) return;
       [...rows].reverse().forEach((row) => applyRow(row as CoordinatorFieldReport));
     };
