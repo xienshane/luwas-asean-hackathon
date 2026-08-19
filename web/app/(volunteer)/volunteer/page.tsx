@@ -16,7 +16,7 @@ const SEVERITY_GUIDE = [
   { label: 'Critical', dot: 'bg-critical', note: 'Life-threatening — needs immediate response.' },
   { label: 'High', dot: 'bg-critical/70', note: 'Urgent needs, rapidly worsening.' },
   { label: 'Moderate', dot: 'bg-warning', note: 'Significant needs, situation stable.' },
-  { label: 'Low', dot: 'bg-reached', note: 'Minor needs or precautionary.' },
+  { label: 'Low', dot: 'bg-stable', note: 'Minor needs or precautionary.' },
 ];
 
 const REPORTING_TIPS = [

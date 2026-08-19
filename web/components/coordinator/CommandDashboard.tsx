@@ -19,6 +19,7 @@ import ConnectivityBanner from './ConnectivityBanner';
 import type { LocationHub } from '@/lib/types/coordinator';
 import LeftSidebar from './LeftSidebar';
 import InteractiveCommandMap from './InteractiveCommandMap';
+import { DEFAULT_REGION, REGIONS, type RegionId } from '@/lib/regions';
 import BottomOperationsConsole from './BottomOperationsConsole';
 import RightIntelligencePanel from './RightIntelligencePanel';
 import RouteDetailPanel from './RouteDetailPanel';
@@ -27,8 +28,9 @@ import ReportsView from './ReportsView';
 import TeamsView from './TeamsView';
 import ManifestsView from './ManifestsView';
 import { useLiveReports } from '@/lib/live/useLiveReports';
+import { useReportCounts } from '@/lib/live/useReportCounts';
 import { useLiveVolunteers } from '@/lib/live/useLiveVolunteers';
-import { roadBlockRequest, isLiveImpassableReport } from '@/lib/coordinator/roadStatus';
+import { roadBlockRequest, rerouteTriggerFor } from '@/lib/coordinator/roadStatus';
 import { PAGASA_CATEGORY_LABELS, type LiveConditions } from '@/lib/live/conditions';
 import DemoConsole from './DemoConsole';
 import { capacityAlert } from '@/lib/coordinator/capacityAlert';
@@ -43,6 +45,12 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
   const [currentView, setCurrentView] = useState('map');
   // Team to focus when arriving on the Teams & Dispatch tab (e.g. after clicking its route).
   const [focusTeamId, setFocusTeamId] = useState<string | null>(null);
+  // Country pack on screen. Everything spatial — map, areas, teams, hubs — is scoped to it.
+  const [region, setRegion] = useState<RegionId>(DEFAULT_REGION);
+  // Refresh helpers are plain functions called from handlers, not effects, so they read
+  // the region through a ref rather than closing over a possibly stale render value.
+  const regionRef = useRef<RegionId>(region);
+  useEffect(() => { regionRef.current = region; }, [region]);
 
   // Phase 6.1 — connectivity tier drives the degradation banner + action gating.
   const realtimeHealthy = useRealtimeHealth();
@@ -52,7 +60,10 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
   const barangaysRef = useRef<Barangay[]>([]);
   useEffect(() => { barangaysRef.current = barangays; }, [barangays]);
   const [reports, setReports] = useState<FieldReport[]>([]);
-  useLiveReports(setReports);
+  useLiveReports(setReports, region);
+  // Province-wide queue depth. The report list is capped at 100 rows, so these
+  // counters come from the database instead of from `reports`.
+  const { counts: reportCounts, refresh: refreshReportCounts } = useReportCounts(region);
   const liveVolunteers = useLiveVolunteers();
   const [teams, setTeams] = useState<Team[]>([]);
   const [edges, setEdges] = useState<RoadEdge[]>([]);
@@ -85,22 +96,44 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
   const [selectedReport, setSelectedReport] = useState<FieldReport | null>(null);
 
   const [scores, setScores] = useState<{ barangayId: string; score: number; hoursSinceContact: number | null; timeFactor: number; popDensityNorm: number; hazardNorm: number }[]>([]);
+  // Clock origin for the Silent Watch chip when a barangay has never been contacted
+  // and so has no "since last contact" of its own.
+  const [operationStartedAt, setOperationStartedAt] = useState<string | null>(null);
 
   const [activityLogs, setActivityLogs] = useState<{ id: string; time: string; event: string; type: 'info' | 'warn' | 'success' | 'alert' }[]>([]);
 
   const [rerouteNotice, setRerouteNotice] = useState<string | null>(null);
   const mountedAtRef = useRef<number>(0);
   const reroutedReportsRef = useRef<Set<string>>(new Set());
-  
+  // Last status we saw per report, so the re-route effect can see a pending -> confirmed
+  // TRANSITION instead of the standing fact "this report is confirmed".
+  const reportStatusRef = useRef<Map<string, FieldReport['status']>>(new Map());
+  // Reports THIS client flipped to confirmed optimistically. markReportsConfirmed paints
+  // the new status before its UPDATE resolves, so for these ids "confirmed" is a local
+  // promise, not a fact in the database — and re-routing off a promise reads the road
+  // graph before the closure has committed to it, which silently produces a route
+  // straight through the road that was just closed. The confirm handler re-routes these
+  // itself, after the write lands; the effect only handles rows that arrived confirmed
+  // from the server (realtime, another coordinator).
+  const optimisticConfirmsRef = useRef<Set<string>>(new Set());
+
   useEffect(() => { if (!mountedAtRef.current) mountedAtRef.current = Date.now(); }, []);
 
+  // Re-runs on region change: switching country packs refetches areas, teams and hubs
+  // rather than filtering in memory, so the client never holds two countries at once.
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetchCoordinatorMapData(), fetchTeams(), fetchRoadStatus(), fetchFacilities()])
+    Promise.all([
+      fetchCoordinatorMapData(region),
+      fetchTeams(region),
+      fetchRoadStatus(),
+      fetchFacilities(region),
+    ])
       .then(([map, t, e, f]) => {
         if (cancelled) return;
         setBarangays(map.barangays);
         setScores(map.scores);
+      setOperationStartedAt(map.operationStartedAt);
         setTeams(t);
         setEdges(e);
         setFacilities(f);
@@ -111,15 +144,20 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [region]);
 
   // A3: Every pipeline action rescores server-side; the map only reflects it after a refetch.
   // Setters are stable, so this is safe to call from anywhere in the component.
   const refreshMap = async () => {
+    // Queue depth changes on the same beats the scores do (a confirm removes a row
+    // from the queue and rescores its barangay), so the counters refresh here rather
+    // than waiting out their poll.
+    void refreshReportCounts();
     try {
-      const map = await fetchCoordinatorMapData();
+      const map = await fetchCoordinatorMapData(regionRef.current);
       setBarangays(map.barangays);
       setScores(map.scores);
+      setOperationStartedAt(map.operationStartedAt);
     } catch (err) {
       console.error('Failed to refresh coordinator map data', err);
       addActivityLog('MAP: scores could not be refreshed — showing the last known values.', 'warn');
@@ -178,6 +216,27 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
     [],
   );
   /* eslint-enable react-hooks/refs */
+
+  // Switching country packs invalidates every spatial selection: the selected area,
+  // report and route all belong to the region being left. Clearing them here stops the
+  // intelligence panel describing a Cebu barangay over a map of Da Nang.
+  const handleSelectRegion = (next: RegionId) => {
+    if (next === region) return;
+    setSelectedBarangay(null);
+    setSelectedReport(null);
+    setSelectedRoute(null);
+    setDispatchPreview(null);
+    // A wind reading belongs to the region it was sampled in — dropping it here stops
+    // Cebu's weather sitting under a Đà Nẵng map until someone re-fetches.
+    setLiveConditions(null);
+    setLiveStatus('idle');
+    setRegion(next);
+    const r = REGIONS[next];
+    addActivityLog(
+      `REGION: switched to ${r.label}, ${r.country} — intake over ${r.intakeChannel}. Same models, same thresholds.`,
+      'info',
+    );
+  };
 
   const handleSelectBarangay = (b: Barangay) => {
     setSelectedBarangay(b);
@@ -439,6 +498,7 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
     const ids = targets.map(r => r.id);
     const barangayIds = new Set(targets.map(r => r.barangayId).filter(Boolean) as string[]);
 
+    ids.forEach(id => optimisticConfirmsRef.current.add(id));
     setReports(prev => prev.map(r => (ids.includes(r.id) ? { ...r, status: 'confirmed' } : r)));
     setBarangays(prev => prev.map(b =>
       barangayIds.has(b.id) ? { ...b, lastConfirmedContact: stamp } : b));
@@ -448,6 +508,7 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
     const supabase = createClient();
     const { error } = await supabase.from('field_reports').update({ status: 'confirmed' }).in('id', ids);
     if (error) {
+      ids.forEach(id => optimisticConfirmsRef.current.delete(id));
       setReports(prev => prev.map(r => {
         const original = targets.find(t => t.id === r.id);
         return original ? original : r;
@@ -466,16 +527,31 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
     return true;
   };
 
+  // Confirming a road-closure report is what closes the road (field_report_block_edge
+  // fires on the status change), so the re-route has to run AFTER that write resolves —
+  // not off the optimistic state flip, which would read the graph before the closure is
+  // in it. It runs before the pipeline because redrawing the convoy is the visible
+  // consequence of the tap; the pipeline's rescore can follow.
+  const rerouteForClosures = async (targets: FieldReport[]) => {
+    const closures = targets.filter(r => r.roadImpassable);
+    if (closures.length === 0) return;
+    closures.forEach(r => reroutedReportsRef.current.add(r.id));
+    await runReroute(`road closure confirmed — ${closures[0].barangayName || 'field report'}`);
+  };
+
   const handleConfirmReport = async (reportId: string) => {
     const report = reports.find(r => r.id === reportId);
     if (!report) return;
     if (await markReportsConfirmed([reportId])) {
+      await rerouteForClosures([report]);
       await runPipeline(report.barangayId ?? undefined);
     }
   };
 
   const handleConfirmReports = async (reportIds: string[]) => {
+    const targets = reports.filter(r => reportIds.includes(r.id));
     if (await markReportsConfirmed(reportIds)) {
+      await rerouteForClosures(targets);
       await runPipeline(undefined); // one whole-region run covers every confirmed barangay
     }
   };
@@ -485,6 +561,9 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
     setSelectedReport(null);
     const supabase = createClient();
     await supabase.from('field_reports').update({ status: 'flagged' }).eq('id', reportId);
+    // Flagging leaves the queue without running the pipeline, so refreshMap never
+    // fires — the counter has to be corrected here.
+    void refreshReportCounts();
     addActivityLog(`REPORT FLAGGED: #${reportId} flagged as unreliable.`, 'warn');
   };
 
@@ -509,7 +588,15 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
         return;
       }
       setRerouteNotice(`Re-routed: ${reasonLabel}`);
-      addActivityLog(`RE-ROUTE: ${reasonLabel} — ${out.routes ?? 0} route(s) redrawn on real roads.`, 'warn');
+      // Dispatched convoys and planned routes are redrawn by different code paths and are
+      // counted separately — collapsing them would overstate what moved.
+      const dispatched = typeof out.reroutedActive === 'number' && out.reroutedActive > 0
+        ? `, ${out.reroutedActive} dispatched convoy route(s)`
+        : '';
+      addActivityLog(
+        `RE-ROUTE: ${reasonLabel} — ${out.routes ?? 0} route(s)${dispatched} redrawn on real roads.`,
+        'warn',
+      );
       // The fast path returns 200 with a note when it legitimately did nothing
       // ("no stored manifests"). Without this the only reason is on the floor.
       if (out.note) addActivityLog(`RE-ROUTE: ${out.note}.`, 'warn');
@@ -568,13 +655,26 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
   };
 
   useEffect(() => {
-    const fresh = reports.filter(
-      (r) => isLiveImpassableReport(r, mountedAtRef.current) && !reroutedReportsRef.current.has(r.id),
-    );
-    if (fresh.length === 0) return;
-    fresh.forEach((r) => reroutedReportsRef.current.add(r.id));
-    const where = fresh[0].barangayName || 'a field report';
-    void runReroute(`road reported impassable by volunteer (${where})`);
+    const seen = reportStatusRef.current;
+    const fired = reports
+      .map((r) => ({ report: r, trigger: rerouteTriggerFor(r, seen.get(r.id), mountedAtRef.current) }))
+      .filter((x) => x.trigger !== null
+        && !reroutedReportsRef.current.has(x.report.id)
+        // Confirmed here but not yet in the database — the confirm handler owns it.
+        && !optimisticConfirmsRef.current.has(x.report.id));
+
+    // Record every status BEFORE the early return, so the first pass after mount seeds the
+    // map (prevStatus undefined => no confirmed-transition fires) and the next real change
+    // is measured against it.
+    reports.forEach((r) => seen.set(r.id, r.status));
+
+    if (fired.length === 0) return;
+    fired.forEach((x) => reroutedReportsRef.current.add(x.report.id));
+    const first = fired[0];
+    const where = first.report.barangayName || 'a field report';
+    void runReroute(first.trigger === 'confirmed'
+      ? `road closure confirmed — ${where}`
+      : `road reported impassable by volunteer (${where})`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reports]);
 
@@ -653,6 +753,9 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
         const detail = await res.json().catch(() => null);
         throw new Error(detail?.error ?? `dispatch ${res.status}`);
       }
+      // The route is written by the time this resolves, so pull it in now rather than waiting
+      // on the Realtime event — the provisional line is only dropped once the real one lands.
+      await live.refresh();
       addActivityLog(`ROUTING: real-road route generated for ${tName} → ${brgy?.name}.`, 'info');
     } catch (err) {
       // A6: Nothing was written — the optimistic dispatch must not survive as a phantom convoy.
@@ -723,6 +826,8 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
                                      // active route, and routes are now empty
       setRerouteNotice(null);
       reroutedReportsRef.current.clear();
+      reportStatusRef.current.clear();
+      optimisticConfirmsRef.current.clear();
       try {
         localStorage.removeItem('manifest-history');
       } catch {
@@ -731,9 +836,12 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
       setResetEpoch((n) => n + 1);
       // Teams carry client-only dispatch status (/api/dispatch never writes to
       // `teams`), so the rail keeps reading "dispatched" until we refetch.
-      const [map, t, e] = await Promise.all([fetchCoordinatorMapData(), fetchTeams(), fetchRoadStatus()]);
+      const [map, t, e] = await Promise.all([
+        fetchCoordinatorMapData(regionRef.current), fetchTeams(regionRef.current), fetchRoadStatus(),
+      ]);
       setBarangays(map.barangays);
       setScores(map.scores);
+      setOperationStartedAt(map.operationStartedAt);
       setTeams(t);
       setEdges(e);
       addActivityLog('OPERATIONS: Cleared all reports and generated plans. Accounts and base data kept.', 'alert');
@@ -757,7 +865,9 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
   const fetchLiveConditions = async (): Promise<LiveConditions | null> => {
     setLiveStatus('loading');
     try {
-      const res = await fetch('/api/live-conditions');
+      // Read through the ref: this is called from handlers, so a region switched since
+      // the last render must not fetch the previous country's weather.
+      const res = await fetch(`/api/live-conditions?region=${regionRef.current}`);
       const out = await res.json();
       if (out?.available && out.conditions) {
         setLiveConditions(out.conditions as LiveConditions);
@@ -781,7 +891,7 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
     try {
       const res = await fetch('/api/pipeline/day0', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ categoryOrdinal: day0Category }),
+        body: JSON.stringify({ categoryOrdinal: day0Category, region: regionRef.current }),
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => null);
@@ -882,6 +992,8 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
               )}
               <InteractiveCommandMap
                 active={currentView === 'map'}
+                region={region}
+                onSelectRegion={handleSelectRegion}
                 barangays={barangays}
                 reports={reports}
                 teams={teams}
@@ -896,6 +1008,7 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
                 onSelectReport={handleSelectReport}
                 onSelectRoute={handleSelectRoute}
                 scores={scores}
+                operationStartedAt={operationStartedAt}
                 onUpdateRoadStatus={handleUpdateRoadStatus}
                 onBlockRoadAt={handleBlockRoadAt}
                 onConfirmReport={handleConfirmReport}
@@ -932,10 +1045,10 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
           ) : (
             <OperationsPanel
               reports={reports}
+              counts={reportCounts}
               routes={routes}
               manifests={manifests}
               barangays={barangays}
-              scores={scores}
               onSelectReport={handleSelectReport}
               onConfirmReport={handleConfirmReport}
               onFlagReport={handleFlagReport}
@@ -1035,7 +1148,9 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
               {/* Phase 4.7 — live environmental signal (assistive; overrides the manual pick) */}
               <div className="rounded-control border border-line bg-raised px-3 py-2.5">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[12px] font-medium text-muted">Live conditions (Open-Meteo, worst across Cebu)</span>
+                  <span className="text-[12px] font-medium text-muted">
+                    Live conditions (Open-Meteo, worst across {REGIONS[region].label})
+                  </span>
                   <button
                     type="button"
                     onClick={() => void fetchLiveConditions()}

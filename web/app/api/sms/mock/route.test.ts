@@ -18,42 +18,51 @@ vi.mock('@/lib/supabase/admin', () => ({
   }),
 }));
 
-// The Cebu gazetteer knows Guadalupe and nothing in Da Nang — that asymmetry IS the beat.
-// Signature mirrors the real helper: (adminClient, name).
+// Two country packs are loaded, and a name only resolves inside its own. Guadalupe is
+// Cebu; Phường An Hải is Da Nang. Asking the wrong region finds nothing — that scoping
+// is what stops a Vietnamese ward matching a Philippine barangay.
+// Signature mirrors the real helper: (adminClient, name, region).
 vi.mock('@/lib/sms/barangay', () => ({
-  findBarangayByName: async (_admin: unknown, name: string) =>
-    /guadalupe/i.test(name) ? { id: 'b-guadalupe', name: 'Guadalupe', lat: 10.31, lng: 123.87 } : null,
+  findBarangayByName: async (_admin: unknown, name: string, region = 'cebu') => {
+    if (region === 'cebu' && /guadalupe/i.test(name)) {
+      return { id: 'b-guadalupe', name: 'Guadalupe', lat: 10.31, lng: 123.87 };
+    }
+    if (region === 'danang' && /an hải/i.test(name)) {
+      return { id: 'w-an-hai', name: 'Phường An Hải', lat: 16.0689, lng: 108.2368 };
+    }
+    return null;
+  },
 }));
 
 vi.mock('@/lib/ai/parse', () => ({
   parseFieldReportText: async (text: string) => {
-    const vietnamese = text.includes('Hòa Thuận Đông');
+    const vietnamese = text.includes('An Hải');
     return {
       field_report: {
         source: 'parsed', raw_text: text,
-        location_text: vietnamese ? 'Hòa Thuận Đông' : 'Guadalupe',
+        location_text: vietnamese ? 'phường An Hải' : 'Guadalupe',
         population_estimate: 400, // 80 families x ~5 people
         needs_severity: 'high', road_status: 'unknown', road_impassable: false,
         confidence: 0.88, status: 'pending',
       },
       extraction: {
-        location: vietnamese ? 'Hòa Thuận Đông' : 'Guadalupe', location_confidence: 0.9,
+        location: vietnamese ? 'phường An Hải' : 'Guadalupe', location_confidence: 0.9,
         population_estimate: 400, population_confidence: 0.8,
         needs_severity: 'high', needs_severity_confidence: 0.85,
         road_status: 'unknown', road_status_confidence: 0.5,
       },
       provider: 'sea-lion', needs_review: false, latency_ms: 900,
       translated_text: vietnamese
-        ? 'Severe flooding in Hoa Thuan Dong ward, Da Nang. About 80 households isolated, clean water needed.'
+        ? 'Severe flooding in An Hai ward, Da Nang. About 80 households isolated, clean water needed.'
         : 'Severe flooding in Guadalupe, about 80 families affected',
     };
   },
 }));
 
-const fire = async (message: string) => {
+const fire = async (message: string, region?: string) => {
   const { POST } = await import('./route');
   return POST(new Request('http://x/api/sms/mock?token=test-secret', {
-    method: 'POST', body: JSON.stringify({ message }),
+    method: 'POST', body: JSON.stringify(region ? { message, region } : { message }),
     headers: { 'content-type': 'application/json' },
   }));
 };
@@ -76,17 +85,28 @@ describe('demo preset intake through /api/sms/mock', () => {
     expect(inserted[0].location).toBe('SRID=4326;POINT(123.87 10.31)');
   });
 
-  it('flags the Vietnamese preset for review but keeps every extracted value', async () => {
-    const res = await fire(VIETNAMESE.message);
+  it('lands the Vietnamese preset as a pending, geocoded report in the Da Nang pack', async () => {
+    const res = await fire(VIETNAMESE.message, 'danang');
     expect(res.status).toBe(200);
-    // A real Da Nang ward cannot geocode against the Cebu gazetteer. Flagged is the correct
-    // outcome and the narrated one — the extraction still has to survive.
-    expect(await res.json()).toMatchObject({ ok: true, status: 'flagged' });
+    // S10: with the Da Nang pack loaded the ward resolves like any other, through the
+    // same pipeline and with no model change. That equivalence is the whole claim.
+    expect(await res.json()).toMatchObject({ ok: true, status: 'pending' });
     expect(inserted[0]).toMatchObject({
-      barangay_id: null, population_estimate: 400, needs_severity: 'high', status: 'flagged',
+      source: 'sms', barangay_id: 'w-an-hai',
+      population_estimate: 400, needs_severity: 'high', status: 'pending',
     });
+    expect(inserted[0].location).toBe('SRID=4326;POINT(108.2368 16.0689)');
     expect(inserted[0].translated_text).toMatch(/flood/i);
     expect(inserted[0].raw_text).toBe(VIETNAMESE.message);
+  });
+
+  it('flags the same Vietnamese report when geocoded against the wrong region', async () => {
+    // Region scoping is load-bearing: a Da Nang ward must not resolve to a Philippine
+    // barangay just because the substring matches.
+    const res = await fire(VIETNAMESE.message);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, status: 'flagged' });
+    expect(inserted[0]).toMatchObject({ barangay_id: null, status: 'flagged' });
   });
 
   it('is 404 unless the mock intake is explicitly enabled', async () => {

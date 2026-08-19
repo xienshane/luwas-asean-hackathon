@@ -6,7 +6,6 @@ import {
   openMeteoUrl,
   toLiveConditions,
   pickWorstReading,
-  CEBU_SAMPLE_POINTS,
   PAGASA_CATEGORY_LABELS,
 } from './conditions';
 
@@ -71,18 +70,6 @@ describe('parseOpenMeteo', () => {
   it('throws when wind_speed_10m is missing', () => {
     expect(() => parseOpenMeteo({ current: {} })).toThrow();
     expect(() => parseOpenMeteo({})).toThrow();
-  });
-});
-
-describe('CEBU_SAMPLE_POINTS', () => {
-  it('spans the province with valid Cebu-area coordinates', () => {
-    expect(CEBU_SAMPLE_POINTS.length).toBeGreaterThanOrEqual(3);
-    for (const p of CEBU_SAMPLE_POINTS) {
-      expect(p.lat).toBeGreaterThan(9);
-      expect(p.lat).toBeLessThan(12);
-      expect(p.lng).toBeGreaterThan(123);
-      expect(p.lng).toBeLessThan(125);
-    }
   });
 });
 

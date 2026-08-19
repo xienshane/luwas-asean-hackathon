@@ -29,7 +29,7 @@ class SupplyLine(BaseModel):
     """One supply line, fully traceable to the inputs that produced it."""
 
     item: str = Field(..., description="human-readable item name")
-    category: Literal["water", "food", "shelter", "nfi"]
+    category: Literal["water", "food", "shelter", "nfi", "health"]
     unit: str = Field(..., description="unit of `quantity`, e.g. L, ration packs, blankets")
     quantity: int = Field(..., ge=0, description="quantity to deliver (post access modifier)")
     unit_weight_kg: float = Field(..., ge=0.0, description="logistics weight per unit")

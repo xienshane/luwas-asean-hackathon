@@ -3,15 +3,17 @@
 import React from 'react';
 import { ChevronRight, Check, Flag } from 'lucide-react';
 import type { FieldReport, Route, SupplyManifest, Barangay } from '@/lib/types/coordinator';
+import type { ReportCounts } from '@/lib/supabase/coordinator';
 import { SeverityRail, StatusDot, DetailPanel, SEVERITY_TONE } from './ui';
-import { countSilentOver } from '@/lib/coordinator/silentCount';
+import { hasTranslation } from '@/lib/reports/translation';
 
 interface OperationsPanelProps {
   reports: FieldReport[];
+  /** Province-wide queue depth. Null until the first count resolves. */
+  counts: ReportCounts | null;
   routes: Route[];
   manifests: Record<string, SupplyManifest>;
   barangays: Barangay[];
-  scores: { barangayId: string; hoursSinceContact: number | null }[];
   onSelectReport: (r: FieldReport) => void;
   onConfirmReport: (id: string) => void;
   onFlagReport: (id: string) => void;
@@ -37,19 +39,22 @@ const hhmm = (iso: string) =>
 // the entity detail panel (handled in CommandDashboard).
 export default function OperationsPanel({
   reports,
+  counts,
   routes,
   manifests,
   barangays,
-  scores,
   onSelectReport,
   onConfirmReport,
   onFlagReport,
   onViewChange,
 }: OperationsPanelProps) {
   const pending = reports.filter((r) => r.status === 'pending');
-  const critical = pending.filter((r) => r.needsSeverity === 'critical').length;
+  // Counters read the province-wide totals; the list below can only ever show the
+  // newest 100 rows the dashboard holds. Fall back to the loaded window until the
+  // first count resolves — an undercount beats rendering a zero that isn't true.
+  const pendingTotal = counts?.pending ?? pending.length;
+  const criticalTotal = counts?.pendingCritical ?? pending.filter((r) => r.needsSeverity === 'critical').length;
   const dispatchQueue = routes.filter((r) => r.status === 'planned').length;
-  const silent24h = countSilentOver(scores, 24);
   const supplyShortages = barangays.filter((b) => {
     const m = manifests[b.id];
     return m && SHORT_KEYS.some((k) => (m[k]?.shortfall ?? 0) > 0);
@@ -62,9 +67,8 @@ export default function OperationsPanel({
   );
 
   const counters: { label: string; count: number; critical?: boolean; view: string }[] = [
-    { label: 'Silent >24h', count: silent24h, critical: silent24h > 0, view: 'map' },
-    { label: 'Needs verification', count: pending.length, view: 'reports' },
-    { label: 'Critical incidents', count: critical, critical: true, view: 'reports' },
+    { label: 'Needs verification', count: pendingTotal, view: 'reports' },
+    { label: 'Critical incidents', count: criticalTotal, critical: true, view: 'reports' },
     { label: 'Dispatch queue', count: dispatchQueue, view: 'teams' },
     { label: 'Supply shortages', count: supplyShortages, view: 'manifests' },
   ];
@@ -73,7 +77,7 @@ export default function OperationsPanel({
     <DetailPanel
       className="luwas-rail-swap w-[25%] min-w-[340px] max-w-[360px] shrink-0"
       eyebrow="Operations"
-      title={pending.length > 0 ? `${pending.length} awaiting` : 'All clear'}
+      title={pendingTotal > 0 ? `${pendingTotal.toLocaleString()} awaiting` : 'All clear'}
     >
       <div>
         {/* Action counters */}
@@ -90,7 +94,7 @@ export default function OperationsPanel({
               </span>
               <span className="flex items-center gap-2">
                 <span className={`text-[14px] font-mono tabular-nums ${c.critical && c.count > 0 ? 'text-critical' : 'text-muted'}`}>
-                  {c.count}
+                  {c.count.toLocaleString()}
                 </span>
                 <ChevronRight className="w-3.5 h-3.5 text-muted" />
               </span>
@@ -98,8 +102,17 @@ export default function OperationsPanel({
           ))}
         </div>
 
-        {/* Awaiting verification queue */}
-        <div className="px-4 py-2 text-[13px] text-muted">Awaiting verification</div>
+        {/* Awaiting verification queue. The list is the newest 100 reports the
+            dashboard holds; when the province-wide queue is deeper than that, say
+            so rather than letting the header imply the list is the whole queue. */}
+        <div className="px-4 py-2 flex items-baseline justify-between gap-2">
+          <span className="text-[13px] text-muted">Awaiting verification</span>
+          {pendingTotal > queue.length && (
+            <span className="text-[12px] text-muted tabular-nums">
+              newest {queue.length} of {pendingTotal.toLocaleString()}
+            </span>
+          )}
+        </div>
         {queue.length === 0 ? (
           <div className="px-4 py-8 text-center text-[13px] text-muted">All reports verified.</div>
         ) : (
@@ -114,7 +127,22 @@ export default function OperationsPanel({
                 <span className="text-[14px] font-medium text-fg truncate">{r.barangayName}</span>
                 <span className="text-[12px] text-muted font-mono tabular-nums shrink-0">{hhmm(r.createdAt)}</span>
               </div>
-              <p className="text-[13px] text-muted leading-snug line-clamp-2 mb-2">{r.translatedText ?? r.rawText}</p>
+              {/* The report as it was actually sent, then the machine English under
+                  it. Original-first is a claim the product makes: most of this queue
+                  arrives in Bisaya or Tagalog, and rendering only the translation
+                  hides the one thing that makes the queue readable at all. Both lines
+                  stay at AA contrast — the English is the actionable one for a
+                  coordinator who does not speak the original, so it is separated by
+                  size and a label rather than by being dimmed below legibility. */}
+              <div className="mb-2">
+                <p className="text-[13px] text-fg/85 leading-snug line-clamp-2">{r.rawText}</p>
+                {hasTranslation(r) && (
+                  <p className="mt-0.5 text-[12px] text-muted leading-snug line-clamp-1">
+                    <span className="uppercase text-[10px] tracking-wider opacity-70 mr-1.5">English</span>
+                    {r.translatedText}
+                  </p>
+                )}
+              </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[12px] text-muted truncate">
                   {SOURCE_LABEL[r.source]} · {r.reporterName}

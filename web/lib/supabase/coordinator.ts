@@ -1,5 +1,6 @@
 import { createClient } from './client';
 import type { Barangay, BoundaryGeometry, Team, RoadEdge, LocationHub, Volunteer } from '@/lib/types/coordinator';
+import { DEFAULT_REGION, type RegionId } from '@/lib/regions';
 
 // Phase 4.4 composite-priority weights (Σ = 1.0). The score is an additive blend, so the
 // tooltip can reconcile it as Σ weightᵢ × componentᵢ.
@@ -38,6 +39,80 @@ const DEFAULT_WEIGHTS: ScoreWeights = {
 export interface CoordinatorMapData {
   barangays: Barangay[];
   scores: BarangayScore[];
+  /**
+   * When this operation began — the earliest report anyone filed. Null if there
+   * are none. Used as the clock origin for barangays that have NEVER been
+   * contacted, which have no "since last contact" of their own to count from.
+   */
+  operationStartedAt: string | null;
+}
+
+// The response window LUWAS is scoped to. Bounding the lookup is what stops a
+// leftover row from an earlier run turning "silent for 14 hours" into "silent for
+// three months" — an unbounded min(created_at) would happily reach back forever.
+const OPERATION_WINDOW_HOURS = 72;
+
+async function fetchOperationStartedAt(
+  supabase: ReturnType<typeof createClient>,
+): Promise<string | null> {
+  const since = new Date(Date.now() - OPERATION_WINDOW_HOURS * 3_600_000).toISOString();
+  const { data, error } = await supabase
+    .from('field_reports')
+    .select('created_at')
+    .gte('created_at', since)
+    .order('created_at', { ascending: true })
+    .limit(1);
+
+  // A missing origin degrades one clock to "no timer"; it must not fail the map.
+  if (error) {
+    console.error('Failed to read the operation start time', error);
+    return null;
+  }
+  return (data?.[0] as { created_at: string } | undefined)?.created_at ?? null;
+}
+
+// Province-wide report counters.
+//
+// These CANNOT be derived from the dashboard's report state: useLiveReports holds
+// only the newest 100 rows, so a derived count silently saturates at 100 while the
+// real queue runs into the hundreds — the counter would read "100 awaiting" no
+// matter how deep the backlog got. Counting server-side keeps the number true and
+// costs nothing: head:true sends no rows, only the count.
+export interface ReportCounts {
+  pending: number;
+  pendingCritical: number;
+}
+
+export async function fetchReportCounts(
+  region: RegionId = DEFAULT_REGION,
+): Promise<ReportCounts> {
+  const supabase = createClient();
+  // Counts read the enriched view, not the base table: `region` lives on barangays, and
+  // an unscoped count put Cebu's whole queue above a map of Đà Nẵng.
+  //
+  // Reports with a null region never geocoded, so they belong to no pack and count in
+  // every one — the same rule useLiveReports applies to the feed these numbers head. An
+  // unplaced report is precisely the one a coordinator must not lose, and the counter
+  // agreeing with the list matters more than avoiding a double count across regions.
+  const scope = `region.eq.${region},region.is.null`;
+  const [pending, critical] = await Promise.all([
+    supabase
+      .from('coordinator_field_reports')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending')
+      .or(scope),
+    supabase
+      .from('coordinator_field_reports')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending')
+      .eq('needs_severity', 'critical')
+      .or(scope),
+  ]);
+
+  if (pending.error) throw pending.error;
+  if (critical.error) throw critical.error;
+
+  return { pending: pending.count ?? 0, pendingCritical: critical.count ?? 0 };
 }
 
 // One row of the public.coordinator_barangay_scores view (Phase 3.1 read model).
@@ -81,13 +156,19 @@ const PAGE_SIZE = 1000;
 // Fetch the live Silent Area scores joined to barangay identity + boundary for the
 // coordinator map. RLS (via the security_invoker view) returns rows only to a signed-in
 // coordinator; a volunteer/anon gets an empty set rather than an error.
-export async function fetchCoordinatorMapData(): Promise<CoordinatorMapData> {
+export async function fetchCoordinatorMapData(
+  region: RegionId = DEFAULT_REGION,
+): Promise<CoordinatorMapData> {
   const supabase = createClient();
+  // Kicked off before the paging loop so it overlaps it rather than adding a
+  // round trip to the critical path.
+  const operationStartedAtPromise = fetchOperationStartedAt(supabase);
   const rows: ScoreViewRow[] = [];
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await supabase
       .from('coordinator_barangay_scores')
       .select(COLUMNS)
+      .eq('region', region)
       .order('id', { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
 
@@ -125,7 +206,7 @@ export async function fetchCoordinatorMapData(): Promise<CoordinatorMapData> {
     weights: { ...DEFAULT_WEIGHTS, ...(r.inputs?.weights ?? {}) },
   }));
 
-  return { barangays, scores };
+  return { barangays, scores, operationStartedAt: await operationStartedAtPromise };
 }
 
 // ── Teams ──────────────────────────────────────────────────────────────────
@@ -141,10 +222,11 @@ export function teamRowToUi(r: TeamRow): Team {
     baseLocation: { lat: r.base_lat ?? 10.3157, lng: r.base_lng ?? 123.8854 },
   };
 }
-export async function fetchTeams(): Promise<Team[]> {
+export async function fetchTeams(region: RegionId = DEFAULT_REGION): Promise<Team[]> {
   const supabase = createClient();
   const { data, error } = await supabase.from('coordinator_teams')
-    .select('id,name,capacity_kg,status,type,base_lat,base_lng');
+    .select('id,name,capacity_kg,status,type,base_lat,base_lng')
+    .eq('region', region);
   if (error) throw error;
   return (data ?? []).map((r) => teamRowToUi(r as TeamRow));
 }
@@ -183,10 +265,11 @@ export function facilityRowToHub(r: FacilityRow): LocationHub {
   const type: LocationHub['type'] = r.kind === 'shelter' ? 'shelter' : r.kind === 'staging' ? 'supply_hub' : 'warehouse';
   return { id: r.id, name: r.name, type, latitude: r.latitude, longitude: r.longitude, capacityPercent: 0 };
 }
-export async function fetchFacilities(): Promise<LocationHub[]> {
+export async function fetchFacilities(region: RegionId = DEFAULT_REGION): Promise<LocationHub[]> {
   const supabase = createClient();
   const { data, error } = await supabase.from('coordinator_facilities')
-    .select('id,name,kind,is_depot,latitude,longitude');
+    .select('id,name,kind,is_depot,latitude,longitude')
+    .eq('region', region);
   if (error) throw error;
   return (data ?? []).map((r) => facilityRowToHub(r as FacilityRow));
 }

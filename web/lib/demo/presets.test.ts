@@ -8,7 +8,7 @@ describe('DEMO_PRESETS', () => {
   it('carries the Bisaya and Vietnamese intake presets', () => {
     expect(DEMO_PRESETS.map((p) => p.id)).toEqual([
       'bisaya-guadalupe',
-      'vietnamese-hoa-thuan-dong',
+      'vietnamese-an-hai',
     ]);
   });
 
@@ -20,7 +20,7 @@ describe('DEMO_PRESETS', () => {
 
   it('pins the Vietnamese message verbatim', () => {
     expect(DEMO_PRESETS[1].message).toBe(
-      'LUWAS: Ngập lụt nặng ở phường Hòa Thuận Đông, Đà Nẵng. Khoảng 80 hộ dân bị cô lập, cần nước sạch.',
+      'LUWAS: Ngập lụt nặng ở phường An Hải, Đà Nẵng. Khoảng 80 hộ dân bị cô lập, cần nước sạch.',
     );
   });
 

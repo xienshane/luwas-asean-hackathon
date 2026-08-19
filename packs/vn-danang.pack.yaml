@@ -1,9 +1,13 @@
 # LUWAS country pack — Da Nang, Vietnam
 #
-# STATUS: STUB. Nothing in this repo has been run against Vietnamese data.
+# STATUS: PARTIAL — loaded and running, three of six surfaces genuinely done.
+# Surfaces 1 (boundaries + population), 5 (language) and 6 (gazetteer) ship. A
+# Vietnamese report parses, geocodes, scores and dispatches over a real road
+# graph. Surfaces 2, 3 and 4 are NOT done and are marked so below.
+#
 # Values are filled only where a real source is known. Every `null` carries a
-# `needs:` note saying exactly what would fill it — a stub with honest holes is
-# a usable plan; a stub with invented values is a liability.
+# `needs:` note saying exactly what would fill it — honest holes are a usable
+# plan; invented values are a liability.
 #
 # Surfaces and their PH counterparts: docs/COUNTRY_PACKS.md
 
@@ -11,25 +15,34 @@ pack:
   id: vn-danang
   country: VN
   region: Da Nang
-  status: stub
+  status: partial
   based_on: ph-cebu          # the shipping pilot pack this was derived from
 
-# --- 1. Admin boundaries + population --------------------------------------
+# --- 1. Admin boundaries + population ------------------------------- LOADED -
 admin:
   unit: ward                 # phường (urban) / xã (rural) — the barangay analogue
-  boundary_source: null
-  boundary_needs: >
-    A ward-level polygon layer for Da Nang (OSM extract or an official GSO /
-    provincial GIS release). Loaded through data-pipeline/ingest_static.py into
-    public.barangays — no schema change; the code column is a free string.
-  population_source: null
-  population_needs: >
-    Ward-level population counts from the General Statistics Office (GSO).
-    Name-matched to the boundary layer, same path as ingest_population().
+  # Post-July-2025 reform: the district tier was abolished and ~2/3 of all wards
+  # and communes were dissolved, so OSM retagged the survivors 8 -> 6. These are
+  # the CURRENT boundaries; a pre-reform gazetteer names places that no longer
+  # exist.
+  boundary_source: >
+    OpenStreetMap relation 1891418 (Thành phố Đà Nẵng), admin_level=6,
+    extracted to data-pipeline/raw/osm-boundaries/danang_wards.gpkg.
+  boundary_scope: >
+    11 urban-core wards. Chosen because every one has its centroid inside the
+    road extract, so every one is routable — an area you cannot route to is
+    worse than an absent one. Hải Vân and the Quảng Nam rural communes are out.
+  population_source: >
+    Each ward's own OSM `population` tag (source:population=gis.vn,
+    population:date=2025-07-01 — the date the merger took effect).
+    1,178,687 across the 11. Read from the extract, never hand-entered; an
+    untagged ward fails the load rather than being estimated.
+  loader: data-pipeline/ingest_danang.py
   code_scheme: null
   code_needs: >
     The VN administrative code equivalent of PSGC, to key units stably across
-    releases.
+    releases. Names are the join key today, which is fragile across reforms —
+    and Vietnam has just demonstrated how often those happen.
 
 # --- 2. Storm scale ---------------------------------------------------------
 storm_scale:
@@ -42,15 +55,26 @@ storm_scale:
     thresholds for the live path. Both must change together:
     build_training_table.py CATEGORY_ORDER and web/lib/live/conditions.ts.
   live_feed: open-meteo      # source-agnostic; already used for the PH pilot
-  sample_points: null
-  sample_points_needs: >
-    2-4 lat/lng points spanning the Da Nang operational area, for the
-    worst-case wind read (PH analogue: CEBU_SAMPLE_POINTS in conditions.ts).
+  # DONE. Sample points live on the region itself (web/lib/regions.ts), north /
+  # centre / south across the loaded urban core: Liên Chiểu, Hải Châu,
+  # Ngũ Hành Sơn. The wind read is worst-case across them, as in Cebu.
+  sample_points: web/lib/regions.ts REGIONS.danang.samplePoints
+  # STILL MISSING: the ordinal_map above. Da Nang wind is therefore read through
+  # the PAGASA ladder. Honest for a demo (both map wind -> an ordinal), wrong for
+  # a deployment, and the category LABEL on screen is Philippine.
 
-# --- 3. Hazard rasters ------------------------------------------------------
+# --- 3. Hazard rasters ---------------------------------------- PROXY, NOT REAL
 hazard:
   authority: VNDMA (Viet Nam Disaster and Dyke Management Authority)
   layers: null
+  # What is loaded instead is a GEOGRAPHIC PROXY computed from real OSM geometry:
+  #   flood_100yr      = ward area fraction within 500 m of mapped inland water
+  #   storm_surge_ssa2 = ward area fraction within 1,500 m of mapped coastline
+  # Real distances over real polygons, and they rank wards the way local
+  # knowledge would — but not a hydrological model, not a return period, and not
+  # something a responder should plan against. Never let a shaded map imply VNDMA.
+  proxy_builder: data-pipeline/build_danang_hazard.py
+  proxy_status: stage_dressing_with_a_defensible_shape
   layers_needs: >
     Per-hazard polygon/raster layers (flood by return period, landslide, storm
     surge) with the per-polygon intensity attribute named, in the shape of
@@ -67,6 +91,11 @@ impact_history:
     plus targets `affected` and `damage_rate`, one row per (storm, ward-or-province).
     Candidate sources: VN national disaster damage reporting, provincial
     post-storm assessments. NOT sourced.
+  # IN USE TODAY: the PHILIPPINE table. Vietnamese wards are predicted by reading
+  # 1,261 Philippine rows in context at predict time. That is not a workaround —
+  # it is what made "no training job" true — but it is also exactly why the
+  # accuracy numbers below are unmeasured. Say both halves or neither.
+  table_in_use: ai-services/data/training_table.csv   # Philippine
   retraining_required: false
   accuracy_status: not_measured
   accuracy_needs: >
@@ -98,13 +127,16 @@ intake:
       needs: >
         Zalo is the messaging channel with real reach in Vietnam. Same adapter
         shape as SMS; no work has been done on it.
-  gazetteer: null
-  gazetteer_needs: >
-    Falls out of surface 1 — findBarangayByName (web/lib/sms/barangay.ts)
-    resolves against whatever admin table is loaded. Until the ward table is
-    loaded, Vietnamese place names do not resolve and reports land flagged for
-    coordinator review (never silently guessed). This is the demo's Vietnamese
-    preset behaviour.
+  # DONE — it fell out of surface 1, as predicted. findBarangayByName
+  # (web/lib/sms/barangay.ts) resolves against whatever admin table is loaded,
+  # scoped by region.
+  gazetteer: public.barangays where region = 'danang'
+  gazetteer_note: >
+    One seam had to be closed: SEA-LION returns the location romanized ("An Hai
+    Ward, Da Nang"), which matched nothing against the stored "Phường An Hải".
+    Both sides are now diacritic-folded before matching
+    (supabase/migrations/20260810002000_barangay_name_normalized.sql). An
+    unresolved name still lands flagged for coordinator review, never guessed.
 
 # --- Deterministic core: country-independent -------------------------------
 # Sphere supply standards (15 L water/person/day, 2,100 kcal/person/day) and the

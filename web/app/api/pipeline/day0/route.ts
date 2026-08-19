@@ -4,6 +4,7 @@ import { predictImpact } from '@/lib/ai/impact';
 import { buildManifest } from '@/lib/ai/supply';
 import { toFeatures, severityFromDamageRate, boundedAffected, boundedAffectedRange, type TargetRow } from '@/lib/pipeline/features';
 import { mapWithConcurrency } from '@/lib/pipeline/concurrency';
+import { isRegionId } from '@/lib/regions';
 
 const DAYS = 3;
 const MAX_TARGETS = 50;
@@ -27,6 +28,12 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const categoryOrdinal: number = Number.isFinite(body?.categoryOrdinal) ? body.categoryOrdinal : DEFAULT_CATEGORY;
   const limit: number = Number.isFinite(body?.limit) ? body.limit : MAX_TARGETS;
+  // Confine the forecast to the pack on screen. Scores are min-max normalised across all
+  // rows, so ranking a Vietnamese ward against a Philippine barangay compares positions in
+  // a shared distribution rather than need — an unscoped run from Đà Nẵng returned fifty
+  // Cebu barangays and no Vietnamese ones. An unknown value falls back to null (global),
+  // which is the pre-region behaviour.
+  const region: string | null = isRegionId(body?.region) ? body.region : null;
 
   const admin = createAdminClient();
 
@@ -37,7 +44,10 @@ export async function POST(request: Request) {
   }
 
   // 3) Day-0 target set: top barangays by Silent-Area score, NO report requirement.
-  const { data: targetRows, error: tErr } = await admin.rpc('pipeline_targets_day0', { p_limit: limit });
+  const { data: targetRows, error: tErr } = await admin.rpc('pipeline_targets_day0', {
+    p_limit: limit,
+    p_region: region,
+  });
   if (tErr) return Response.json({ error: `targets: ${tErr.message}` }, { status: 500 });
   const targets = (targetRows ?? []) as TargetRow[];
   if (targets.length === 0) {
@@ -156,6 +166,7 @@ export async function POST(request: Request) {
     predictions: predictionRows.length,
     manifests: manifestUpsert.length,
     category_ordinal: categoryOrdinal,
+    region,
     source: impact.predictions[0]?.source ?? 'heuristic',
   });
 }

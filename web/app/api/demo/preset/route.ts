@@ -1,7 +1,7 @@
 import { DEMO_PRESETS } from '@/lib/demo/presets';
 import { parseFieldReportText } from '@/lib/ai/parse';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { findBarangayByName } from '@/lib/sms/barangay';
+import { findBarangayByName, type DirectoryClient } from '@/lib/sms/barangay';
 import { handleInboundSms, type SmsReportRow } from '@/lib/sms/handle';
 import { normalizeSemaphorePayload, type SemaphoreInboundPayload } from '@/lib/sms/normalize';
 
@@ -34,7 +34,10 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const result = await handleInboundSms(inbound, {
     parse: (text) => parseFieldReportText(text),
-    findBarangay: (name) => findBarangayByName(admin, name),
+    // Cast: the real client satisfies DirectoryClient structurally, but checking it
+    // against the builder chain trips TS2589 (excessively deep instantiation).
+    findBarangay: (name) =>
+      findBarangayByName(admin as unknown as DirectoryClient, name, preset.region),
     insertReport: async (row: SmsReportRow) => {
       const { data, error } = await admin
         .from('field_reports')

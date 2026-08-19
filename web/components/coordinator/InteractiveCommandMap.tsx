@@ -9,13 +9,16 @@ import {
   AlertOctagon,
   X,
 } from 'lucide-react';
-import type { Marker, Popup, MapMouseEvent, MapLayerMouseEvent, MapGeoJSONFeature, LngLat } from 'maplibre-gl';
+import type { Marker, Popup, MapMouseEvent, MapLayerMouseEvent, MapGeoJSONFeature, LngLat, GeoJSONSource } from 'maplibre-gl';
 import type { Barangay, FieldReport, Team, RoadEdge, Route, Volunteer, LocationHub } from '@/lib/types/coordinator';
 import { routeLineCoords } from '@/lib/coordinator/routeGeometry';
 import { pointAtFraction, stopFraction } from '@/lib/coordinator/pathInterpolate';
 import { nextGhostState, emptyGhostState, ghostDivergentSegments } from '@/lib/coordinator/ghostRoutes';
 import { applyGraphiteBasemap } from '@/lib/coordinator/basemapTheme';
-import { COLOR, MAP, silentAreaState, STATE_COLOR, STATE_LABEL, SERVED_COLOR, SERVED_LABEL } from './ui';
+import { hasTranslation } from '@/lib/reports/translation';
+import { reportPinTier, isLoudTier, DOT_RADIUS, DOT_OPACITY } from '@/lib/coordinator/reportPins';
+import { COLOR, MAP, silentAreaState, STATE_COLOR, STATE_LABEL, SERVED_COLOR, SERVED_LABEL, SilentWatchChip } from './ui';
+import { DEFAULT_REGION, REGION_LIST, REGIONS, type RegionId } from '@/lib/regions';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 // MapLibre erases GeoJSON feature properties to an untyped scalar bag; alias it once.
@@ -60,6 +63,8 @@ interface InteractiveCommandMapProps {
     structuralVulnFrac?: number; impactFrac?: number; nearbyNorm?: number;
     weights?: { pop: number; hazard: number; vuln: number; impact: number; silence: number; nearby: number };
   }[];
+  /** Earliest report of the operation — the Silent Watch clock origin for areas never contacted. */
+  operationStartedAt: string | null;
   onUpdateRoadStatus: (edgeId: string, status: 'open' | 'slow' | 'blocked' | 'damaged', notes?: string) => void;
   /** Phase 4.5: coordinator click-to-block — snaps the clicked point to the nearest road edge. */
   onBlockRoadAt?: (lat: number, lng: number) => void;
@@ -67,6 +72,10 @@ interface InteractiveCommandMapProps {
   onFlagReport: (reportId: string) => void;
   onResetReports?: () => void;
   active?: boolean;
+  /** Country pack on screen. Changing it re-homes the map to that region. */
+  region?: RegionId;
+  /** Omit to hide the region switch entirely (single-region deployments). */
+  onSelectRegion?: (region: RegionId) => void;
 }
 
 // ─── Theme Helpers (calm tokens: reached / escalating / critical) ─────────────
@@ -106,12 +115,15 @@ export default function InteractiveCommandMap({
   onSelectReport,
   onSelectRoute,
   scores,
+  operationStartedAt,
   onUpdateRoadStatus,
   onBlockRoadAt,
   onConfirmReport,
   onFlagReport,
   onResetReports,
   active = true,
+  region = DEFAULT_REGION,
+  onSelectRegion,
 }: InteractiveCommandMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -119,6 +131,10 @@ export default function InteractiveCommandMap({
   const mapRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const maplibreglRef = useRef<any>(null); // npm maplibre-gl module (client-only dynamic import)
+  // initMap runs from an async style load, by which time `region` may have moved on.
+  // The ref is what it reads, so the first paint lands on the right country.
+  const regionRef = useRef<RegionId>(region);
+  useEffect(() => { regionRef.current = region; }, [region]);
 
   // Separate, isolated refs for markers
   const reportMarkersRef = useRef<Marker[]>([]);
@@ -211,6 +227,18 @@ export default function InteractiveCommandMap({
     }
     return ids;
   }, [routes]);
+
+  // Reports sitting in the queue for the selected barangay. Lets the Silent Watch
+  // chip distinguish "nothing has arrived" from "something arrived but nobody has
+  // verified it" — only a confirmed report stops the silence clock, so both states
+  // read as Silent and the difference is exactly what a coordinator needs to see.
+  const unverifiedForSelected = useMemo(
+    () =>
+      selectedBarangay
+        ? reports.filter((r) => r.barangayId === selectedBarangay.id && r.status === 'pending').length
+        : 0,
+    [reports, selectedBarangay],
+  );
 
   // Route-line click is bound once at map load too, so read the current routes + callback via refs.
   const routesRef = useRef(routes);
@@ -437,18 +465,17 @@ export default function InteractiveCommandMap({
     const maplibregl = maplibreglRef.current;
     if (!mapContainerRef.current || mapRef.current || !maplibregl) return;
 
-    const WHOLE_CEBU_BOUNDS: [[number, number], [number, number]] = [
-      [123.15, 9.30], 
-      [124.60, 11.50]
-    ];
+    // Home view comes from the country pack, not a constant: the map has to be able to
+    // leave the Philippines when the coordinator switches regions.
+    const home = REGIONS[regionRef.current];
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
       style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
-      center: [123.905, 10.33], 
-      zoom: 11.5,
+      center: home.center,
+      zoom: home.zoom,
       minZoom: 8.0,
-      maxBounds: WHOLE_CEBU_BOUNDS,
+      maxBounds: home.bounds,
       attributionControl: { compact: false },
     });
 
@@ -588,6 +615,65 @@ export default function InteractiveCommandMap({
           'line-width': 4,
           'line-opacity': 1,
           'line-dasharray': [2, 1.4],
+        },
+      });
+
+      // ── Quiet report tiers, drawn as circles rather than DOM markers ──────────
+      // Only the loud tier stays a DOM marker (see the report-pins effect). These
+      // are the ~90% that are evidence rather than tasks, and there can be a
+      // hundred of them: as absolutely-positioned DOM nodes MapLibre had to
+      // reposition every one on every frame of a pan or zoom, and DOM markers
+      // always paint above the canvas, so background evidence covered the routes
+      // drawn through it. A circle layer is one draw call and sits here in the
+      // stack — above the roads, below the routes — where evidence belongs.
+      map.addSource('reports-dots-source', {
+        type: 'geojson',
+        // Report ids are UUIDs. A GeoJSON source only accepts integer feature ids
+        // natively, so setFeatureState would silently no-op on them; promoteId
+        // lifts properties.id into the feature id and makes hover state work —
+        // same reason barangays-source carries it.
+        promoteId: 'id',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+
+      // Invisible, generously sized hit target. The visible dots are 2.5–6px, far
+      // under any usable pointer target, so interaction is handled by this layer
+      // instead — the mark stays quiet without becoming unclickable.
+      map.addLayer({
+        id: 'reports-dots-hit',
+        type: 'circle',
+        source: 'reports-dots-source',
+        paint: { 'circle-radius': 10, 'circle-opacity': 0, 'circle-color': COLOR.muted },
+      });
+
+      map.addLayer({
+        id: 'reports-dots',
+        type: 'circle',
+        source: 'reports-dots-source',
+        paint: {
+          'circle-color': [
+            'match', ['get', 'tier'],
+            // Deliberately NOT the brand green for confirmed: COLOR.active means
+            // "relief is moving" (routes, dispatch, reached) and ~90 green dots
+            // drowned the one signal it is supposed to carry.
+            'elevated', COLOR.warning,
+            COLOR.muted,
+          ],
+          'circle-radius': [
+            'interpolate', ['linear'], ['zoom'],
+            10, ['match', ['get', 'tier'], 'elevated', DOT_RADIUS.elevated[0], 'routine', DOT_RADIUS.routine[0], DOT_RADIUS.done[0]],
+            15, ['match', ['get', 'tier'], 'elevated', DOT_RADIUS.elevated[1], 'routine', DOT_RADIUS.routine[1], DOT_RADIUS.done[1]],
+          ],
+          'circle-opacity': [
+            'match', ['get', 'tier'],
+            'elevated', DOT_OPACITY.elevated,
+            'routine', DOT_OPACITY.routine,
+            DOT_OPACITY.done,
+          ],
+          // A hairline stroke that appears only on hover: feedback without the
+          // size change that would make a dense field jitter under the cursor.
+          'circle-stroke-color': COLOR.fg,
+          'circle-stroke-width': ['case', ['boolean', ['feature-state', 'hovered'], false], 1.5, 0],
         },
       });
 
@@ -1014,6 +1100,34 @@ export default function InteractiveCommandMap({
   // marker (color-not-only: shape + label + symbol, not red hue alone). DOM markers render above
   // the canvas, so a chip is never hidden by a line. Built from `edges` (the same client array
   // that feeds roads-source) so it doesn't depend on source paint timing.
+  // ── Re-home the map when the country pack changes ──
+  // maxBounds must be dropped BEFORE moving: MapLibre clamps any camera change to the
+  // current bounds, so flying from Cebu to Da Nang with the Cebu box still set lands the
+  // map against the edge of the Philippines instead. New bounds go on after arrival.
+  const lastRegionRef = useRef<RegionId>(region);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded) return;
+    if (lastRegionRef.current === region) return;
+    lastRegionRef.current = region;
+
+    const { center, zoom, bounds } = REGIONS[region];
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+    map.setMaxBounds(null);
+    const applyBounds = () => map.setMaxBounds(bounds);
+
+    if (reduce) {
+      map.jumpTo({ center, zoom });
+      applyBounds();
+      return;
+    }
+    // The flight across the sea is the point of the beat — it shows one system moving
+    // countries, not a second deployment. `once` so a later pan cannot re-clamp.
+    map.once('moveend', applyBounds);
+    map.flyTo({ center, zoom, duration: 2600, curve: 1.6, essential: true });
+  }, [region, isMapLoaded]);
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isMapLoaded || !maplibreglRef.current) return;
@@ -1460,7 +1574,11 @@ export default function InteractiveCommandMap({
     return () => cancelAnimationFrame(raf);
   }, [isMapLoaded]);
 
-  // ── Interactive Report Markers (Custom SVG styling for Pending/Confirmed/Flagged) ──
+  // ── Report pins: a salience ramp, not one mark repeated ──────────────────────
+  // Loud tier (critical pending + flagged) and the current selection render as DOM
+  // markers, because they need rich shapes and are few. Everything else goes into
+  // the reports-dots circle layer. See lib/coordinator/reportPins.ts for why
+  // severity — not status — decides which is which.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isMapLoaded) return;
@@ -1468,7 +1586,13 @@ export default function InteractiveCommandMap({
     reportMarkersRef.current.forEach((m) => m.remove());
     reportMarkersRef.current = [];
 
-    if (!mapLayers.reports) return;
+    const dotSource = map.getSource('reports-dots-source') as GeoJSONSource | undefined;
+    const clearDots = () => dotSource?.setData({ type: 'FeatureCollection', features: [] });
+
+    if (!mapLayers.reports) {
+      clearDots();
+      return;
+    }
 
     // A dispatched area is already represented by its route destination pin, which would otherwise
     // overlap the report marker. Hide report markers in barangays with an active/planned route;
@@ -1480,94 +1604,164 @@ export default function InteractiveCommandMap({
         .filter((id): id is string => Boolean(id)),
     );
 
-    reports.forEach((report) => {
-      if (report.barangayId && dispatchedBarangayIds.has(report.barangayId)) return;
+    const hoverHtml = (report: FieldReport) => `
+      <div class="px-2.5 py-1.5 text-[13px] font-sans max-w-[220px]">
+        <div class="flex items-center gap-2 mb-1 border-b border-line pb-1 justify-between">
+          <span class="font-mono text-muted text-[12px]">#${report.id}</span>
+          <span class="flex items-center gap-1.5 text-[12px] text-muted capitalize">
+            <span style="width:6px;height:6px;border-radius:9999px;background:${reportStatusColor(report.status)}"></span>${report.status}
+          </span>
+        </div>
+        <div class="text-fg mb-1 line-clamp-2">"${report.rawText}"</div>
+        ${hasTranslation(report) ? `<div class="text-[12px] text-muted mb-1 line-clamp-1">${report.translatedText}</div>` : ''}
+        ${report.roadImpassable ? `<div class="text-[12px] mb-1" style="color:${COLOR.warning}">Road reported cut${
+          report.status === 'confirmed' ? ' · closed on the map' : ' · confirm to close it on the map'
+        }</div>` : ''}
+        <div class="text-[12px] text-muted capitalize">Source · ${report.source}</div>
+      </div>`;
+
+    const focusReport = (report: FieldReport) => {
+      onSelectReport(report);
+      setSelectedEdge(null);
+      map.flyTo({
+        center: [report.longitude, report.latitude],
+        zoom: Math.max(map.getZoom(), 13.2), // only zoom in, never out
+        essential: true,
+        speed: 1.2,
+      });
+    };
+
+    const visible = reports.filter(
+      (r) => !(r.barangayId && dispatchedBarangayIds.has(r.barangayId)),
+    );
+
+    const dots: GeoJSON.Feature[] = [];
+
+    for (const report of visible) {
+      const tier = reportPinTier(report);
       const isSelected = selectedReport?.id === report.id;
-      const status = report.status;
-      const bg = reportStatusColor(status);
+
+      // The selection is promoted out of the dot field so it can carry a ring —
+      // otherwise clicking a 3px dot gives no confirmation that anything happened.
+      if (!isLoudTier(tier) && !isSelected) {
+        dots.push({
+          type: 'Feature',
+          properties: { id: report.id, tier }, // promoteId lifts this into the feature id
+          geometry: { type: 'Point', coordinates: [report.longitude, report.latitude] },
+        });
+        continue;
+      }
 
       const el = document.createElement('div');
-      el.className = 'flex items-center justify-center relative cursor-pointer';
-
-      const size = isSelected ? 26 : 20;
+      el.className = 'cursor-pointer';
+      const flagged = report.status === 'flagged';
+      // An unconfirmed road closure is the loudest thing in the queue: it is the one
+      // report whose confirmation edits the road network, and it speaks for every
+      // convoy on that road rather than for one barangay. It gets the selected size
+      // even unselected, so it is findable on a map holding hundreds of pins.
+      const closure = !flagged && report.roadImpassable;
+      const size = isSelected || closure ? 20 : 16;
       el.style.width = `${size}px`;
       el.style.height = `${size}px`;
 
-      let iconMarkup = '';
-      if (status === 'pending') {
-        iconMarkup = `<span style="color:#0B0C0E;font-size:11px;font-weight:700;font-family:sans-serif;line-height:1;">!</span>`;
-      } else if (status === 'confirmed') {
-        iconMarkup = `
-          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#0B0C0E" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="20 6 9 17 4 12"></polyline>
-          </svg>`;
-      } else if (status === 'flagged') {
-        iconMarkup = `
-          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
-            <line x1="4" y1="22" x2="4" y2="15"></line>
-          </svg>`;
-      }
+      const fill = flagged ? COLOR.critical : COLOR.warning;
+      // Shape and glyph, not hue alone: a flagged report is a diamond, a critical
+      // pending one a ringed disc with "!", and a road closure the same disc with "✕"
+      // — all three stay apart for a red/green-deficient viewer.
+      const shape = flagged
+        ? `transform: rotate(45deg); border-radius: 2px;`
+        : `border-radius: 50%;`;
+      const glyph = flagged
+        ? ''
+        : `<span style="color:${COLOR.bg};font-size:${closure ? 13 : 11}px;font-weight:700;font-family:sans-serif;line-height:1;">${closure ? '&#10005;' : '!'}</span>`;
 
       el.innerHTML = `
         <div style="
-          background: ${bg};
-          border: 1.5px solid rgba(14,20,36,0.85);
-          border-radius: 50%;
+          background: ${fill};
+          ${shape}
           width: ${size}px;
           height: ${size}px;
           display: flex;
           align-items: center;
           justify-content: center;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.5);
-          transition: transform 0.1s ease;
-        " class="hover:scale-110">
-          ${iconMarkup}
-        </div>
-      `;
+          box-shadow: 0 0 0 ${isSelected ? '3px' : '2px'} ${COLOR.bg}${isSelected ? `, 0 0 0 ${size / 2}px ${fill}33` : ''};
+          outline: ${isSelected ? `1.5px solid ${COLOR.fg}` : 'none'};
+          outline-offset: 2px;
+        ">${glyph}</div>`;
 
       el.addEventListener('mouseenter', () => {
-        const dot = reportStatusColor(status);
         hoverPopupRef.current.remove();
         hoverPopupRef.current
           .setLngLat([report.longitude, report.latitude])
-          .setHTML(`
-            <div class="px-2.5 py-1.5 text-[13px] font-sans max-w-[220px]">
-              <div class="flex items-center gap-2 mb-1 border-b border-line pb-1 justify-between">
-                <span class="font-mono text-muted text-[12px]">#${report.id}</span>
-                <span class="flex items-center gap-1.5 text-[12px] text-muted capitalize">
-                  <span style="width:6px;height:6px;border-radius:9999px;background:${dot}"></span>${status}
-                </span>
-              </div>
-              <div class="text-fg mb-1 line-clamp-2">"${report.translatedText ?? report.rawText}"</div>
-              <div class="text-[12px] text-muted capitalize">Source · ${report.source}</div>
-            </div>
-          `)
+          .setHTML(hoverHtml(report))
           .addTo(map);
       });
-
-      el.addEventListener('mouseleave', () => {
-        hoverPopupRef.current.remove();
-      });
-
+      el.addEventListener('mouseleave', () => hoverPopupRef.current.remove());
       el.addEventListener('click', (ev) => {
         ev.stopPropagation();
-        onSelectReport(report);
-        setSelectedEdge(null);
-        map.flyTo({
-          center: [report.longitude, report.latitude],
-          zoom: Math.max(map.getZoom(), 13.2), // only zoom in, never out
-          essential: true,
-          speed: 1.2
-        });
+        focusReport(report);
       });
 
-      const marker = new maplibreglRef.current.Marker({ element: el })
-        .setLngLat([report.longitude, report.latitude])
-        .addTo(map);
+      reportMarkersRef.current.push(
+        new maplibreglRef.current.Marker({ element: el })
+          .setLngLat([report.longitude, report.latitude])
+          .addTo(map),
+      );
+    }
 
-      reportMarkersRef.current.push(marker);
-    });
+    dotSource?.setData({ type: 'FeatureCollection', features: dots });
+
+    // Dot interaction rides the oversized invisible hit layer. Handlers are bound
+    // per-effect and torn down in the cleanup, so they always close over the
+    // current reports rather than a stale array.
+    const byId = new Map(visible.map((r) => [r.id, r] as const));
+    let hoveredDotId: string | null = null;
+
+    const clearDotHover = () => {
+      if (hoveredDotId === null) return;
+      map.setFeatureState({ source: 'reports-dots-source', id: hoveredDotId }, { hovered: false });
+      hoveredDotId = null;
+    };
+
+    const onDotMove = (e: MapLayerMouseEvent) => {
+      const id = e.features?.[0]?.properties?.id as string | undefined;
+      if (!id) return;
+      map.getCanvas().style.cursor = 'pointer';
+      if (hoveredDotId === id) {
+        hoverPopupRef.current.setLngLat(e.lngLat);
+        return;
+      }
+      clearDotHover();
+      hoveredDotId = id;
+      map.setFeatureState({ source: 'reports-dots-source', id }, { hovered: true });
+      const report = byId.get(id);
+      if (!report) return;
+      hoverPopupRef.current.remove();
+      hoverPopupRef.current.setLngLat(e.lngLat).setHTML(hoverHtml(report)).addTo(map);
+    };
+
+    const onDotLeave = () => {
+      clearDotHover();
+      map.getCanvas().style.cursor = '';
+      hoverPopupRef.current.remove();
+    };
+
+    const onDotClick = (e: MapLayerMouseEvent) => {
+      const id = e.features?.[0]?.properties?.id as string | undefined;
+      const report = id ? byId.get(id) : undefined;
+      if (report) focusReport(report);
+    };
+
+    map.on('mousemove', 'reports-dots-hit', onDotMove);
+    map.on('mouseleave', 'reports-dots-hit', onDotLeave);
+    map.on('click', 'reports-dots-hit', onDotClick);
+
+    return () => {
+      map.off('mousemove', 'reports-dots-hit', onDotMove);
+      map.off('mouseleave', 'reports-dots-hit', onDotLeave);
+      map.off('click', 'reports-dots-hit', onDotClick);
+      clearDotHover();
+    };
   }, [isMapLoaded, mapLayers.reports, reports, routes, selectedReport, onSelectReport]);
 
   // ── Interactive Team Markers (Custom SVGs categorized by Team Type) ──
@@ -1844,6 +2038,12 @@ export default function InteractiveCommandMap({
     toggleLayer('team-routes-flow', mapLayers.routes);
     toggleLayer('team-routes-line-planned', mapLayers.routes);
     toggleLayer('dispatch-preview-line', mapLayers.routes);
+    // The pin effect already empties the dot source when reports are toggled off;
+    // hiding the layers as well keeps this list the single place to answer "what
+    // does the Reports toggle control", and takes the hit layer out of the
+    // hover/click path rather than leaving an invisible target behind.
+    toggleLayer('reports-dots', mapLayers.reports);
+    toggleLayer('reports-dots-hit', mapLayers.reports);
   }, [mapLayers, isMapLoaded]);
 
   // ── Fullscreen Setup ──
@@ -1883,7 +2083,8 @@ export default function InteractiveCommandMap({
   // ── Zoom helpers ──
   const zoomIn    = () => mapRef.current?.zoomIn();
   const zoomOut   = () => mapRef.current?.zoomOut();
-  const resetView = () => mapRef.current?.easeTo({ center: [123.905, 10.33], zoom: 11.5 });
+  const resetView = () =>
+    mapRef.current?.easeTo({ center: REGIONS[region].center, zoom: REGIONS[region].zoom });
 
   // ── Road status update ──
   const handleRoadStatusChange = (status: 'open' | 'slow' | 'blocked' | 'damaged') => {
@@ -2036,6 +2237,44 @@ export default function InteractiveCommandMap({
           )}
         </button>
 
+        {/* Country pack switch. Bottom-left is the only free corner, and it keeps the
+            switch away from the selection stack so changing country is never a misclick
+            while inspecting an area. */}
+        {onSelectRegion && (
+          <div className="absolute bottom-4 left-4 z-10 select-none">
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">
+              Region
+            </div>
+            <div
+              role="radiogroup"
+              aria-label="Region"
+              className="flex overflow-hidden rounded-control border border-line bg-surface shadow-overlay"
+            >
+              {REGION_LIST.map((r) => {
+                const isActive = r.id === region;
+                return (
+                  <button
+                    key={r.id}
+                    role="radio"
+                    aria-checked={isActive}
+                    onClick={() => !isActive && onSelectRegion(r.id)}
+                    title={`${r.label}, ${r.country} — intake over ${r.intakeChannel}`}
+                    className={
+                      'px-3 py-1.5 text-xs font-semibold transition-colors duration-100 cursor-pointer '
+                      + (isActive
+                        ? 'bg-raised text-fg'
+                        : 'text-muted hover:bg-raised/60 hover:text-fg')
+                    }
+                  >
+                    {r.label}
+                    <span className="ml-1.5 font-normal text-[10px] text-muted">{r.country}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Zoom controls */}
         <div className="absolute top-3 right-3 z-10 flex flex-col gap-1">
           <button
@@ -2061,9 +2300,29 @@ export default function InteractiveCommandMap({
           </button>
         </div>
 
-        {/* Road edge popup (Adjusted left position to sit right beside the top-left fullscreen icon) */}
+        {/* Top-left context stack — everything that answers "what is selected".
+            One column beside the fullscreen button, because a barangay, a report
+            and a road edge can all be selected at once (selecting a barangay also
+            selects its pending report), and three siblings hardcoded to the same
+            top-3 left-12 used to render on top of each other. */}
+        <div className="absolute top-3 left-12 z-10 w-[300px] flex flex-col gap-2">
+          {selectedBarangay && (
+            <SilentWatchChip
+              name={selectedBarangay.name}
+              cityMunicipality={selectedBarangay.cityMunicipality}
+              served={servedBarangayIds.has(selectedBarangay.id)}
+              hoursSinceContact={
+                scores.find((s) => s.barangayId === selectedBarangay.id)?.hoursSinceContact ?? null
+              }
+              lastConfirmedContact={selectedBarangay.lastConfirmedContact}
+              operationStartedAt={operationStartedAt}
+              unverifiedReports={unverifiedForSelected}
+            />
+          )}
+
+        {/* Road edge popup */}
         {selectedEdge && (
-          <div className="absolute top-3 left-12 w-[290px] bg-surface border border-line p-3.5 rounded-card text-[13px] flex flex-col gap-2.5 z-10">
+          <div className="w-full bg-surface border border-line p-3.5 rounded-card text-[13px] flex flex-col gap-2.5">
             <div className="flex items-center justify-between border-b border-line pb-2">
               <span className="font-medium text-fg truncate max-w-[200px]">
                 {selectedEdge.name}
@@ -2128,9 +2387,9 @@ export default function InteractiveCommandMap({
           </div>
         )}
 
-        {/* Report popup (Adjusted left position to sit right beside the top-left fullscreen icon) */}
+        {/* Report popup */}
         {selectedReport && (
-          <div className="absolute top-3 left-12 w-[300px] bg-surface border border-line p-3.5 rounded-card text-[13px] flex flex-col gap-2.5 z-10">
+          <div className="w-full bg-surface border border-line p-3.5 rounded-card text-[13px] flex flex-col gap-2.5">
             <div className="flex items-center justify-between border-b border-line pb-2">
               <div className="flex items-center gap-1.5">
                 <FileText className="w-3.5 h-3.5 text-muted" />
@@ -2158,12 +2417,11 @@ export default function InteractiveCommandMap({
               </div>
 
               {(() => {
-                const hasTranslation =
-                  !!selectedReport.translatedText && selectedReport.translatedText !== selectedReport.rawText;
-                const showingOriginal = reportOriginalId === selectedReport.id || !hasTranslation;
+                const translated = hasTranslation(selectedReport);
+                const showingOriginal = reportOriginalId === selectedReport.id || !translated;
                 return (
                   <div className="space-y-1.5">
-                    {hasTranslation && (
+                    {translated && (
                       <div className="flex items-center justify-between">
                         <span className="text-[11px] text-muted">
                           {showingOriginal ? 'Original' : 'Translated · machine'}
@@ -2259,6 +2517,7 @@ export default function InteractiveCommandMap({
             )}
           </div>
         )}
+        </div>
 
         {/* Updated Legend Panel (Hub colors explicit to display the 3 distinct types) */}
         <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-1.5 select-none">
@@ -2268,7 +2527,7 @@ export default function InteractiveCommandMap({
                 <div className="text-[11px] text-muted mb-1.5">Barangay state</div>
                 <div className="space-y-1">
                   {[
-                    { color: COLOR.reached, label: 'Reached' },
+                    { color: COLOR.stable, label: 'Stable' },
                     { color: COLOR.warning, label: 'Escalating' },
                     { color: COLOR.critical, label: 'Critical' },
                   ].map(({ color, label }) => (
@@ -2277,7 +2536,7 @@ export default function InteractiveCommandMap({
                       <span className="text-fg">{label}</span>
                     </div>
                   ))}
-                  {/* Served is orthogonal to the priority scale — a delivered-to community. */}
+                  {/* Reached is orthogonal to the priority scale — a delivered-to community. */}
                   <div className="flex items-center gap-2">
                     <span className="inline-flex items-center justify-center w-2 h-2 shrink-0">
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={SERVED_COLOR} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
@@ -2336,18 +2595,51 @@ export default function InteractiveCommandMap({
 
               <div className="border-t border-line pt-2">
                 <div className="text-[11px] text-muted mb-1.5">Reports</div>
+                {/* Ordered loudest-first, and the swatches carry the real size and
+                    opacity ramp — a legend of five identical dots would describe a
+                    map that no longer exists. */}
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: COLOR.warning }} />
-                    <span className="text-fg">Pending</span>
+                    <span
+                      className="w-3 h-3 rounded-full shrink-0 flex items-center justify-center font-bold leading-none"
+                      style={{ background: COLOR.warning, color: COLOR.bg, fontSize: 8, boxShadow: `0 0 0 1.5px ${COLOR.bg}` }}
+                    >✕</span>
+                    <span className="text-fg">Road cut · unverified</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: COLOR.active }} />
-                    <span className="text-fg">Verified</span>
+                    <span
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ background: COLOR.warning, boxShadow: `0 0 0 1.5px ${COLOR.bg}` }}
+                    />
+                    <span className="text-fg">Critical · unverified</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: COLOR.critical }} />
+                    <span
+                      className="w-2.5 h-2.5 rotate-45 rounded-[1px] shrink-0"
+                      style={{ background: COLOR.critical }}
+                    />
                     <span className="text-fg">Flagged</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{ background: COLOR.warning, opacity: DOT_OPACITY.elevated }}
+                    />
+                    <span className="text-fg">High severity</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{ background: COLOR.muted, opacity: DOT_OPACITY.routine }}
+                    />
+                    <span className="text-fg">In queue</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="w-1 h-1 rounded-full shrink-0"
+                      style={{ background: COLOR.muted, opacity: DOT_OPACITY.done }}
+                    />
+                    <span className="text-fg">Verified</span>
                   </div>
                 </div>
               </div>

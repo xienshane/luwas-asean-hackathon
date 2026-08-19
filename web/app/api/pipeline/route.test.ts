@@ -13,12 +13,18 @@ const rpc = vi.fn(async (fn: string) => {
     return mockSaveRouteError ? { data: null, error: mockSaveRouteError } : { data: 'route-1', error: null };
   }
   if (fn === 'silent_area_score') return { data: 1, error: null };
+  if (fn === 'reroute_active_dispatch_routes') {
+    return mockActiveRerouteError
+      ? { data: null, error: mockActiveRerouteError }
+      : { data: 1, error: null };
+  }
   return { data: null, error: null };
 });
 
 let mockOverrideValue: number | null = null;
 let mockSaveRouteError: { message: string } | null = null;
 let mockStoredManifests: Record<string, unknown>[] = [];
+let mockActiveRerouteError: { message: string } | null = null;
 let mockConfirmedReports: { barangay_id: string; population_estimate: number; created_at: string }[] = [];
 
 const upsertsByTable: Record<string, Record<string, unknown>[]> = {};
@@ -71,6 +77,7 @@ beforeEach(() => {
   mockSaveRouteError = null;
   mockStoredManifests = [];
   mockConfirmedReports = [];
+  mockActiveRerouteError = null;
   for (const k of Object.keys(upsertsByTable)) delete upsertsByTable[k];
 });
 
@@ -170,6 +177,10 @@ describe('POST /api/pipeline', () => {
     expect(calls).not.toContain('rpc:silent_area_score');
     expect(calls.some((c) => c.startsWith('buildManifest:'))).toBe(false);
     expect(calls).toContain('rpc:pipeline_save_route');
+    // A rolling convoy is invisible to planAndSaveRoutes (it only regenerates 'planned'
+    // routes), so without this it would keep drawing its line through the closed road.
+    expect(calls).toContain('rpc:reroute_active_dispatch_routes');
+    expect(body.reroutedActive).toBe(1);
   });
 
   it('reroute mode reports when there is nothing persisted to reroute', async () => {
@@ -182,6 +193,27 @@ describe('POST /api/pipeline', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.routes).toBe(0);
-    expect(body.note).toMatch(/full pipeline/i);
+    // Nothing left to PLAN is not nothing left to redraw — the dispatched route is
+    // rebuilt before this early return, and the note says so instead of saying nothing.
+    expect(calls).toContain('rpc:reroute_active_dispatch_routes');
+    expect(body.reroutedActive).toBe(1);
+    expect(body.note).toMatch(/1 active route/i);
+  });
+
+  it('names a failed dispatched-route rebuild instead of swallowing it', async () => {
+    mockActiveRerouteError = { message: 'pgr_dijkstra: no path' };
+    mockStoredManifests = [{
+      barangay_id: 'b1', water_l: 22500, food_packs: 0, shelter_kits: 0, blankets: 0,
+      breakdown: { total_weight_kg: 22500 }, overridden: false, days: 3, access_modifier: 1,
+    }];
+    const { POST } = await import('./route');
+    const res = await POST(new Request('http://x/api/pipeline?', {
+      method: 'POST', body: JSON.stringify({ mode: 'reroute' }),
+      headers: { 'content-type': 'application/json' },
+    }));
+    expect(res.status).toBe(200); // the planned routes still landed
+    const body = await res.json();
+    expect(body.reroutedActive).toBe(0);
+    expect(body.note).toContain('pgr_dijkstra: no path');
   });
 });

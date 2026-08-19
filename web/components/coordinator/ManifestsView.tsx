@@ -34,8 +34,9 @@ interface HistoryEntry {
 const SUPPLY_ROWS = [
   { key: 'waterL', label: 'Water', unit: 'L' },
   { key: 'foodPacks', label: 'Food packs', unit: 'packs' },
+  { key: 'blankets', label: 'Blankets', unit: 'pcs' },
   { key: 'hygieneKits', label: 'Hygiene kits', unit: 'kits' },
-  { key: 'medicalSupplies', label: 'Medical', unit: 'packs' },
+  { key: 'medicalSupplies', label: 'Medical', unit: 'kits' },
   { key: 'shelterMaterials', label: 'Shelter', unit: 'units' },
 ] as const;
 

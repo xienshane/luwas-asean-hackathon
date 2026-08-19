@@ -2,8 +2,8 @@
 
 Pure function, no model and no network: given an affected-population estimate, a
 provisioning horizon (`days`), and an `access_modifier`, it returns a fully itemized,
-auditable supply manifest built from published humanitarian standards (Sphere Handbook +
-IFRC NFI ratios). Every line records the exact inputs and formula behind its quantity, so
+auditable supply manifest built from published humanitarian standards (Sphere Handbook,
+IFRC NFI ratios, WHO IEHK). Every line records the exact inputs and formula behind its quantity, so
 a coordinator can trace any number to its basis and override it (CLAUDE.md > Rules:
 derived outputs are assistive).
 
@@ -22,6 +22,10 @@ PERSONS_PER_HOUSEHOLD = 5.0       # relief planning household size (Sphere/IFRC 
 TARPS_PER_HOUSEHOLD = 2.0         # Sphere emergency shelter: 2 tarpaulins per household
 BLANKETS_PER_PERSON = 1.0         # IFRC NFI minimum: one blanket per person
 HYGIENE_KITS_PER_HOUSEHOLD = 1.0  # IFRC NFI: one hygiene kit per household
+# WHO Interagency Emergency Health Kit 2017: one basic unit covers 1,000 people. It is a
+# standing provision for the response, not a daily consumable, so it does NOT scale by
+# `days` — unlike water and rations.
+PERSONS_PER_MEDICAL_KIT = 1000.0
 
 # --- logistics weights (planning estimates, tunable; NOT Sphere standards) --
 # Used by OR-Tools (2.4) as cargo demand. Clearly approximate, not normative.
@@ -31,6 +35,7 @@ UNIT_WEIGHT_KG = {
     "tarpaulin": 5.0,    # 4x6 m heavy-duty tarpaulin
     "blanket": 1.5,
     "hygiene_kit": 3.0,
+    "medical_kit": 45.0,  # WHO IEHK basic unit, approx. shipping weight
 }
 
 STANDARDS = {
@@ -41,6 +46,7 @@ STANDARDS = {
     "tarps_per_household": TARPS_PER_HOUSEHOLD,
     "blankets_per_person": BLANKETS_PER_PERSON,
     "hygiene_kits_per_household": HYGIENE_KITS_PER_HOUSEHOLD,
+    "persons_per_medical_kit": PERSONS_PER_MEDICAL_KIT,
 }
 
 
@@ -140,6 +146,14 @@ def sphere_supply(
             {"households": float(households),
              "hygiene_kits_per_household": HYGIENE_KITS_PER_HOUSEHOLD},
             f"{_num(households)} households x {_num(HYGIENE_KITS_PER_HOUSEHOLD)} kit/household",
+        ),
+        make_line(
+            "Medical kits", "health", "kits",
+            affected / PERSONS_PER_MEDICAL_KIT, "medical_kit",
+            {"affected": float(affected),
+             "persons_per_medical_kit": PERSONS_PER_MEDICAL_KIT},
+            f"{_num(affected)} affected / {_num(PERSONS_PER_MEDICAL_KIT)} people per "
+            f"WHO IEHK basic unit",
         ),
     ]
 

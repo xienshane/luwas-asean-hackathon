@@ -136,7 +136,7 @@ export default function RightIntelligencePanel({
   const EMPTY_ITEM = { recommended: 0, inventory: 0, shortfall: 0 };
   const water = manifest?.waterL ?? EMPTY_ITEM;
   const food = manifest?.foodPacks ?? EMPTY_ITEM;
-  const blankets = (manifest as { blankets?: typeof EMPTY_ITEM } | undefined)?.blankets ?? EMPTY_ITEM;
+  const blankets = manifest?.blankets ?? EMPTY_ITEM;
   const hygiene = manifest?.hygieneKits ?? EMPTY_ITEM;
   const medical = manifest?.medicalSupplies ?? EMPTY_ITEM;
   const shelter = manifest?.shelterMaterials ?? EMPTY_ITEM;
@@ -189,7 +189,7 @@ export default function RightIntelligencePanel({
     { label: 'Food packs', value: finalFood, unit: 'packs', inv: food.inventory },
     { label: 'Blankets', value: finalBlankets, unit: 'pcs', inv: blankets.inventory },
     { label: 'Hygiene kits', value: finalHygiene, unit: 'kits', inv: hygiene.inventory },
-    { label: 'Medical', value: finalMedical, unit: 'packs', inv: medical.inventory },
+    { label: 'Medical', value: finalMedical, unit: 'kits', inv: medical.inventory },
     { label: 'Shelter', value: finalShelter, unit: 'units', inv: shelter.inventory },
   ];
 
@@ -338,7 +338,7 @@ export default function RightIntelligencePanel({
                 <span className="flex items-center gap-2">
                   <span
                     className="text-muted cursor-help"
-                    title="Deterministic Sphere standard: 15 L water + 2,100 kcal per person/day over a 3-day ration. Inventory is the on-hand stock; a shortfall is need minus inventory."
+                    title="Deterministic standards, no model: Sphere 15 L water + 2,100 kcal per person/day over a 3-day ration; IFRC 1 blanket/person and 1 hygiene kit/household; WHO 1 emergency health kit per 1,000 people. Inventory is the on-hand stock; a shortfall is need minus inventory."
                   >
                     <Info className="w-3.5 h-3.5" aria-hidden />
                   </span>
@@ -381,7 +381,7 @@ export default function RightIntelligencePanel({
                     <Field label="Food (packs)" value={foodInput} onChange={setFoodInput} placeholder={food.recommended.toString()} />
                     <Field label="Blankets (pcs)" value={blanketInput} onChange={setBlanketInput} placeholder={blankets.recommended.toString()} />
                     <Field label="Hygiene (kits)" value={hygieneInput} onChange={setHygieneInput} placeholder={hygiene.recommended.toString()} />
-                    <Field label="Medical (packs)" value={medicalInput} onChange={setMedicalInput} placeholder={medical.recommended.toString()} />
+                    <Field label="Medical (kits)" value={medicalInput} onChange={setMedicalInput} placeholder={medical.recommended.toString()} />
                     <Field label="Shelter (units)" value={shelterInput} onChange={setShelterInput} placeholder={shelter.recommended.toString()} />
                   </div>
                   <button
@@ -414,7 +414,7 @@ export default function RightIntelligencePanel({
                     <p className="mt-1 text-[12px] text-muted">
                       <span className="font-mono tabular-nums">{(activeRoute.totalDistanceM / 1000).toFixed(1)}</span> km
                       {' · '}
-                      <span title="A simulated convoy marker (Part A) glides part-way along the route for the demo and parks short of the destination — decorative, not live tracking.">sim convoy holding mid-route</span>
+                      <span title="A simulated convoy marker (Part A) glides out of the depot along the route for the demo and parks early, short of the first major crossing — decorative, not live tracking.">sim convoy holding short of the crossing</span>
                     </p>
                     <button
                       onClick={() => onMarkReached(activeRoute.id)}
