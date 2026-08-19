@@ -1,5 +1,7 @@
 import { it, expect, vi, afterEach } from 'vitest';
 
+const req = () => new Request('http://localhost/api/live-conditions');
+
 afterEach(() => { vi.resetModules(); vi.unstubAllGlobals(); });
 
 it('rejects an unauthenticated caller with 401', async () => {
@@ -11,7 +13,7 @@ it('rejects an unauthenticated caller with 401', async () => {
     }),
   }));
   const { GET } = await import('./route');
-  const res = await GET();
+  const res = await GET(req());
   expect(res.status).toBe(401);
   expect(fetch).not.toHaveBeenCalled();
 });
@@ -25,7 +27,7 @@ it('rejects a non-coordinator with 403', async () => {
     }),
   }));
   const { GET } = await import('./route');
-  const res = await GET();
+  const res = await GET(req());
   expect(res.status).toBe(403);
   expect(fetch).not.toHaveBeenCalled();
 });

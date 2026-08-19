@@ -19,6 +19,7 @@ import ConnectivityBanner from './ConnectivityBanner';
 import type { LocationHub } from '@/lib/types/coordinator';
 import LeftSidebar from './LeftSidebar';
 import InteractiveCommandMap from './InteractiveCommandMap';
+import { DEFAULT_REGION, REGIONS, type RegionId } from '@/lib/regions';
 import BottomOperationsConsole from './BottomOperationsConsole';
 import RightIntelligencePanel from './RightIntelligencePanel';
 import RouteDetailPanel from './RouteDetailPanel';
@@ -44,6 +45,12 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
   const [currentView, setCurrentView] = useState('map');
   // Team to focus when arriving on the Teams & Dispatch tab (e.g. after clicking its route).
   const [focusTeamId, setFocusTeamId] = useState<string | null>(null);
+  // Country pack on screen. Everything spatial — map, areas, teams, hubs — is scoped to it.
+  const [region, setRegion] = useState<RegionId>(DEFAULT_REGION);
+  // Refresh helpers are plain functions called from handlers, not effects, so they read
+  // the region through a ref rather than closing over a possibly stale render value.
+  const regionRef = useRef<RegionId>(region);
+  useEffect(() => { regionRef.current = region; }, [region]);
 
   // Phase 6.1 — connectivity tier drives the degradation banner + action gating.
   const realtimeHealthy = useRealtimeHealth();
@@ -53,10 +60,10 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
   const barangaysRef = useRef<Barangay[]>([]);
   useEffect(() => { barangaysRef.current = barangays; }, [barangays]);
   const [reports, setReports] = useState<FieldReport[]>([]);
-  useLiveReports(setReports);
+  useLiveReports(setReports, region);
   // Province-wide queue depth. The report list is capped at 100 rows, so these
   // counters come from the database instead of from `reports`.
-  const { counts: reportCounts, refresh: refreshReportCounts } = useReportCounts();
+  const { counts: reportCounts, refresh: refreshReportCounts } = useReportCounts(region);
   const liveVolunteers = useLiveVolunteers();
   const [teams, setTeams] = useState<Team[]>([]);
   const [edges, setEdges] = useState<RoadEdge[]>([]);
@@ -112,9 +119,16 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
 
   useEffect(() => { if (!mountedAtRef.current) mountedAtRef.current = Date.now(); }, []);
 
+  // Re-runs on region change: switching country packs refetches areas, teams and hubs
+  // rather than filtering in memory, so the client never holds two countries at once.
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetchCoordinatorMapData(), fetchTeams(), fetchRoadStatus(), fetchFacilities()])
+    Promise.all([
+      fetchCoordinatorMapData(region),
+      fetchTeams(region),
+      fetchRoadStatus(),
+      fetchFacilities(region),
+    ])
       .then(([map, t, e, f]) => {
         if (cancelled) return;
         setBarangays(map.barangays);
@@ -130,7 +144,7 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [region]);
 
   // A3: Every pipeline action rescores server-side; the map only reflects it after a refetch.
   // Setters are stable, so this is safe to call from anywhere in the component.
@@ -140,7 +154,7 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
     // than waiting out their poll.
     void refreshReportCounts();
     try {
-      const map = await fetchCoordinatorMapData();
+      const map = await fetchCoordinatorMapData(regionRef.current);
       setBarangays(map.barangays);
       setScores(map.scores);
       setOperationStartedAt(map.operationStartedAt);
@@ -202,6 +216,27 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
     [],
   );
   /* eslint-enable react-hooks/refs */
+
+  // Switching country packs invalidates every spatial selection: the selected area,
+  // report and route all belong to the region being left. Clearing them here stops the
+  // intelligence panel describing a Cebu barangay over a map of Da Nang.
+  const handleSelectRegion = (next: RegionId) => {
+    if (next === region) return;
+    setSelectedBarangay(null);
+    setSelectedReport(null);
+    setSelectedRoute(null);
+    setDispatchPreview(null);
+    // A wind reading belongs to the region it was sampled in — dropping it here stops
+    // Cebu's weather sitting under a Đà Nẵng map until someone re-fetches.
+    setLiveConditions(null);
+    setLiveStatus('idle');
+    setRegion(next);
+    const r = REGIONS[next];
+    addActivityLog(
+      `REGION: switched to ${r.label}, ${r.country} — intake over ${r.intakeChannel}. Same models, same thresholds.`,
+      'info',
+    );
+  };
 
   const handleSelectBarangay = (b: Barangay) => {
     setSelectedBarangay(b);
@@ -801,7 +836,9 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
       setResetEpoch((n) => n + 1);
       // Teams carry client-only dispatch status (/api/dispatch never writes to
       // `teams`), so the rail keeps reading "dispatched" until we refetch.
-      const [map, t, e] = await Promise.all([fetchCoordinatorMapData(), fetchTeams(), fetchRoadStatus()]);
+      const [map, t, e] = await Promise.all([
+        fetchCoordinatorMapData(regionRef.current), fetchTeams(regionRef.current), fetchRoadStatus(),
+      ]);
       setBarangays(map.barangays);
       setScores(map.scores);
       setOperationStartedAt(map.operationStartedAt);
@@ -828,7 +865,9 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
   const fetchLiveConditions = async (): Promise<LiveConditions | null> => {
     setLiveStatus('loading');
     try {
-      const res = await fetch('/api/live-conditions');
+      // Read through the ref: this is called from handlers, so a region switched since
+      // the last render must not fetch the previous country's weather.
+      const res = await fetch(`/api/live-conditions?region=${regionRef.current}`);
       const out = await res.json();
       if (out?.available && out.conditions) {
         setLiveConditions(out.conditions as LiveConditions);
@@ -852,7 +891,7 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
     try {
       const res = await fetch('/api/pipeline/day0', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ categoryOrdinal: day0Category }),
+        body: JSON.stringify({ categoryOrdinal: day0Category, region: regionRef.current }),
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => null);
@@ -953,6 +992,8 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
               )}
               <InteractiveCommandMap
                 active={currentView === 'map'}
+                region={region}
+                onSelectRegion={handleSelectRegion}
                 barangays={barangays}
                 reports={reports}
                 teams={teams}
@@ -1107,7 +1148,9 @@ export default function CommandDashboard({ demoConsole = false }: CommandDashboa
               {/* Phase 4.7 — live environmental signal (assistive; overrides the manual pick) */}
               <div className="rounded-control border border-line bg-raised px-3 py-2.5">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[12px] font-medium text-muted">Live conditions (Open-Meteo, worst across Cebu)</span>
+                  <span className="text-[12px] font-medium text-muted">
+                    Live conditions (Open-Meteo, worst across {REGIONS[region].label})
+                  </span>
                   <button
                     type="button"
                     onClick={() => void fetchLiveConditions()}

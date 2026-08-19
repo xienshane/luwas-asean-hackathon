@@ -83,15 +83,30 @@ export interface ReportCounts {
   pendingCritical: number;
 }
 
-export async function fetchReportCounts(): Promise<ReportCounts> {
+export async function fetchReportCounts(
+  region: RegionId = DEFAULT_REGION,
+): Promise<ReportCounts> {
   const supabase = createClient();
+  // Counts read the enriched view, not the base table: `region` lives on barangays, and
+  // an unscoped count put Cebu's whole queue above a map of Đà Nẵng.
+  //
+  // Reports with a null region never geocoded, so they belong to no pack and count in
+  // every one — the same rule useLiveReports applies to the feed these numbers head. An
+  // unplaced report is precisely the one a coordinator must not lose, and the counter
+  // agreeing with the list matters more than avoiding a double count across regions.
+  const scope = `region.eq.${region},region.is.null`;
   const [pending, critical] = await Promise.all([
-    supabase.from('field_reports').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
     supabase
-      .from('field_reports')
+      .from('coordinator_field_reports')
       .select('id', { count: 'exact', head: true })
       .eq('status', 'pending')
-      .eq('needs_severity', 'critical'),
+      .or(scope),
+    supabase
+      .from('coordinator_field_reports')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending')
+      .eq('needs_severity', 'critical')
+      .or(scope),
   ]);
 
   if (pending.error) throw pending.error;
@@ -207,10 +222,11 @@ export function teamRowToUi(r: TeamRow): Team {
     baseLocation: { lat: r.base_lat ?? 10.3157, lng: r.base_lng ?? 123.8854 },
   };
 }
-export async function fetchTeams(): Promise<Team[]> {
+export async function fetchTeams(region: RegionId = DEFAULT_REGION): Promise<Team[]> {
   const supabase = createClient();
   const { data, error } = await supabase.from('coordinator_teams')
-    .select('id,name,capacity_kg,status,type,base_lat,base_lng');
+    .select('id,name,capacity_kg,status,type,base_lat,base_lng')
+    .eq('region', region);
   if (error) throw error;
   return (data ?? []).map((r) => teamRowToUi(r as TeamRow));
 }
@@ -249,10 +265,11 @@ export function facilityRowToHub(r: FacilityRow): LocationHub {
   const type: LocationHub['type'] = r.kind === 'shelter' ? 'shelter' : r.kind === 'staging' ? 'supply_hub' : 'warehouse';
   return { id: r.id, name: r.name, type, latitude: r.latitude, longitude: r.longitude, capacityPercent: 0 };
 }
-export async function fetchFacilities(): Promise<LocationHub[]> {
+export async function fetchFacilities(region: RegionId = DEFAULT_REGION): Promise<LocationHub[]> {
   const supabase = createClient();
   const { data, error } = await supabase.from('coordinator_facilities')
-    .select('id,name,kind,is_depot,latitude,longitude');
+    .select('id,name,kind,is_depot,latitude,longitude')
+    .eq('region', region);
   if (error) throw error;
   return (data ?? []).map((r) => facilityRowToHub(r as FacilityRow));
 }

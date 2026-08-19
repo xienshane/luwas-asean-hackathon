@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { FieldReport } from '@/lib/types/coordinator';
 import { dbReportToUi, mergeReport, type CoordinatorFieldReport } from './adapters';
+import { DEFAULT_REGION, type RegionId } from '@/lib/regions';
 
 // Feeds live field_reports into the dashboard's report state:
 // initial fetch (last INITIAL_FETCH_LIMIT) + a realtime channel for INSERT/UPDATE.
@@ -36,12 +37,26 @@ const INITIAL_FETCH_LIMIT = 500;
 
 export function useLiveReports(
   setReports: React.Dispatch<React.SetStateAction<FieldReport[]>>,
+  region: RegionId = DEFAULT_REGION,
 ) {
   useEffect(() => {
     const supabase = createClient();
     let cancelled = false;
 
+    // The effect re-runs on region change, and mergeReport accumulates. Without this the
+    // feed would keep the previous country's reports after a switch.
+    setReports([]);
+
+    // A report with no region never geocoded, so it belongs to no country pack. Those
+    // stay visible everywhere — an unplaced report is the one a coordinator must not
+    // lose — while a report placed in another country is filtered out.
+    const inRegion = (row: CoordinatorFieldReport) => {
+      const r = (row as { region?: string | null }).region;
+      return r == null || r === region;
+    };
+
     const applyRow = (row: CoordinatorFieldReport) => {
+      if (!inRegion(row)) return;
       const ui = dbReportToUi(row);
       if (ui) setReports((prev) => mergeReport(prev, ui));
     };
@@ -108,5 +123,5 @@ export function useLiveReports(
       authSub.subscription.unsubscribe();
       if (channel) supabase.removeChannel(channel);
     };
-  }, [setReports]);
+  }, [setReports, region]);
 }

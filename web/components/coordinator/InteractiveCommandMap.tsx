@@ -18,6 +18,7 @@ import { applyGraphiteBasemap } from '@/lib/coordinator/basemapTheme';
 import { hasTranslation } from '@/lib/reports/translation';
 import { reportPinTier, isLoudTier, DOT_RADIUS, DOT_OPACITY } from '@/lib/coordinator/reportPins';
 import { COLOR, MAP, silentAreaState, STATE_COLOR, STATE_LABEL, SERVED_COLOR, SERVED_LABEL, SilentWatchChip } from './ui';
+import { DEFAULT_REGION, REGION_LIST, REGIONS, type RegionId } from '@/lib/regions';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 // MapLibre erases GeoJSON feature properties to an untyped scalar bag; alias it once.
@@ -71,6 +72,10 @@ interface InteractiveCommandMapProps {
   onFlagReport: (reportId: string) => void;
   onResetReports?: () => void;
   active?: boolean;
+  /** Country pack on screen. Changing it re-homes the map to that region. */
+  region?: RegionId;
+  /** Omit to hide the region switch entirely (single-region deployments). */
+  onSelectRegion?: (region: RegionId) => void;
 }
 
 // ─── Theme Helpers (calm tokens: reached / escalating / critical) ─────────────
@@ -117,6 +122,8 @@ export default function InteractiveCommandMap({
   onFlagReport,
   onResetReports,
   active = true,
+  region = DEFAULT_REGION,
+  onSelectRegion,
 }: InteractiveCommandMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -124,6 +131,10 @@ export default function InteractiveCommandMap({
   const mapRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const maplibreglRef = useRef<any>(null); // npm maplibre-gl module (client-only dynamic import)
+  // initMap runs from an async style load, by which time `region` may have moved on.
+  // The ref is what it reads, so the first paint lands on the right country.
+  const regionRef = useRef<RegionId>(region);
+  useEffect(() => { regionRef.current = region; }, [region]);
 
   // Separate, isolated refs for markers
   const reportMarkersRef = useRef<Marker[]>([]);
@@ -454,18 +465,17 @@ export default function InteractiveCommandMap({
     const maplibregl = maplibreglRef.current;
     if (!mapContainerRef.current || mapRef.current || !maplibregl) return;
 
-    const WHOLE_CEBU_BOUNDS: [[number, number], [number, number]] = [
-      [123.15, 9.30], 
-      [124.60, 11.50]
-    ];
+    // Home view comes from the country pack, not a constant: the map has to be able to
+    // leave the Philippines when the coordinator switches regions.
+    const home = REGIONS[regionRef.current];
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
       style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
-      center: [123.905, 10.33], 
-      zoom: 11.5,
+      center: home.center,
+      zoom: home.zoom,
       minZoom: 8.0,
-      maxBounds: WHOLE_CEBU_BOUNDS,
+      maxBounds: home.bounds,
       attributionControl: { compact: false },
     });
 
@@ -1090,6 +1100,34 @@ export default function InteractiveCommandMap({
   // marker (color-not-only: shape + label + symbol, not red hue alone). DOM markers render above
   // the canvas, so a chip is never hidden by a line. Built from `edges` (the same client array
   // that feeds roads-source) so it doesn't depend on source paint timing.
+  // ── Re-home the map when the country pack changes ──
+  // maxBounds must be dropped BEFORE moving: MapLibre clamps any camera change to the
+  // current bounds, so flying from Cebu to Da Nang with the Cebu box still set lands the
+  // map against the edge of the Philippines instead. New bounds go on after arrival.
+  const lastRegionRef = useRef<RegionId>(region);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded) return;
+    if (lastRegionRef.current === region) return;
+    lastRegionRef.current = region;
+
+    const { center, zoom, bounds } = REGIONS[region];
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+    map.setMaxBounds(null);
+    const applyBounds = () => map.setMaxBounds(bounds);
+
+    if (reduce) {
+      map.jumpTo({ center, zoom });
+      applyBounds();
+      return;
+    }
+    // The flight across the sea is the point of the beat — it shows one system moving
+    // countries, not a second deployment. `once` so a later pan cannot re-clamp.
+    map.once('moveend', applyBounds);
+    map.flyTo({ center, zoom, duration: 2600, curve: 1.6, essential: true });
+  }, [region, isMapLoaded]);
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isMapLoaded || !maplibreglRef.current) return;
@@ -2045,7 +2083,8 @@ export default function InteractiveCommandMap({
   // ── Zoom helpers ──
   const zoomIn    = () => mapRef.current?.zoomIn();
   const zoomOut   = () => mapRef.current?.zoomOut();
-  const resetView = () => mapRef.current?.easeTo({ center: [123.905, 10.33], zoom: 11.5 });
+  const resetView = () =>
+    mapRef.current?.easeTo({ center: REGIONS[region].center, zoom: REGIONS[region].zoom });
 
   // ── Road status update ──
   const handleRoadStatusChange = (status: 'open' | 'slow' | 'blocked' | 'damaged') => {
@@ -2197,6 +2236,44 @@ export default function InteractiveCommandMap({
             </svg>
           )}
         </button>
+
+        {/* Country pack switch. Bottom-left is the only free corner, and it keeps the
+            switch away from the selection stack so changing country is never a misclick
+            while inspecting an area. */}
+        {onSelectRegion && (
+          <div className="absolute bottom-4 left-4 z-10 select-none">
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">
+              Region
+            </div>
+            <div
+              role="radiogroup"
+              aria-label="Region"
+              className="flex overflow-hidden rounded-control border border-line bg-surface shadow-overlay"
+            >
+              {REGION_LIST.map((r) => {
+                const isActive = r.id === region;
+                return (
+                  <button
+                    key={r.id}
+                    role="radio"
+                    aria-checked={isActive}
+                    onClick={() => !isActive && onSelectRegion(r.id)}
+                    title={`${r.label}, ${r.country} — intake over ${r.intakeChannel}`}
+                    className={
+                      'px-3 py-1.5 text-xs font-semibold transition-colors duration-100 cursor-pointer '
+                      + (isActive
+                        ? 'bg-raised text-fg'
+                        : 'text-muted hover:bg-raised/60 hover:text-fg')
+                    }
+                  >
+                    {r.label}
+                    <span className="ml-1.5 font-normal text-[10px] text-muted">{r.country}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Zoom controls */}
         <div className="absolute top-3 right-3 z-10 flex flex-col gap-1">

@@ -9,16 +9,30 @@ export interface BarangayMatch {
   lng: number;
 }
 
-// Administrative prefixes people type but gazetteers do not store. PH uses
-// "Barangay X"; VN uses "Phường X" (ward) and "Xã X" (commune). Unaccented "phuong"
-// is common in typed Vietnamese; unaccented "xa" is NOT stripped, because it would
-// eat the first word of any name legitimately starting with "Xa ".
-const AREA_PREFIX = /^(brgy\.?|barangay|phường|phuong|xã)\s+/i;
+// Administrative prefixes people type but gazetteers do not store. PH writes
+// "Barangay X"; VN writes "Phường X" (ward) and "Xã X" (commune). Matched after the
+// diacritics are folded, so the accented spellings are already ASCII by this point.
+const AREA_PREFIX = /^(brgy\.?|barangay|phuong|xa)\s+/i;
 
+// ...and the English nouns a translating model appends. SEA-LION returns the Vietnamese
+// preset's location as "An Hai Ward, Da Nang", so the suffix has to come off or nothing
+// matches "Phường An Hải".
+const AREA_SUFFIX = /\s+(ward|commune|district|city|municipality|barangay|village)$/i;
+
+/**
+ * Folds a parser-extracted place name to the same shape as
+ * `barangays.name_normalized`: lowercase, no diacritics, no administrative affixes.
+ * NFD splits an accented letter into base + combining mark, and the mark is dropped —
+ * so "Hải" becomes "hai" and meets the stored "phuong an hai".
+ */
 export function normalizeBarangayQuery(text: string | null | undefined): string {
   if (!text) return '';
   let q = text.split(',')[0].toLowerCase().trim();
+  q = q.normalize('NFD').replace(/\p{Diacritic}/gu, '');
+  // đ/Đ is a distinct letter, not a base+mark pair, so NFD leaves it alone.
+  q = q.replace(/đ/g, 'd');
   q = q.replace(AREA_PREFIX, '');
+  q = q.replace(AREA_SUFFIX, '');
   return q.replace(/[^\p{L}\p{N}\s'-]/gu, '').trim();
 }
 
@@ -64,7 +78,9 @@ export async function findBarangayByName(
       .from('barangay_directory')
       .select('id, name, lat, lng')
       .eq('region', region)
-      .ilike('name', pattern)
+      // Matched against the folded column, never `name` — the query has already had its
+      // diacritics stripped, so comparing to the accented original would never hit.
+      .ilike('name_normalized', pattern)
       .order('population', { ascending: false, nullsFirst: false })
       .limit(1)
       .maybeSingle();

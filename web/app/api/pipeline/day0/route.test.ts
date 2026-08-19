@@ -3,7 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Mock the auth/admin clients and AI wrappers so we test Day-0 orchestration, not I/O.
 const calls: string[] = [];
 const upserts: Record<string, Record<string, unknown>[]> = {};
-const rpc = vi.fn(async (fn: string) => {
+// Typed with the args parameter so `rpc.mock.calls` keeps it — the region tests assert on
+// what is passed to pipeline_targets_day0, not merely that it was called.
+const rpc = vi.fn<
+  (fn: string, args?: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>
+>(async (fn: string) => {
   calls.push(`rpc:${fn}`);
   if (fn === 'pipeline_targets_day0') return { data: [{
     barangay_id: 'b1', name: 'Lahug', province: 'Cebu', population: 25000, lat: 10.33, lng: 123.9,
@@ -32,7 +36,13 @@ vi.mock('@/lib/ai/supply', () => ({ buildManifest: async () => ({
   lines: [{ item: 'Drinking water', category: 'water', unit: 'L', quantity: 22500, unit_weight_kg: 1, weight_kg: 22500, basis: '', inputs: {} }],
   total_weight_kg: 22500, standards: {} }) }));
 
-beforeEach(() => { calls.length = 0; for (const k of Object.keys(upserts)) delete upserts[k]; });
+beforeEach(() => {
+  calls.length = 0;
+  for (const k of Object.keys(upserts)) delete upserts[k];
+  // Call history too, not just the name log: the region tests read rpc.mock.calls to
+  // inspect ARGUMENTS, and stale entries from a previous test would be found first.
+  rpc.mockClear();
+});
 
 describe('POST /api/pipeline/day0', () => {
   it('rescores, selects Day-0 targets, predicts, and builds manifests (no routing)', async () => {
@@ -54,6 +64,42 @@ describe('POST /api/pipeline/day0', () => {
     // Day-0 is prediction + Sphere only — no routing/dispatch.
     expect(calls).not.toContain('rpc:pipeline_cost_matrix');
     expect(calls).not.toContain('rpc:pipeline_save_route');
+  });
+
+  // Regression: an unscoped Day-0 ranked both packs in one list. Cebu's 50th barangay
+  // outscores Đà Nẵng's highest ward, so a run from the Vietnamese map produced fifty
+  // Philippine forecasts and zero Vietnamese ones — while relabelling curated Cebu state.
+  describe('region scoping', () => {
+    const targetArgs = () =>
+      rpc.mock.calls.find((c) => c[0] === 'pipeline_targets_day0')?.[1] as
+        { p_limit: number; p_region: string | null } | undefined;
+
+    it('confines target selection to the region it is given', async () => {
+      const { POST } = await import('./route');
+      await POST(new Request('http://x/api/pipeline/day0', {
+        method: 'POST', body: JSON.stringify({ categoryOrdinal: 4, region: 'danang' }),
+        headers: { 'content-type': 'application/json' },
+      }));
+      expect(targetArgs()?.p_region).toBe('danang');
+    });
+
+    it('passes null for an unknown region rather than a value the RPC cannot match', async () => {
+      const { POST } = await import('./route');
+      await POST(new Request('http://x/api/pipeline/day0', {
+        method: 'POST', body: JSON.stringify({ categoryOrdinal: 4, region: 'atlantis' }),
+        headers: { 'content-type': 'application/json' },
+      }));
+      expect(targetArgs()?.p_region).toBeNull();
+    });
+
+    it('stays global when no region is given, preserving pre-region behaviour', async () => {
+      const { POST } = await import('./route');
+      await POST(new Request('http://x/api/pipeline/day0', {
+        method: 'POST', body: JSON.stringify({ categoryOrdinal: 4 }),
+        headers: { 'content-type': 'application/json' },
+      }));
+      expect(targetArgs()?.p_region).toBeNull();
+    });
   });
 
   it('marks predictions as Day-0 and omits override_value so coordinator overrides survive', async () => {

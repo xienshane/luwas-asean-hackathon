@@ -7,13 +7,28 @@ each of which is a file, a table, or a config value — not a code path. This do
 all six, states what the Philippine pilot uses today (with the repo path), what the
 Vietnamese equivalent would be, and what the swap actually costs.
 
-A machine-readable stub for one target region lives at
-[`packs/vn-danang.pack.yaml`](../packs/vn-danang.pack.yaml). Every hole in it is labelled
-with what would fill it.
+A machine-readable pack for one target region lives at
+[`packs/vn-danang.pack.yaml`](../packs/vn-danang.pack.yaml). Every remaining hole in it is
+labelled with what would fill it.
 
-**What is true today:** the ports are named, and one is stubbed. Nothing in this repo has
-been run against Vietnamese data. Port 5 (language) is the exception — it ships, and is
-covered by an acceptance test.
+**What is true today:** Đà Nẵng is loaded and runs. Eleven post-July-2025 wards with
+sourced populations, a 47,921-edge routable graph, and a depot — a Vietnamese report
+parses, geocodes, scores, and dispatches through the same functions Cebu uses, with no
+model retrained and no threshold retuned.
+
+Three of the six surfaces are genuinely done (1 boundaries/population, 5 language,
+6 gazetteer). Three are not, and the demo does not pretend otherwise:
+
+| Surface | State | What it would take |
+| --- | --- | --- |
+| 2 — storm scale | still the PAGASA ordinal | the VN level → 0–5 lookup |
+| 3 — hazard | **geographic proxy**, not measured hazard | VNDMA rasters |
+| 4 — impact history | the **Philippine** context table, read in-context | a VN impact CSV + a LOTO re-run |
+
+Surface 4 is the one to be careful about in both directions. Running Vietnamese wards
+against Philippine evidence is not a bug — it is what in-context learning *is*, and it is
+why there was no training job. But the accuracy figures in `MODEL_CARD.md` are Philippine
+figures, and they do not transfer. See surface 4 below.
 
 ---
 
@@ -48,12 +63,27 @@ population from PSA 2020, name-matched in
 > cities in `data-pipeline/raw/barangay_population.csv` are estimates, not PSA figures.
 > They are labelled as such wherever they are used.
 
-**VN equivalent.** Ward (*phường*/*xã*) boundaries and population from the General
-Statistics Office. Same shape: a polygon layer plus a population column.
+**VN today — loaded.** Eleven urban-core wards of Đà Nẵng, ingested by
+[`data-pipeline/ingest_danang.py`](../data-pipeline/ingest_danang.py) into the same
+`barangays` table under `region = 'danang'`.
 
-**Cost of the swap.** Load one boundary file and one population CSV through the existing
-`ingest_static.py` path. No schema change — `barangays` is already generic
-(name, PSGC-style code, geometry, population); the code column is a string.
+Boundaries are the **post-July-2025** ones. This matters more than it sounds: on
+1 July 2025 Vietnam merged 63 provinces into 34, abolished the district tier outright, and
+dissolved roughly two-thirds of all wards and communes. Đà Nẵng absorbed Quảng Nam and its
+own 56 wards became 12. Anything holding a pre-reform Vietnamese gazetteer is holding a map
+of places that no longer exist — which is exactly the failure a data-surface port is
+supposed to make cheap. OSM retagged the survivors from `admin_level=8` to `6`, so that is
+what the loader reads.
+
+Population is **sourced, not estimated**: each ward's own OSM `population` tag, carried in
+the extract's `other_tags` and tagged `source:population=gis.vn`,
+`population:date=2025-07-01`. All eleven are covered — 1,178,687 people — and a ward
+without the tag fails the load rather than getting a plausible guess, because population is
+the denominator of the Sphere manifest and a component of the Silent Area score.
+
+**Cost of the swap.** One loader script and one boundary file. No schema change —
+`barangays` is already generic (name, code, geometry, population); the code column is a
+string, and `region` is the only column that had to be added.
 
 ---
 
@@ -165,10 +195,21 @@ in [`web/lib/sms/normalize.ts`](../web/lib/sms/normalize.ts), so the parse-and-s
 is already channel-agnostic), and the gazetteer follows surface 1 for free.
 
 **This port is visible in the demo.** The Vietnamese preset
-([`web/lib/demo/presets.ts`](../web/lib/demo/presets.ts)) parses correctly and then lands
-**flagged** — the Vietnamese ward does not geocode against the Cebu gazetteer. That is
-port 6 doing its job, and it is the honest illustration of exactly what a country pack has
-to supply.
+([`web/lib/demo/presets.ts`](../web/lib/demo/presets.ts)) parses and geocodes to
+`phường An Hải` against the Đà Nẵng gazetteer, then scores and dispatches like any other
+report.
+
+Getting there took one thing worth recording: SEA-LION returns the location romanized
+("An Hai Ward, Da Nang"), which matched nothing against the stored "Phường An Hải". A
+correctly parsed report was landing flagged for want of five accents. The fix
+([`20260810002000_barangay_name_normalized.sql`](../supabase/migrations/20260810002000_barangay_name_normalized.sql))
+stores a diacritic-folded name and folds the query the same way, so both sides meet as
+ASCII. That is the shape of most country-pack work: not models, but the boring seam
+between how a name is written and how it is said.
+
+Intake is still SMS. **Zalo — the channel with real reach in Vietnam — is not
+implemented**; it needs one webhook adapter against the already channel-agnostic
+[`normalize.ts`](../web/lib/sms/normalize.ts).
 
 ---
 
@@ -176,7 +217,9 @@ to supply.
 
 | Say | Don't say |
 | --- | --- |
-| "The six ports are named and one is stubbed." | "LUWAS supports Vietnam." |
+| "Đà Nẵng is loaded and routes; three of six surfaces are done and we name the other three." | "LUWAS supports Vietnam." |
+| "The ward boundaries are the post-July-2025 ones, and the populations are tagged to gis.vn." | "We have Vietnamese government data." |
+| "The hazard layer is a geographic proxy — distance to mapped water and coastline." | *(letting a hazard-shaded map imply VNDMA)* |
 | "The parser model is post-trained on Vietnamese and a Vietnamese report is covered by an acceptance test." | "The system is validated in Vietnam." |
 | "Swapping the impact history is swapping a CSV — TabPFN is in-context, so there is no retraining step." | "Accuracy will hold in Vietnam." |
 | "Accuracy at a new context must be re-measured with the LOTO harness." | *(quoting PH accuracy as if it were VN accuracy)* |

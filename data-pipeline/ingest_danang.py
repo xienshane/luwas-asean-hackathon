@@ -12,9 +12,12 @@ admin_level=6. Vietnam retagged wards from level 8 to level 6 after the July 202
 abolished the district tier, so these are the CURRENT post-merger ward boundaries — e.g.
 Phường Hòa Cường, which absorbed Bình Thuận, Hòa Thuận Tây, Hòa Cường Bắc and Nam.
 
-POPULATION IS SYNTHETIC. Same precedent as the Lapu-Lapu / Mandaue rows in the Cebu CSV:
-plausible order-of-magnitude estimates for a demo, NOT General Statistics Office figures.
-Do not cite these numbers as real.
+Population is SOURCED, not estimated: it comes from each relation's own OSM `population`
+tag, carried in the extract's `other_tags`, and every urban-core ward is tagged
+`source:population=gis.vn` with `population:date=2025-07-01` — the date the merger took
+effect. This matters beyond tidiness: population is the denominator of the Sphere manifest
+and a component of the Silent Area score, so an invented number would propagate into every
+figure on screen. A ward without the tag is a hard failure here rather than a guess.
 
 Run (deps live in data-pipeline/.venv):
     data-pipeline/.venv/bin/python data-pipeline/ingest_danang.py
@@ -25,6 +28,7 @@ Idempotent: deletes and reloads only region='danang' rows. Cebu is never touched
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -45,20 +49,20 @@ PROVINCE = "Thành phố Đà Nẵng"
 # Hội An / Điện Bàn / Quảng Nam rural communes are deliberately out of scope: they sit
 # outside the road graph, and an area you cannot route to is worse than an absent one.
 #
-# Population: SYNTHETIC estimates (see module docstring).
-URBAN_CORE: dict[str, int] = {
-    "Phường Hải Châu":     102_000,
-    "Phường Thanh Khê":     98_000,
-    "Phường An Hải":        91_000,
-    "Phường Hòa Cường":     86_000,
-    "Phường Hòa Khánh":    108_000,
-    "Phường Liên Chiểu":    89_000,
-    "Phường Ngũ Hành Sơn":  78_000,
-    "Phường Sơn Trà":       72_000,
-    "Phường Cẩm Lệ":        69_000,
-    "Phường An Khê":        67_000,
-    "Phường Hòa Xuân":      58_000,
-}
+# Names only — population is read from each ward's own OSM tag (see load_wards).
+URBAN_CORE: frozenset[str] = frozenset({
+    "Phường Hải Châu",
+    "Phường Thanh Khê",
+    "Phường An Hải",
+    "Phường Hòa Cường",
+    "Phường Hòa Khánh",
+    "Phường Liên Chiểu",
+    "Phường Ngũ Hành Sơn",
+    "Phường Sơn Trà",
+    "Phường Cẩm Lệ",
+    "Phường An Khê",
+    "Phường Hòa Xuân",
+})
 
 WGS84 = 4326
 
@@ -81,6 +85,18 @@ def get_engine():
     return create_engine(url, future=True)
 
 
+def osm_tag(other_tags: str | None, key: str) -> str | None:
+    """Pull one value out of an ogr `other_tags` hstore: '"k"=>"v","k2"=>"v2"'.
+
+    Values here are plain integers and ISO dates, so the naive split is safe; a tag
+    whose value contained an escaped quote would need a real hstore parser.
+    """
+    if not other_tags:
+        return None
+    m = re.search(rf'"{re.escape(key)}"=>"([^"]*)"', other_tags)
+    return m.group(1) if m else None
+
+
 def load_wards() -> gpd.GeoDataFrame:
     print(f"\n== reading {WARDS_GPKG.name}")
     if not WARDS_GPKG.exists():
@@ -93,10 +109,23 @@ def load_wards() -> gpd.GeoDataFrame:
 
     g = g[g["name"].isin(URBAN_CORE)].copy()
     print(f"  matched {len(g)} of {len(URBAN_CORE)} urban-core wards")
-    missing = set(URBAN_CORE) - set(g["name"])
+    missing = URBAN_CORE - set(g["name"])
     check("every urban-core ward found in the extract", not missing, f"missing: {missing}")
 
-    g["population"] = g["name"].map(URBAN_CORE)
+    # Population comes from the data, never from this file. An untagged ward stops the
+    # load rather than being filled in — see the module docstring on why a guessed
+    # population is worse here than a missing region.
+    g["population"] = g["other_tags"].map(lambda t: osm_tag(t, "population"))
+    untagged = sorted(g.loc[g["population"].isna(), "name"])
+    check("every urban-core ward carries an OSM population tag", not untagged,
+          f"untagged: {untagged}")
+    g["population"] = g["population"].astype(int)
+
+    sources = {osm_tag(t, "source:population") for t in g["other_tags"]}
+    dates = {osm_tag(t, "population:date") for t in g["other_tags"]}
+    print(f"  population: {g['population'].sum():,} across {len(g)} wards"
+          f" | source={sorted(s for s in sources if s)} date={sorted(d for d in dates if d)}")
+
     return g[["name", "population", "geometry"]]
 
 
